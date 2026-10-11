@@ -1,0 +1,10 @@
+.tools/
+**/bin/
+**/obj/
+artifacts/
+.vs/
+*.user
+external/nvidia/**
+!external/nvidia/README.md
+Luma.Native.lib
+Luma.Native.exp

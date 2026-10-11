@@ -1,0 +1,20 @@
+namespace Luma.Core;
+
+public sealed record Photo(string Path, string Name, long Size, long Modified, bool Favorite = false, long Opened = 0, bool Missing = false)
+{
+    public string Detail => Missing ? "文件暂不可用" : $"{Size / 1048576.0:0.0} MB";
+}
+public sealed record Album(long Id, string Name, string Folder, string? Cover, int Count, bool Offline, string Sort)
+{
+    public string CountLabel => Offline ? $"{Count} 张 · 文件夹离线" : $"{Count} 张";
+}
+public sealed record ScanResult(long AlbumId, int Added, int Updated, int Missing, bool Offline, string? Error = null);
+public enum PhotoScope { All, Album, Favorites, Recent }
+public static class SupportedFormats
+{
+    // Only codecs shipped with Windows WIC; optional/gain-map codecs are not advertised.
+    public static readonly string[] Extensions = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".jxr", ".wdp", ".hdp", ".ico"];
+    private static readonly HashSet<string> Set = new(Extensions, StringComparer.OrdinalIgnoreCase);
+    public static bool IsSupported(string path) => Set.Contains(System.IO.Path.GetExtension(path));
+    public static string Normalize(string path) => System.IO.Path.GetFullPath(path).TrimEnd(System.IO.Path.DirectorySeparatorChar);
+}

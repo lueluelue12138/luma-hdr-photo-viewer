@@ -1,0 +1,57 @@
+# Luma
+
+Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Direct3D 11 / WIC 负责解码与 FP16 scRGB 呈现，SQLite 保存图库索引。
+
+## 启动
+
+本机便携版：`C:\workspace\Luma\artifacts\Luma\Luma.App.exe`。整个文件夹必须一起保留，不能只复制 EXE。
+
+- 直接启动进入图库；导入文件夹建立相册，照片保留在原位置。
+- 将照片或文件夹拖入图库，或点击顶部的“打开照片”按钮。
+- 在“设置 → 在 Windows 中选择 Luma”中将便携版注册为可选图片查看器，由用户在 Windows 设置中选择默认格式。移动便携版后需再次注册。
+- `Luma.App.exe "D:\Photos\photo.jpg"` 直接打开照片，先解码当前照片，再列举同文件夹图片，不等待全图库扫描。
+- 本地数据位于 `%LOCALAPPDATA%\Luma`；数据库为 `library.db`，异常日志为 `luma.log`，NVIDIA 日志为 `ngx`。
+
+## 已实现
+
+浅色、深色及跟随系统；Mica 外壳、原生标题栏、Acrylic 悬浮工具栏；图库虚拟化、异步缩略图；递归导入、多文件夹相册、汇总图库、搜索、收藏、最近打开；相册重命名、封面、排序、刷新、变更监听及离线索引保留。从图库移除相册保留原文件。
+
+预览默认按比例完整适配，不裁切；缩放、平移、旋转、100%、全屏、邻图预读、过时解码取消、原图对照；浮层闲置淡出，鼠标移动及键盘操作时恢复。增强在后台准备，GPU 完成后由界面线程呈现。页面、卡片、缩放和浮层使用原生 Composition 动画，并遵循 Windows 关闭动画的设置。底部缩略图栏保持居中且有宽度上限。
+
+NVIDIA RTX™ Video SDK 1.1 的 TrueHDR 与 VSR 独立控制，VSR 默认关闭。仅 HDR 不创建或执行 VSR。成功调用并在当前 HDR 屏幕上呈现后才显示“已生效”。结果缓存于当前照片的 GPU 纹理；原图对照不重复执行 AI。SDK 缺失或不兼容时可正常查看 SDR / 原生 HDR 图片。
+
+TrueHDR 输入为 sRGB RGB UNORM，输出直接使用 FP16 线性 scRGB，不经过 8-bit 图片控件。SDR 按 Windows SDR 白电平显示；HDR 中间灰默认匹配此亮度，避免固定 50 nits 造成明显变暗。“亮度与显示器”中可手动调整 SDK 中间灰及峰值参数。HDR 不保证所有区域更亮，暗部与整体色调由实际模型和参数决定。
+
+普通解码与 GPU 缩放不调用 VSR。HDR 没有固定 8K 门槛，7008×4672 已按完整分辨率通过真实 SDK 验证。CPU 单图解码约 256 MB 预算；每个预览窗口的 GPU 纹理预算为专用显存的四分之一、范围 256 MB–1 GB，超过预算时按比例处理。D3D11 纹理轴上限为 16384。增强面板会说明资源预算造成的缩小或不可用。预算不包含 NVIDIA 模型及驱动自身分配，整个进程内存可能高于解码缓存预算。
+
+## 格式与当前限制
+
+JPEG、PNG、BMP、GIF、TIFF、JPEG XR（JXR/WDP/HDP）、ICO。GIF 与多页 TIFF 当前显示第一帧。原生 HDR 支持 WIC 浮点 scRGB JPEG XR，绕过 SDR→HDR 增强；HEIF/AVIF 增益图、RAW、动画播放及跨文件夹虚拟相册留待后续。超大图片按解码预算缩小后，100% 仍按原始尺寸布局，不能恢复已缩小的像素细节。
+
+显示器/HDR 状态变化和设备丢失已有检测与重建路径；换屏、休眠恢复及非 RTX 硬件的实机覆盖仍需扩展。HDR 截图可能出现 Windows 截图映射偏差，验证以 FP16 GPU 读回为准。
+
+## 构建与验证
+
+需要 .NET SDK 8.0.425、MSVC x64 C++ 工具和 Windows SDK（本机为 10.0.26100.0）。本机已装 .NET 在 `.tools/dotnet`，脚本优先使用该 SDK。WinUI 依赖 Windows App SDK 2.5.1。SDK 和工具不放入源代码仓库。
+
+```powershell
+.\scripts\Build.ps1                 # 原生核心 + WinUI Release
+.\scripts\Build.ps1 -Publish        # 自包含便携版 artifacts/Luma
+.\scripts\Verify.ps1                # 14 项图库检查 + WIC / D3D11 / RTX 检查
+.\scripts\Verify.ps1 -Photo "D:\Photos\large.jpg"
+.\scripts\Package.ps1 -SkipBuild    # 生成并验证未签名 MSIX
+```
+
+测试需要 Python 与 Pillow。`Generate-Assets.py` 可重新生成原创几何图标。NVIDIA SDK 按 [external/nvidia/README.md](external/nvidia/README.md) 放置；不放置也可构建，增强按钮会准确报告不可用。
+
+实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。界面检查后来被 Windows 锁屏中断，全屏等剩余项未声称已验证。
+
+MSIX 为 `artifacts/Luma_0.1.0.0_x64.msix`，包含实际支持格式的文件关联和开始菜单入口。本地包未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
+
+## 许可与发行
+
+Luma 原创代码及图标使用 MIT；第三方组件适用各自独立许可，详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。This software contains source code provided by NVIDIA Corporation.
+
+NVIDIA RTX™ Video SDK 提供 HDR 和 VSR 增强。NVIDIA SDK / DLL 没有重新授予 MIT 许可；本地输出附带 NVIDIA 原始许可。正式发行前仍需完成该许可的分发条件、通知与商标使用核对，以及名称/商标检查、MSIX 签名和商店验收。项目没有公开发布。
+
+Windows 默认应用集成依据 [Microsoft 默认程序注册文档](https://learn.microsoft.com/en-us/windows/win32/shell/default-programs)及[默认设置 URI 文档](https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-default-apps-settings)。scRGB SDR 白电平处理依据 [Microsoft Advanced Color 文档](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range)。

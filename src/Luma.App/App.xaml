@@ -1,0 +1,13 @@
+<Application x:Class="Luma.App.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <Application.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls"/></ResourceDictionary.MergedDictionaries>
+ <ResourceDictionary.ThemeDictionaries>
+  <ResourceDictionary x:Key="Light"><AcrylicBrush x:Key="FloatingBrush" TintColor="#F5F7FB" TintOpacity="0.78" TintLuminosityOpacity="0.9" FallbackColor="#F3F5F9"/></ResourceDictionary>
+  <ResourceDictionary x:Key="Dark"><AcrylicBrush x:Key="FloatingBrush" TintColor="#222731" TintOpacity="0.82" TintLuminosityOpacity="0.25" FallbackColor="#292D36"/></ResourceDictionary>
+  <ResourceDictionary x:Key="HighContrast"><SolidColorBrush x:Key="FloatingBrush" Color="{ThemeResource SystemColorWindowColor}"/></ResourceDictionary>
+ </ResourceDictionary.ThemeDictionaries>
+ <Style x:Key="ToolButton" TargetType="Button"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Width" Value="40"/><Setter Property="Height" Value="38"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="8"/></Style>
+ <Style x:Key="GlassFlyoutPresenter" TargetType="FlyoutPresenter"><Setter Property="Background" Value="{ThemeResource FloatingBrush}"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="18"/><Setter Property="BorderBrush" Value="#33FFFFFF"/><Setter Property="BorderThickness" Value="1"/></Style>
+ <FontFamily x:Key="ContentControlThemeFontFamily">Segoe UI</FontFamily>
+ <Style TargetType="TextBlock"><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="14"/></Style>
+ </ResourceDictionary></Application.Resources>
+</Application>
