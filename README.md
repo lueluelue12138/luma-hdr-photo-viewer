@@ -37,7 +37,7 @@ JPEG、PNG、BMP、GIF、TIFF、JPEG XR（JXR/WDP/HDP）、ICO。GIF 与多页 T
 ```powershell
 .\scripts\Build.ps1                 # 原生核心 + WinUI Release
 .\scripts\Build.ps1 -Publish        # 自包含便携版 artifacts/Luma
-.\scripts\Verify.ps1                # 14 项图库检查 + WIC / D3D11 / RTX 检查
+.\scripts\Verify.ps1                # 15 项图库检查 + WIC / D3D11 / RTX 检查
 .\scripts\Verify.ps1 -Photo "D:\Photos\large.jpg"
 .\scripts\Package.ps1 -SkipBuild    # 生成并验证未签名 MSIX
 ```

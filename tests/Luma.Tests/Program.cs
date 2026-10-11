@@ -4,6 +4,7 @@ Directory.CreateDirectory(root);var source=Path.Combine(root,"source");Directory
 await File.WriteAllTextAsync(Path.Combine(source,"one.JPG"),"fixture");await File.WriteAllTextAsync(Path.Combine(source,"child","two.png"),"fixture");await File.WriteAllTextAsync(Path.Combine(source,"ignored.txt"),"fixture");
 var store=new LibraryStore(Path.Combine(root,"library.db"));await store.InitializeAsync();using var indexer=new FolderIndexer(store);int checks=0;
 void Assert(bool condition,string name){if(!condition)throw new Exception("FAILED: "+name);checks++;Console.WriteLine("PASS: "+name);}
+Assert(new DirectoryInfo(SupportedFormats.Normalize(Path.GetPathRoot(root)!)).FullName==Path.GetPathRoot(root),"drive root stays absolute");
 long id=await store.AddFolderAsync(source);Assert(await store.AddFolderAsync(source)==id,"repeat import is idempotent");
 var album=(await store.AlbumsAsync()).Single();var scan=await indexer.RefreshAsync(album);Assert(scan.Added==2,"recursive supported format index");
 var photos=await store.PhotosAsync();Assert(photos.Count==2,"all photos indexed");var photo=photos[0];await store.ToggleFavoriteAsync(photo);await store.RecordOpenAsync(photo);

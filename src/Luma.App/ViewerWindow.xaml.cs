@@ -123,13 +123,13 @@ public sealed partial class ViewerWindow : Window
         try
         {
             var s=renderer.Status();bool photoReady=currentFrame is not null;bool busy=renderer.Busy||(!photoReady&&Loading.IsActive);updatingEnhancements=true;
-            HdrReasonText.Text=hdrRequested?s.HdrReason:s.HdrAvailable!=0?"TrueHDR 可用，未开启":s.HdrReason;
-            VsrReasonText.Text=vsrRequested?s.VsrMessage:s.VsrAvailable!=0?"VSR 可用，默认关闭":s.VsrMessage;
+            HdrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):hdrRequested?s.HdrReason:s.HdrAvailable!=0?"TrueHDR 可用，未开启":s.HdrReason;
+            VsrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):vsrRequested?s.VsrMessage:s.VsrAvailable!=0?"VSR 可用，默认关闭":s.VsrMessage;
             HdrSwitch.IsOn=hdrRequested;VsrSwitch.IsOn=vsrRequested;
-            HdrSwitch.IsEnabled=s.HdrAvailable!=0&&s.HdrActive!=0&&s.NativeHdr==0;
-            VsrSwitch.IsEnabled=s.VsrAvailable!=0&&s.NativeHdr==0;
-            HdrSwitch.OnContent=busy?"处理中":originalHeld?"查看原图":s.HdrEffective!=0?"已生效":"未生效";
-            VsrSwitch.OnContent=busy?"处理中":originalHeld?"查看原图":s.VsrEffective!=0?"已生效":"未生效";
+            HdrSwitch.IsEnabled=photoReady&&s.HdrAvailable!=0&&s.HdrActive!=0&&s.NativeHdr==0;
+            VsrSwitch.IsEnabled=photoReady&&s.VsrAvailable!=0&&s.NativeHdr==0;
+            HdrSwitch.OnContent=!photoReady?(Loading.IsActive?"加载中":"未生效"):busy?"处理中":originalHeld?"查看原图":s.HdrEffective!=0?"已生效":"未生效";
+            VsrSwitch.OnContent=!photoReady?(Loading.IsActive?"加载中":"未生效"):busy?"处理中":originalHeld?"查看原图":s.VsrEffective!=0?"已生效":"未生效";
             HdrSwitch.OffContent=HdrSwitch.IsEnabled?"已关闭":"不可用";
             VsrSwitch.OffContent=VsrSwitch.IsEnabled?"已关闭":"不可用";
             double peak=AutoPeakSwitch.IsOn?Math.Floor(Math.Clamp(s.MaxNits>=400?s.MaxNits:1000,400,2000)):PeakSlider.Value;
