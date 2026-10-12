@@ -14,6 +14,8 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 
 ## 已实现
 
+0.1.11 复用同一预览中尺寸/格式兼容的原图、SDK 输入和增强纹理，避免每张照片重复分配；每张新图仍更新输入并真正执行所请求的 HDR/VSR。透明度属性在解码时计算一次，缓存照片上传不再重复扫描所有像素。新 SDR、透明图片和原生 HDR 图片释放过时的 AI 图片缓冲。两轮原生流水线对照、大图细节、真实 SDK 像素及窗口生命周期验证见记录；首次模型/设备复用仍待优化。
+
 0.1.10 移除激活路径选择与预览窗口构造中的同步文件查询，避免慢磁盘在创建界面前阻塞；解码返回文件大小与修改时间，保持历史数据准确。文件已消失时预览显示该文件的错误。新增实际 SDR / HDR / VSR / 组合路径的首图与处理完成测量，见验证记录。
 
 0.1.9 继续优先优化性能：跨预览窗口共享有预算的解码缓存，前台/预读合并同一解码，关闭后重新打开可复用像素。未变化的图库刷新保留卡片和封面；快速滚动跳过离屏卡片的缩略图任务。照片与悬浮毛玻璃同帧呈现，绘制/Present 在后台，静态照片复用原生模糊结果。实际启动、内存、显存、长相册与 HDR/VSR 验证见 docs/VERIFICATION.md。
@@ -62,6 +64,8 @@ JPEG、PNG、BMP、GIF、TIFF、JPEG XR（JXR/WDP/HDP）、ICO。GIF 与多页 T
 .\scripts\Verify.ps1                # 24 项图库/激活检查 + WIC / D3D11 / RTX 检查
 .\scripts\Verify.ps1 -Photo "D:\Photos\large.jpg"
 python .\tests\benchmark_photos.py "D:\Photos\large.jpg"
+python .\tests\benchmark_textures.py "D:\Photos\large.jpg" --output artifacts\texture-run --expect-reuse
+python .\tests\verify_texture_transitions.py
 python .\tests\benchmark_startup.py "D:\Photos\large.jpg" --output artifacts\startup-run
 python .\tests\verify_viewer_lifecycle.py "D:\Photos\large.jpg" --runs 3
 python .\tests\verify_viewer_interaction.py "D:\Photos\large.jpg"
@@ -73,7 +77,7 @@ python .\tests\benchmark_decode.py "D:\Photos\large.jpg"
 
 实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。解锁后已补完全屏恢复、小窗口布局、收藏快捷键及系统注册检查；完整系统选择器交互、跨屏和休眠恢复仍需扩展验收。
 
-MSIX 为 `artifacts/Luma_0.1.10.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.10_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
+MSIX 为 `artifacts/Luma_0.1.11.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.11_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
 
 用户反馈、性能/体积优化和发行准备持续记录在 [待办清单](docs/TODO.md)，新增事项也统一写入此文档。
 
