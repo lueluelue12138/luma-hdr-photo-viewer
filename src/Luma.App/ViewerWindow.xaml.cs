@@ -68,6 +68,7 @@ public sealed partial class ViewerWindow : Window
     internal Task VerificationShowFrameAsync(DecodedFrame frame)=>renderer!.ShowAsync(frame,lifetime.Token);
     internal (double Zoom,double X,double Y) VerificationView=>(zoom,panX,panY);
     internal string? VerificationPhoto=>current?.Path;
+    internal bool VerificationErrorVisible=>ErrorPanel.Visibility==Visibility.Visible;
     internal FrameInfo? VerificationFrameInfo=>currentFrame?.Info;
     internal Task VerificationDetailAsync()=>EnsureFullResolutionAsync();
     internal void VerificationPan(double x,double y){panX=x;panY=y;UpdateView();}
@@ -133,7 +134,9 @@ public sealed partial class ViewerWindow : Window
         FileTitle.Text=System.IO.Path.GetFileName(initial);Title=$"{FileTitle.Text} — Luma";Loading.IsActive=true;Loading.Visibility=Visibility.Visible;StatusText.Text="正在加载照片…";
         // Prepare known gallery items before the first composed frame, rather
         // than growing a tiny empty filmstrip after GPU initialization.
-        var f=new FileInfo(initial);sequence=initialSequence?.ToList()??[new(initial,f.Name,f.Exists?f.Length:0,f.Exists?f.LastWriteTimeUtc.Ticks:0)];
+        // Placeholder metadata keeps slow/removable/network disk access out of
+        // window construction. The decode lease supplies the file's real stamp.
+        sequence=initialSequence?.ToList()??[new(initial,FileTitle.Text,0,0)];
         index=Math.Max(0,sequence.FindIndex(p=>string.Equals(p.Path,initial,StringComparison.OrdinalIgnoreCase)));
         selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=index;selecting=false;UpdatePosition();
         if(initialSequence is null){BottomPanel.Visibility=Visibility.Collapsed;siblingEnumeration=Task.Run(()=>FolderIndexer.Siblings(initial),lifetime.Token);}
@@ -169,7 +172,7 @@ public sealed partial class ViewerWindow : Window
     {
         // Enumeration runs alongside initialization and decoding, never gates the
         // selected photo. Reveal the filmstrip at its prepared size in one step.
-        try{var siblings=await siblingEnumeration!;if(closed)return;var path=current?.Path??initial;if(siblings.Count>0)sequence=siblings;index=Math.Max(0,sequence.FindIndex(p=>string.Equals(p.Path,path,StringComparison.OrdinalIgnoreCase)));selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=index;selecting=false;UpdatePosition();BottomPanel.Visibility=Visibility.Visible;if(currentFrame is not null)Prefetch();}
+        try{var siblings=await siblingEnumeration!;if(closed)return;var path=current?.Path??initial;if(siblings.Count>0){if(!siblings.Any(p=>string.Equals(p.Path,path,StringComparison.OrdinalIgnoreCase)))siblings.Insert(0,current??sequence[index]);sequence=siblings;}index=Math.Max(0,sequence.FindIndex(p=>string.Equals(p.Path,path,StringComparison.OrdinalIgnoreCase)));selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=index;selecting=false;UpdatePosition();BottomPanel.Visibility=Visibility.Visible;if(currentFrame is not null)Prefetch();}
         catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException){App.Log(ex.Message);if(!closed)BottomPanel.Visibility=Visibility.Visible;}
     }
     private async Task CreateRendererAsync(){renderer?.Dispose();renderer=null;glassMaterial=null;var next=await NativeRenderer.CreateAsync(Surface,WinRT.Interop.WindowNative.GetWindowHandle(this),lifetime.Token);if(closed){next.Dispose();return;}renderer=next;renderer.Faulted+=ex=>{if(renderer==next&&!closed)Recover(ex);};renderer.Presented+=()=>{if(renderer==next&&!closed){UpdateGlass();RefreshStatus(false);}};renderer.HoldOriginal(originalHeld);renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateGlass();App.Log("Viewer renderer attached");}
@@ -187,6 +190,7 @@ public sealed partial class ViewerWindow : Window
             // Keep a readable fallback until that composed frame is ready.
             UpdateGlass();
             try{await renderer!.ShowAsync(lease.Frame,token);if(closed||generation!=request){lease.Dispose();return;}}catch{lease.Dispose();throw;}
+            photo=photo with{Size=lease.SourceLength,Modified=lease.SourceModified};current=photo;
             currentLease?.Dispose();currentLease=lease;displayedRequest=generation;UpdateView();UpdateGlass();cache.Trim(photo.Path);Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;
             FirstFrameMilliseconds=timing.ElapsedMilliseconds;FirstFrameReady.TrySetResult();App.Log($"Photo first frame: {photo.Name}; {FirstFrameMilliseconds} ms; {lease.Frame.Info.Width}x{lease.Frame.Info.Height}; original {lease.Frame.Info.OriginalWidth}x{lease.Frame.Info.OriginalHeight}");
             Prefetch();await ApplyEffectsAsync();if(closed||generation!=request)return;

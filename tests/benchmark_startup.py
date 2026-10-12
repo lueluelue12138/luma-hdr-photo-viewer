@@ -17,17 +17,20 @@ for scenario in ['gallery','SDR','HDR']:
         start=time.perf_counter();proc=subprocess.Popen(cmd)
         while not (folder/'startup-ready.json').exists() and proc.poll() is None and time.perf_counter()-start<40:time.sleep(.02)
         external=(time.perf_counter()-start)*1000
-        gpu=None
+        gpu=None;external_modules=[]
         try:
-            capture=subprocess.run(['powershell','-NoProfile','-Command',f'Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUProcessMemory | Where-Object {{ $_.Name -like "pid_{proc.pid}_*" }} | Select-Object Name,DedicatedUsage,SharedUsage,TotalCommitted | ConvertTo-Json -Compress'],capture_output=True,text=True,timeout=15)
-            if capture.stdout.strip():gpu=json.loads(capture.stdout)
+            # Record the observed GamePP injector separately. Its native busy
+            # thread can dominate idle CPU even when Luma makes no new Presents.
+            capture=subprocess.run(['powershell','-NoProfile','-Command',f'$gpuRows=@(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUProcessMemory | Where-Object {{ $_.Name -like "pid_{proc.pid}_*" }} | Select-Object Name,DedicatedUsage,SharedUsage,TotalCommitted); $injected=@((Get-Process -Id {proc.pid} -ErrorAction SilentlyContinue).Modules | Where-Object {{ $_.ModuleName -match "^GPP.*[.]dll$" }} | Select-Object ModuleName,FileName); [pscustomobject]@{{gpu=$gpuRows;externalModules=$injected}} | ConvertTo-Json -Depth 4 -Compress'],capture_output=True,text=True,timeout=15)
+            if capture.stdout.strip():
+                counters=json.loads(capture.stdout);gpu=counters['gpu'];external_modules=counters['externalModules']
         except subprocess.TimeoutExpired:pass
         try:code=proc.wait(timeout=50)
         except subprocess.TimeoutExpired:proc.terminate();proc.wait(timeout=15);raise
         data=json.loads((folder/'startup.json').read_text(encoding='utf-8'));assert code==0 and data['complete'],data
         samples=data['results'];idle=next(r for r in samples if r['phase']=='idle-start');last=samples[-1]
         one_core=(last['cpuMilliseconds']-idle['cpuMilliseconds'])/(last['milliseconds']-idle['milliseconds'])*100
-        row={'scenario':scenario,'run':run+1,'executable':str(a.exe.resolve()),'externalReadyMilliseconds':external,'idleOneCorePercent':one_core,'gpuProcessCounters':gpu,**data}
+        row={'scenario':scenario,'run':run+1,'executable':str(a.exe.resolve()),'externalReadyMilliseconds':external,'idleOneCorePercent':one_core,'gpuProcessCounters':gpu,'observedExternalModules':external_modules,**data}
         results.append(row);print(scenario,run+1,f'ready {external:.0f} ms, idle {one_core:.2f}% of one core, working {last["workingBytes"]/1048576:.1f} MiB, private {last["privateBytes"]/1048576:.1f} MiB',flush=True)
         a.output.joinpath('startup-summary.json').write_text(json.dumps(results,indent=2),encoding='utf-8')
 print(a.output.resolve())

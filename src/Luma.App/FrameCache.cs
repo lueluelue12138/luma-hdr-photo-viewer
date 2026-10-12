@@ -35,7 +35,7 @@ internal sealed class FrameCache : IDisposable
         lock(sync)
         {
             ObjectDisposedException.ThrowIf(disposed,this);
-            if(frames.TryGetValue(key,out var hit)&&hit.Stamp==stamp){frames[key]=hit with{Used=++tick};hits++;return new(hit.Frame);}
+            if(frames.TryGetValue(key,out var hit)&&hit.Stamp==stamp){frames[key]=hit with{Used=++tick};hits++;return new(hit.Frame,stamp.Length,stamp.Modified);}
             if(!pending.TryGetValue(requestKey,out request!)){request=new(key,path,maxEdge,stamp);pending.Add(requestKey,request);start=true;}
             else if(!prefetch&&!request.Started&&!request.Promoted){request.Promoted=true;promote=true;}
             request.Consumers++;
@@ -47,7 +47,7 @@ internal sealed class FrameCache : IDisposable
         try
         {
             var frame=await request.Completion.Task.WaitAsync(token).ConfigureAwait(false);
-            lock(sync){token.ThrowIfCancellationRequested();return new(frame);}
+            lock(sync){token.ThrowIfCancellationRequested();return new(frame,stamp.Length,stamp.Modified);}
         }
         finally
         {

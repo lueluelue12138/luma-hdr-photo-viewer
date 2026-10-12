@@ -15,10 +15,12 @@ internal static class FrameCacheVerification
         try{using var unused=await abandoned;throw new InvalidOperationException("Cancelled consumer returned pixels");}catch(OperationCanceledException){}
         using var one=await first;using var two=await second;
         Check(cache.Metrics.Decodes==1&&one.Frame==two.Frame,"Foreground/prefetch must share one decode; cancelling one caller must preserve another");
+        Check(one.SourceLength==new FileInfo(path).Length&&one.SourceModified==File.GetLastWriteTimeUtc(path).Ticks,"Decode lease must retain accurate file metadata for the viewer/history");
         // Metadata changes invalidate a real cached image, including same-name edits.
         File.SetLastWriteTimeUtc(path,File.GetLastWriteTimeUtc(path).AddSeconds(5));
         using var updated=await cache.GetAsync(path,CancellationToken.None,2048);
         Check(cache.Metrics.Decodes==2&&updated.Frame!=one.Frame,"Modified file must decode fresh pixels");
+        Check(updated.SourceModified!=one.SourceModified,"Updated file stamp must follow fresh pixels");
         using(var evicting=new FrameCache(1,1))
         {
             using var lease=await evicting.GetAsync(path,CancellationToken.None,1024);

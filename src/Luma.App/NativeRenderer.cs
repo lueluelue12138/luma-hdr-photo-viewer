@@ -62,8 +62,10 @@ internal sealed class DecodedFrame : SafeHandle
 internal sealed class FrameLease : IDisposable
 {
     public DecodedFrame Frame {get;}
+    internal long SourceLength {get;}
+    internal long SourceModified {get;}
     private bool held;
-    public FrameLease(DecodedFrame frame){Frame=frame;frame.DangerousAddRef(ref held);}
+    public FrameLease(DecodedFrame frame,long sourceLength=0,long sourceModified=0){Frame=frame;SourceLength=sourceLength;SourceModified=sourceModified;frame.DangerousAddRef(ref held);}
     public void Dispose(){if(held){held=false;Frame.DangerousRelease();}}
 }
 internal sealed class NativeRenderer : IDisposable

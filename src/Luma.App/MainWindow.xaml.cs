@@ -82,7 +82,7 @@ public sealed partial class MainWindow : Window
         if(closed)return;
         Root.Loaded-=Loaded;await WindowLayout.RevealAsync(this,Root);if(closed)return;ThemeBox.SelectedIndex=Root.RequestedTheme switch{ElementTheme.Light=>1,ElementTheme.Dark=>2,_=>0};ready=true;Nav.SelectedItem=AlbumsItem;await ReloadAsync();VerificationReady.TrySetResult();
         var cli=Environment.GetCommandLineArgs();int import=Array.IndexOf(cli,"--import");
-        if(import>=0&&import+1<cli.Length&&Directory.Exists(cli[import+1]))await ImportAsync(cli[import+1]);
+        if(import>=0&&import+1<cli.Length&&await Task.Run(()=>Directory.Exists(cli[import+1])))await ImportAsync(cli[import+1]);
         else _=RefreshAllAsync();
     }
     private async Task ReloadAsync()

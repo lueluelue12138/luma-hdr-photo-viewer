@@ -14,6 +14,8 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 
 ## 已实现
 
+0.1.10 移除激活路径选择与预览窗口构造中的同步文件查询，避免慢磁盘在创建界面前阻塞；解码返回文件大小与修改时间，保持历史数据准确。文件已消失时预览显示该文件的错误。新增实际 SDR / HDR / VSR / 组合路径的首图与处理完成测量，见验证记录。
+
 0.1.9 继续优先优化性能：跨预览窗口共享有预算的解码缓存，前台/预读合并同一解码，关闭后重新打开可复用像素。未变化的图库刷新保留卡片和封面；快速滚动跳过离屏卡片的缩略图任务。照片与悬浮毛玻璃同帧呈现，绘制/Present 在后台，静态照片复用原生模糊结果。实际启动、内存、显存、长相册与 HDR/VSR 验证见 docs/VERIFICATION.md。
 
 按需引用原 SDK 的 WinUI、基础、交互与文字模块，移除未使用的 Windows ML、AI、搜索与 Widgets，保留自包含离线运行。发布到新目录再替换，避免旧依赖残留。文件/文件夹选取改用 Windows App SDK 的桌面原生选择器；实际导入、打开照片、取消与再次选择通过 Computer Use 验证。
@@ -57,8 +59,10 @@ JPEG、PNG、BMP、GIF、TIFF、JPEG XR（JXR/WDP/HDP）、ICO。GIF 与多页 T
 ```powershell
 .\scripts\Build.ps1                 # 原生核心 + WinUI Release
 .\scripts\Build.ps1 -Publish        # 自包含便携版 artifacts/Luma
-.\scripts\Verify.ps1                # 21 项图库检查 + WIC / D3D11 / RTX 检查
+.\scripts\Verify.ps1                # 24 项图库/激活检查 + WIC / D3D11 / RTX 检查
 .\scripts\Verify.ps1 -Photo "D:\Photos\large.jpg"
+python .\tests\benchmark_photos.py "D:\Photos\large.jpg"
+python .\tests\benchmark_startup.py "D:\Photos\large.jpg" --output artifacts\startup-run
 python .\tests\verify_viewer_lifecycle.py "D:\Photos\large.jpg" --runs 3
 python .\tests\verify_viewer_interaction.py "D:\Photos\large.jpg"
 python .\tests\benchmark_decode.py "D:\Photos\large.jpg"
@@ -69,7 +73,7 @@ python .\tests\benchmark_decode.py "D:\Photos\large.jpg"
 
 实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。解锁后已补完全屏恢复、小窗口布局、收藏快捷键及系统注册检查；完整系统选择器交互、跨屏和休眠恢复仍需扩展验收。
 
-MSIX 为 `artifacts/Luma_0.1.9.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.9_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
+MSIX 为 `artifacts/Luma_0.1.10.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.10_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
 
 用户反馈、性能/体积优化和发行准备持续记录在 [待办清单](docs/TODO.md)，新增事项也统一写入此文档。
 
