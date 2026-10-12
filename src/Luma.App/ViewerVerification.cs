@@ -50,11 +50,11 @@ internal static class ViewerVerification
             var cached=viewer.VerificationStatus;int jobs=viewer.VerificationWorkerJobs;var comparisonMs=new List<double>();
             for(int n=0;n<20;n++)
             {
-                var timer=Stopwatch.StartNew();viewer.VerificationOriginal(true);comparisonMs.Add(timer.Elapsed.TotalMilliseconds);
+                var timer=Stopwatch.StartNew();viewer.VerificationOriginal(true);comparisonMs.Add(timer.Elapsed.TotalMilliseconds);await viewer.VerificationPresentationAsync();
                 Check(viewer.VerificationStatus.HdrEffective==0&&viewer.VerificationStatus.VsrEffective==0,"Holding original must select original pixels immediately");
                 Check(!viewer.VerificationStatusText.Contains("正在处理"),"Cached comparison must not show enhancement processing");
                 for(int repeat=0;repeat<10;repeat++)viewer.VerificationOriginal(true);
-                timer.Restart();viewer.VerificationOriginal(false);comparisonMs.Add(timer.Elapsed.TotalMilliseconds);
+                timer.Restart();viewer.VerificationOriginal(false);comparisonMs.Add(timer.Elapsed.TotalMilliseconds);await viewer.VerificationPresentationAsync();
                 Check(viewer.VerificationStatus.HdrEffective!=0,"Releasing original must immediately restore cached HDR");
                 Check(!viewer.VerificationStatusText.Contains("正在处理"),"Cached restoration must not show enhancement processing");
             }
@@ -63,11 +63,11 @@ internal static class ViewerVerification
             results.Add(new{scenario="cached-original-comparison",switches=comparisonMs.Count,milliseconds=comparisonMs,additionalWorkerJobs=viewer.VerificationWorkerJobs-jobs,additionalHdrCalls=viewer.VerificationStatus.HdrEvaluations-cached.HdrEvaluations});
             viewer.VerificationOriginal(true);await viewer.VerificationSelectAsync(0);
             Check(viewer.VerificationStatus.HdrEffective==0,"Hold must survive new frame upload and background enhancement");
-            cached=viewer.VerificationStatus;jobs=viewer.VerificationWorkerJobs;viewer.VerificationOriginal(false);
+            cached=viewer.VerificationStatus;jobs=viewer.VerificationWorkerJobs;viewer.VerificationOriginal(false);await viewer.VerificationPresentationAsync();
             Check(viewer.VerificationStatus.HdrEffective!=0&&viewer.VerificationStatus.HdrEvaluations==cached.HdrEvaluations&&viewer.VerificationWorkerJobs==jobs,"HDR prepared while holding original must restore without recomputing");
             var loading=viewer.VerificationSelectAsync(1);await Task.Delay(25);viewer.VerificationOriginal(true);await loading;
             Check(viewer.VerificationStatus.HdrEffective==0,"Latest original hold must survive in-flight image and AI work");
-            viewer.VerificationOriginal(false);Check(viewer.VerificationStatus.HdrEffective!=0,"Release after in-flight work must restore HDR");
+            viewer.VerificationOriginal(false);await viewer.VerificationPresentationAsync();Check(viewer.VerificationStatus.HdrEffective!=0,"Release after in-flight work must restore HDR");
             results.Add(new{scenario="original-comparison-during-photo-processing"});
             idleViewer=new(path,photos,host);idleViewer.Activate();await idleViewer.VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));await idleViewer.VerificationEffectsAsync(true,false);
             results.Add(await host.VerificationGalleryAsync(Path.Combine(App.DataDirectory,"album-fixture")));
@@ -113,8 +113,8 @@ internal static class ViewerVerification
                 var baseline=viewer.VerificationStatus;Check(baseline.HdrEffective==0&&baseline.VsrEffective==0,"New windows must begin with original pixels");
                 await viewer.VerificationEffectsAsync(!vsr,vsr);var status=viewer.VerificationStatus;
                 Check(vsr?status.VsrEffective!=0&&status.HdrEvaluations==0:status.HdrEffective!=0&&status.VsrEvaluations==0,"Requested independent enhancement must really evaluate");
-                int jobs=viewer.VerificationWorkerJobs;viewer.VerificationOriginal(true);
-                Check(viewer.VerificationStatus.HdrEffective==0&&viewer.VerificationStatus.VsrEffective==0,"Original comparison must hide both enhancements");viewer.VerificationOriginal(false);
+                int jobs=viewer.VerificationWorkerJobs;viewer.VerificationOriginal(true);await viewer.VerificationPresentationAsync();
+                Check(viewer.VerificationStatus.HdrEffective==0&&viewer.VerificationStatus.VsrEffective==0,"Original comparison must hide both enhancements");viewer.VerificationOriginal(false);await viewer.VerificationPresentationAsync();
                 var restored=viewer.VerificationStatus;Check(restored.HdrEffective==status.HdrEffective&&restored.VsrEffective==status.VsrEffective&&restored.HdrEvaluations==status.HdrEvaluations&&restored.VsrEvaluations==status.VsrEvaluations&&viewer.VerificationWorkerJobs==jobs,"Independent HDR/VSR comparison must restore cached output without processing");
                 viewer.VerificationZoom(n%2==0?.65:1.25);await Task.Delay(80);
                 if(n%4==0){await viewer.VerificationPopupAsync();results.Add(new{scenario="expanded-popup-photo-glass"});}

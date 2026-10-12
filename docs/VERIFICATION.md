@@ -2,6 +2,28 @@
 
 验证日期：2026-10-12 至 2026-10-13。此记录描述开发版实际检查结果，不代表 Microsoft Store 认证。
 
+## 0.1.7 首帧毛玻璃与界面响应
+
+本轮只调整性能、资源调度和验证，没有新增产品功能。此前 ShowAsync 先呈现照片，UpdateGlass 才随后安装玻璃矩形，低优先级更新可能被正在执行的 SDK/上传任务延后；毛玻璃背景同时已经改成透明，造成明显的“先透明后模糊”。现在提前安装有效几何，照片上传与玻璃合成为同一次 Present；准备时保留中性可读底色，实际玻璃帧已提交后才清除底色。
+
+D3D 绘制、ResizeBuffers 与 DXGI Present 在后台执行，XAML 线程只记录最新视角/尺寸/玻璃请求。同一 immediate context 的命令顺序保证上传、mip、SDK 与绘制依赖，不再在每次操作后等待 GPU fence；SwapChainPanel 绑定/解除绑定仍在其 XAML 所属线程，访问与销毁继续串行保护。空格对照只选择缓存纹理，并在后台呈现，不触发解码、SDK 或新的增强任务。架构依据为微软的 [SwapChainPanel 文档](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.swapchainpanel?view=windows-app-sdk-1.8)及[界面线程响应指南](https://learn.microsoft.com/en-us/windows/apps/develop/performance/keep-ui-thread-responsive)。
+
+Direct2D 原生 GaussianBlur 保留 FP16 和预乘 alpha。先把输入降到约四分之一边长，再按比例设置模糊半径；静态场景复用其照片/模糊纹理，只在照片、视角、尺寸、显示白色或增强结果改变时重算，面板绘制限制在实际矩形内。着色器编译结果在进程内复用。图片解码、设备准备和首个 XAML 帧并行，避免串行等待。首次 HDR 仍需真正计算；未使用亮度滤镜代替 NVIDIA。
+
+真实 WinUI 性能报告 `artifacts/viewer-performance-20261013-011435/viewer-performance.json` 完整通过：首张和三次记住 HDR 后重新打开的第一张照片，UnfrostedPhotoPresents 均为 0，均有实际玻璃合成；三次新窗口创建至首图为 794、721、731 ms，不含整个应用冷启动。SDR 压力操作的界面回调延迟中位 0.44 ms、P95 6.77 ms、最大 29.15 ms；首次 HDR 处理同时操作时中位 0.39 ms、P95 2.00 ms、最大 28.32 ms。静态照片浮层隐藏/恢复共 13 次呈现，只重算 1 次模糊。该测量使用后台每 8 ms 向真实 XAML dispatcher 投递回调，并同时执行缩放、平移、显隐和 SDK；它衡量界面线程是否被阻塞，不是鼠标到物理屏幕的延迟。首次预览解码提前到 DisplayAsync 计时之外，不能把 FirstFrameMilliseconds 的 5–18 ms 当作完整新窗口加载时间。
+
+原生 CPU 提交基线 `artifacts/performance-0.1.6/render.json` 与优化后 `artifacts/performance-0.1.7/render.json`：4K 画布的面板更新中位约 0.77 → 0.07 ms，视角更新约 0.77 → 0.18 ms。此测试为无窗口的 D3D 画布，批次 GPU event 等待约 3.96 秒，无法解释成实际窗口帧率或屏幕响应提升；报告同时保留 CPU 提交与批次完成时间，最终体验以真实窗口测试为准。
+
+真实回归 `artifacts/viewer-interaction-20261013-011608/viewer-interaction.json`：预读翻图首帧中位 7 ms、最大 10 ms；混合缓存随机跳转中位 216.5 ms、最大 274 ms。40 次原图/HDR 输入调用中位 0.05 ms、最大 0.16 ms，每次随后等待真实后台呈现，新增增强任务与 AI 调用均为 0；此调用耗时不包括后台 Present 与显示刷新。图库 24 次尺寸更新到两次合成回调中位 61.2 ms、最大 293.1 ms，本次同时运行生命周期压力测试，不能作独占基准对比；快速拖动逐帧验证仍待办。
+
+最终 0.1.7 独立运行的交互报告 `artifacts/viewer-interaction-20261013-013247/viewer-interaction.json` 全部通过：预读首帧中位 5 ms、最大 6 ms；混合随机跳转中位 233.5 ms、最大 283 ms；40 次缓存对照输入调用中位 0.03 ms、最大 0.08 ms，随后等待每次实际呈现；24 次图库尺寸更新到两次合成回调中位 27.8 ms、最大 66.7 ms。源码 Release 构建为 0 警告、0 错误，自包含发布成功。另行编译并运行无 NVIDIA 的原生版本，SDK 状态为 0、调用计数为 0，SDR、原生 HDR、照片毛玻璃、透明度、ICC/EXIF 和按需初始化不可用状态检查通过。
+
+最终 0.1.7 独立性能报告 `artifacts/viewer-performance-20261013-013609/viewer-performance.json`：三个记住 HDR 的新窗口到首图为 488、448、502 ms，均无缺少玻璃的初始照片帧；SDR 的界面回调延迟中位 0.08 ms、P95 1.76 ms、最大 3.69 ms，HDR 处理期间为 0.08/1.38/2.85 ms。静态浮层 21 次呈现只构建一次模糊。保留前一轮数值以呈现负载差异，不把单次较好结果作为跨设备保证；此处记录的是回调与原生提交检查，仍不能替代高速操作的屏幕连续帧测量。
+
+收尾检查补充了 DPI 变化时的模糊缓存失效，以及取消照片上传时仍安装已消费的窗口尺寸/玻璃几何，防止后续照片遗漏表面更新。最终报告 `artifacts/viewer-interaction-20261013-014424/viewer-interaction.json`：预读首帧 5 ms 中位/7 ms 最大，混合随机跳转 230.5/314 ms，缓存对照输入 0.04/0.11 ms，图库尺寸到两次合成回调 31.5/56.5 ms；全部交互检查通过。性能报告 `artifacts/viewer-performance-20261013-014441/viewer-performance.json`：三次记住 HDR 的新窗口首图为 515/488/517 ms，首帧玻璃完整；SDR 回调中位/P95/最大为 0.36/1.03/2.37 ms，HDR 处理时为 0.33/1.01/1.66 ms；13 次浮层呈现只重算一次模糊。收尾后的原生 FP16、HDR/VSR、缓存对照与玻璃像素读回再次通过。
+
+生命周期报告 `artifacts/viewer-lifecycle-20261013-011558`：49 个真实预览窗口、两次启动通过，包括独立 HDR/VSR、组合模式、缓存对照、扩展弹窗真实照片毛玻璃、重叠请求、忙时关闭及偏好重启。原生 FP16 像素读回通过 SDR/原生 HDR、真实 TrueHDR-only（VSR 调用 0、亮部 12.656 > 1）、独立/组合 VSR、40 次像素一致的缓存对照、原图透明度、ICC/EXIF 和真实玻璃检查。
+
 ## 0.1.6 图库样式与空间利用
 
 图库操作按钮继承 WinUI 的 DefaultButtonStyle，恢复原生背景、边框、悬停与按下状态，圆角使用与排序控件相同的 ControlCornerRadius。此前独立 GalleryAction 未继承原生样式，圆角属性回到 0，导致直角轮廓。

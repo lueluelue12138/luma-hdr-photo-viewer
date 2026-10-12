@@ -17,6 +17,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <mutex>
+#include <tuple>
+#include <chrono>
+#include <map>
 #ifdef LUMA_NVIDIA
 #pragma warning(push)
 #pragma warning(disable:4100)
@@ -52,6 +55,12 @@ template<class F> HRESULT safe(F f) noexcept {try{ f(); lastError.clear(); retur
 struct FrameInfo {uint32_t width,height,originalWidth,originalHeight; int32_t nativeHdr,downsampled; uint64_t bytes;};
 struct Frame {FrameInfo info{}; std::vector<uint8_t> pixels;};
 struct Status { wchar_t gpu[128]; wchar_t display[128]; int32_t nvidia,hdrActive,fp16,nativeHdr; float maxNits,sdrWhite; uint64_t gpuBytes; int32_t hdrEffective,vsrEffective,sdkAvailable,hdrAvailable,vsrAvailable; uint32_t ngxResult,hdrEvaluations,vsrEvaluations; wchar_t hdrMessage[256],vsrMessage[256];};
+struct RenderMetrics {uint64_t presents{},photoPresents{},unfrostedPhotoPresents{},blurBuilds{};double lastDrawMilliseconds{};};
+ComPtr<ID3DBlob> compiledShader(const char* source,const char* entry,const char* profile){
+    static std::mutex mutex;static std::map<std::tuple<const char*,std::string,std::string>,ComPtr<ID3DBlob>> cache;
+    std::lock_guard lock(mutex);auto key=std::make_tuple(source,std::string(entry),std::string(profile));auto found=cache.find(key);if(found!=cache.end())return found->second;
+    ComPtr<ID3DBlob> code,error;check(D3DCompile(source,strlen(source),nullptr,nullptr,nullptr,entry,profile,D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&code,&error));cache.emplace(key,code);return code;
+}
 #include "Glass.h"
 
 std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0) {
@@ -151,6 +160,9 @@ struct Renderer {
 #endif
     uint32_t width=1,height=1,iw=1,ih=1,processWidth=1,processHeight=1;float zoom=1,panX=0,panY=0;int rotation=0;unsigned currentPreset=1,middleGrayOverride=0,peakOverride=0;Status status{};uint64_t textureBudget=1024ull*1024*1024;
     bool effectsInitialized=false;
+    RenderMetrics metrics{};
+    float cachedCompositionDpi=0;
+    std::tuple<ID3D11ShaderResourceView*,UINT,UINT,float,float,float,int,float,int,int,UINT,UINT> sceneStamp{};
     Renderer(IUnknown* p,HWND h,bool deferEffects=false):hwnd(h) {
         if(p)check(p->QueryInterface(IID_PPV_ARGS(&panel)));
         check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
@@ -160,9 +172,9 @@ struct Renderer {
         if(!adapter){ComPtr<IDXGIDevice> d;device.As(&d);ComPtr<IDXGIAdapter> a;d->GetAdapter(&a);a.As(&adapter);}
         DXGI_ADAPTER_DESC1 desc{};adapter->GetDesc1(&desc);wcsncpy_s(status.gpu,desc.Description,_TRUNCATE);status.nvidia=desc.VendorId==0x10de;
         textureBudget=std::clamp(uint64_t(desc.DedicatedVideoMemory)/4,256ull*1024*1024,1024ull*1024*1024);
-        ComPtr<ID3DBlob> v,pixel,err;check(D3DCompile(shader,strlen(shader),nullptr,nullptr,nullptr,"VS","vs_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&v,&err));check(D3DCompile(shader,strlen(shader),nullptr,nullptr,nullptr,"PS","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&pixel,&err));
+        auto v=compiledShader(shader,"VS","vs_5_0"),pixel=compiledShader(shader,"PS","ps_5_0");
         check(device->CreateVertexShader(v->GetBufferPointer(),v->GetBufferSize(),nullptr,&vs));check(device->CreatePixelShader(pixel->GetBufferPointer(),pixel->GetBufferSize(),nullptr,&ps));
-        ComPtr<ID3DBlob> input;check(D3DCompile(shader,strlen(shader),nullptr,nullptr,nullptr,"PSInput","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&input,&err));check(device->CreatePixelShader(input->GetBufferPointer(),input->GetBufferSize(),nullptr,&inputPs));
+        auto input=compiledShader(shader,"PSInput","ps_5_0");check(device->CreatePixelShader(input->GetBufferPointer(),input->GetBufferSize(),nullptr,&inputPs));
         D3D11_BUFFER_DESC cb{};cb.ByteWidth=32;cb.Usage=D3D11_USAGE_DEFAULT;cb.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(device->CreateBuffer(&cb,nullptr,&constants));
         D3D11_SAMPLER_DESC sd{};sd.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sd.AddressU=sd.AddressV=sd.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sd.MaxLOD=D3D11_FLOAT32_MAX;check(device->CreateSamplerState(&sd,&sampler));
         glass=std::make_unique<GlassRenderer>(device.Get());
@@ -246,7 +258,7 @@ struct Renderer {
         for(auto texture:{originalTexture.Get(),sdkInput.Get(),hdrTexture.Get(),vsrTexture.Get()}){if(!texture)continue;D3D11_TEXTURE2D_DESC d{};texture->GetDesc(&d);UINT w=d.Width,h=d.Height;unsigned bpp=d.Format==DXGI_FORMAT_R32G32B32A32_FLOAT?16:d.Format==DXGI_FORMAT_R16G16B16A16_FLOAT?8:4;for(UINT i=0;i<d.MipLevels;i++){bytes+=uint64_t(w)*h*bpp;w=std::max(1u,w/2);h=std::max(1u,h/2);}}
         if(glass)bytes+=glass->bytes();status.gpuBytes=bytes;
     }
-    void use(Frame& f){context->ClearState();zoom=1;panX=panY=0;rotation=0;D3D11_TEXTURE2D_DESC d{};d.Width=f.info.width;d.Height=f.info.height;d.MipLevels=0;d.ArraySize=1;d.Format=f.info.nativeHdr?DXGI_FORMAT_R32G32B32A32_FLOAT:DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;d.MiscFlags=D3D11_RESOURCE_MISC_GENERATE_MIPS;
+    void use(Frame& f){context->ClearState();sceneStamp={};zoom=1;panX=panY=0;rotation=0;D3D11_TEXTURE2D_DESC d{};d.Width=f.info.width;d.Height=f.info.height;d.MipLevels=0;d.ArraySize=1;d.Format=f.info.nativeHdr?DXGI_FORMAT_R32G32B32A32_FLOAT:DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;d.MiscFlags=D3D11_RESOURCE_MISC_GENERATE_MIPS;
         ComPtr<ID3D11Texture2D> tex;check(device->CreateTexture2D(&d,nullptr,&tex));context->UpdateSubresource(tex.Get(),0,nullptr,f.pixels.data(),f.info.width*(f.info.nativeHdr?16:4),0);ComPtr<ID3D11ShaderResourceView> view;check(device->CreateShaderResourceView(tex.Get(),nullptr,&view));context->GenerateMips(view.Get());originalTexture=tex;originalView=view;image=view;iw=f.info.width;ih=f.info.height;status.nativeHdr=f.info.nativeHdr;
         hdrCached=vsrCached=false;hdrView.Reset();vsrView.Reset();hdrTexture.Reset();vsrTexture.Reset();sdkInput.Reset();selectImage();
         if(status.sdkAvailable){status.hdrAvailable=hdrCapability;status.vsrAvailable=vsrCapability;wcscpy_s(status.hdrMessage,status.hdrAvailable?L"TrueHDR 可用，尚未开启":L"TrueHDR 不可用");wcscpy_s(status.vsrMessage,status.vsrAvailable?L"VSR 可用，默认关闭":L"VSR 不可用");}
@@ -301,12 +313,17 @@ struct Renderer {
 #endif
         selectImage();updateMemory();if(present)draw();
     }
-    void draw(){context->ClearState();bool frosted=glass&&glass->enabled();if(frosted)glass->ensure(width,height);const float clear[]={0,0,0,0};auto t=frosted?glass->sceneTarget.Get():target.Get();context->ClearRenderTargetView(t,clear);context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT vp{0,0,float(width),float(height),0,1};context->RSSetViewports(1,&vp);
+    void draw(){auto started=std::chrono::steady_clock::now();context->ClearState();bool frosted=glass&&glass->enabled();if(frosted)glass->ensure(width,height);
+        auto nextStamp=std::make_tuple(image.Get(),width,height,zoom,panX,panY,rotation,status.sdrWhite,int(status.nativeHdr||status.hdrEffective),status.vsrEffective,status.hdrEvaluations,status.vsrEvaluations);
+        bool refresh=!frosted||!glass->blurReady||sceneStamp!=nextStamp||cachedCompositionDpi!=compositionDpi;cachedCompositionDpi=compositionDpi;
+        if(refresh){const float clear[]={0,0,0,0};auto t=frosted?glass->sceneTarget.Get():target.Get();context->ClearRenderTargetView(t,clear);context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT vp{0,0,float(width),float(height),0,1};context->RSSetViewports(1,&vp);
         if(image){float w=float(rotation%2?ih:iw),h=float(rotation%2?iw:ih);float fit=std::min(width/w,height/h);
             float values[]={w*fit*zoom/width,h*fit*zoom/height,2*panX/width,-2*panY/height,status.sdrWhite,float(status.nativeHdr||status.hdrEffective),float(rotation),float(status.vsrEffective&&!status.hdrEffective)};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
             context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(ps.Get(),nullptr,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->PSSetConstantBuffers(0,1,&c);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);auto i=image.Get();context->PSSetShaderResources(0,1,&i);context->Draw(6,0);}
-        if(frosted)glass->composite(context.Get(),target.Get(),sampler.Get(),status.sdrWhite,compositionDpi);
+        }if(frosted)sceneStamp=nextStamp;else sceneStamp={};
+        if(frosted)glass->composite(context.Get(),target.Get(),sampler.Get(),status.sdrWhite,compositionDpi,refresh);
         if(swap)check(swap->Present(1,0));else context->Flush();
+        metrics.presents++;if(image){metrics.photoPresents++;if(!frosted)metrics.unfrostedPhotoPresents++;}metrics.blurBuilds=glass?glass->blurBuilds:0;metrics.lastDrawMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
     }
 };
 #define API extern "C" __declspec(dllexport)
@@ -333,7 +350,8 @@ API HRESULT __cdecl LumaStatus(void* r,Status* result){if(!r||!result)return E_P
 API HRESULT __cdecl LumaPeekStatus(void* r,Status* result){if(!r||!result)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.probe(false);x.updateMemory();*result=x.status;});}
 API HRESULT __cdecl LumaProbeDisplay(void* r,Status* result){if(!r||!result)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.probe(false,false);x.updateMemory();*result=x.status;});}
 API HRESULT __cdecl LumaCopyStatus(void* r,Status* result){if(!r||!result)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.updateMemory();*result=x.status;});}
-API HRESULT __cdecl LumaWaitForGpu(void* r){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);D3D11_QUERY_DESC desc{D3D11_QUERY_EVENT,0};ComPtr<ID3D11Query> done;check(x.device->CreateQuery(&desc,&done));x.context->End(done.Get());x.context->Flush();HRESULT hr;while((hr=x.context->GetData(done.Get(),nullptr,0,D3D11_ASYNC_GETDATA_DONOTFLUSH))==S_FALSE){check(x.device->GetDeviceRemovedReason());Sleep(2);}check(hr);});}
+API HRESULT __cdecl LumaGetRenderMetrics(void* r,RenderMetrics* result){if(!r||!result)return E_POINTER;*result=static_cast<Renderer*>(r)->metrics;return S_OK;}
+API HRESULT __cdecl LumaWaitForGpu(void* r){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);D3D11_QUERY_DESC desc{D3D11_QUERY_EVENT,0};ComPtr<ID3D11Query> done;check(x.device->CreateQuery(&desc,&done));x.context->End(done.Get());x.context->Flush();BOOL complete=FALSE;auto started=GetTickCount64();while(!complete){HRESULT hr=x.context->GetData(done.Get(),&complete,sizeof(complete),D3D11_ASYNC_GETDATA_DONOTFLUSH);check(hr);if(hr==S_OK&&complete)break;check(x.device->GetDeviceRemovedReason());if(GetTickCount64()-started>10000)throw Failure{HRESULT_FROM_WIN32(ERROR_TIMEOUT)};Sleep(1);}});}
 API HRESULT __cdecl LumaEffects(void* r,int hdr,int vsr,int original,UINT preset){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->effects(hdr!=0,vsr!=0,original!=0,std::min(preset,2u));});}
 API HRESULT __cdecl LumaPrepareEffects(void* r,int hdr,int vsr,int original,UINT preset){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);bool held=x.holdOriginal;try{x.effects(hdr!=0,vsr!=0,original!=0,std::min(preset,2u),false);}catch(...){x.holdOriginal=held;x.selectImage();throw;}x.holdOriginal=held;x.selectImage();});}
 // Presentation-only comparison. Keep the requested mode and all cached outputs;

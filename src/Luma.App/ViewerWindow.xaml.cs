@@ -38,7 +38,8 @@ public sealed partial class ViewerWindow : Window
     private double chromeOpacity=1,chromeStart=1,chromeTarget=1;private DateTime chromeStarted;
     private readonly Windows.UI.ViewManagement.UISettings uiSettings=new();
     private readonly Windows.UI.ViewManagement.AccessibilitySettings accessibilitySettings=new();
-    private (bool Effects,bool Contrast,ElementTheme Theme)? glassMaterial;
+    private (bool Effects,bool Contrast,ElementTheme Theme,bool Ready)? glassMaterial;
+    private bool glassUpdateScheduled;
     private readonly Dictionary<FrameworkElement,PopupMaterial> popupMaterials=new();
     private int popupGlassSnapshots;
     private sealed record PopupMaterial(GlassRect Rect,bool Dark,NativeRenderer Renderer,int Photo,double Zoom,double X,double Y,int Rotation,int Hdr,int Vsr,uint HdrCalls,uint VsrCalls);
@@ -60,6 +61,8 @@ public sealed partial class ViewerWindow : Window
     private Task fullResolution=Task.CompletedTask;private int fullResolutionRequest;
     internal TaskCompletionSource FirstFrameReady {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal long FirstFrameMilliseconds {get;private set;}
+    internal RenderMetrics VerificationRenderMetrics=>renderer?.Metrics??default;
+    internal Task VerificationPresentationAsync()=>renderer?.PresentPendingAsync(lifetime.Token)??Task.CompletedTask;
     internal (double Zoom,double X,double Y) VerificationView=>(zoom,panX,panY);
     internal string? VerificationPhoto=>current?.Path;
     internal FrameInfo? VerificationFrameInfo=>currentFrame?.Info;
@@ -133,7 +136,7 @@ public sealed partial class ViewerWindow : Window
         if(initialSequence is null){BottomPanel.Visibility=Visibility.Collapsed;siblingEnumeration=Task.Run(()=>FolderIndexer.Siblings(initial),lifetime.Token);}
         WindowLayout.Configure(this,Root);
         chromeTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-chromeStarted).TotalMilliseconds/(chromeTarget>chromeStart?180:240),0,1);chromeOpacity=chromeStart+(chromeTarget-chromeStart)*(1-Math.Pow(1-t,3));ApplyChrome();if(t>=1)chromeTimer.Stop();};
-        foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.SizeChanged+=(_,_)=>UpdateGlass();Root.ActualThemeChanged+=(_,_)=>UpdateGlass();Root.LayoutUpdated+=(_,_)=>{UpdateFilmstripBar();UpdateGlass();};
+        foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.SizeChanged+=(_,_)=>ScheduleGlass();Root.ActualThemeChanged+=(_,_)=>ScheduleGlass();Root.LayoutUpdated+=(_,_)=>{if(filmstripScroller is null)UpdateFilmstripBar();ScheduleGlass();};
         viewTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-viewStarted).TotalMilliseconds/180,0,1);double ease=1-Math.Pow(1-t,3);renderedZoom=viewStartZoom+(zoom-viewStartZoom)*ease;renderedPanX=viewStartX+(panX-viewStartX)*ease;renderedPanY=viewStartY+(panY-viewStartY)*ease;try{renderer?.View(renderedZoom,renderedPanX,renderedPanY,rotation);}catch(COMException ex){viewTimer.Stop();Recover(ex);}if(t>=1)viewTimer.Stop();};
         WindowLayout.SizeForDpi(this,Root,1240,850,owner);AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
         idleTimer.Tick+=IdleTick;Closed+=(_,_)=>{closed=true;request++;lifetime.Cancel();loadingCancellation?.Cancel();VerificationReady.TrySetCanceled();idleTimer.Stop();viewTimer.Stop();chromeTimer.Stop();renderer?.Dispose();currentLease?.Dispose();cache.Dispose();};
@@ -143,12 +146,20 @@ public sealed partial class ViewerWindow : Window
     private async void SurfaceLoaded(object sender,RoutedEventArgs e)
     {
         if(closed)return;
-        Surface.Loaded-=SurfaceLoaded;App.Log("Viewer loaded");if(siblingEnumeration is not null)_=LoadSiblingsAsync();await WindowLayout.RevealAsync(this,Root);if(closed)return;
-        try{rendererInitialization=CreateRendererAsync();await rendererInitialization;}catch(OperationCanceledException){return;}catch(Exception ex){if(!closed){VerificationReady.TrySetException(ex);Fail(ex);}return;}
+        Surface.Loaded-=SurfaceLoaded;App.Log("Viewer loaded");if(siblingEnumeration is not null)_=LoadSiblingsAsync();
+        // Decode, build the render device and prepare the first XAML frame in
+        // parallel. Previously these three waits were added serially.
+        var firstDecode=PrimeInitialPhotoAsync();rendererInitialization=CreateRendererAsync();await WindowLayout.RevealAsync(this,Root);if(closed)return;
+        try{await Task.WhenAll(rendererInitialization,firstDecode);}catch(OperationCanceledException){return;}catch(Exception ex){if(!closed){VerificationReady.TrySetException(ex);Fail(ex);}return;}
         if(closed)return;
         idleTimer.Start();InputLayer.Focus(FocusState.Programmatic);
         await DisplayAsync(index);
         if(!closed)InputLayer.Focus(FocusState.Programmatic);
+    }
+    private async Task PrimeInitialPhotoAsync()
+    {
+        try{using var lease=await cache.GetAsync(initial,lifetime.Token,PreviewEdge);}
+        catch(Exception ex)when(ex is COMException or IOException or UnauthorizedAccessException){App.Log("Initial preview: "+ex.Message);}
     }
     private async Task LoadSiblingsAsync()
     {
@@ -157,16 +168,20 @@ public sealed partial class ViewerWindow : Window
         try{var siblings=await siblingEnumeration!;if(closed)return;var path=current?.Path??initial;if(siblings.Count>0)sequence=siblings;index=Math.Max(0,sequence.FindIndex(p=>string.Equals(p.Path,path,StringComparison.OrdinalIgnoreCase)));selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=index;selecting=false;UpdatePosition();BottomPanel.Visibility=Visibility.Visible;if(currentFrame is not null)Prefetch();}
         catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException){App.Log(ex.Message);if(!closed)BottomPanel.Visibility=Visibility.Visible;}
     }
-    private async Task CreateRendererAsync(){renderer?.Dispose();renderer=null;var next=await NativeRenderer.CreateAsync(Surface,WinRT.Interop.WindowNative.GetWindowHandle(this),lifetime.Token);if(closed){next.Dispose();return;}renderer=next;renderer.Faulted+=ex=>{if(renderer==next&&!closed)Recover(ex);};renderer.HoldOriginal(originalHeld);renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);App.Log("Viewer renderer attached");}
+    private async Task CreateRendererAsync(){renderer?.Dispose();renderer=null;glassMaterial=null;var next=await NativeRenderer.CreateAsync(Surface,WinRT.Interop.WindowNative.GetWindowHandle(this),lifetime.Token);if(closed){next.Dispose();return;}renderer=next;renderer.Faulted+=ex=>{if(renderer==next&&!closed)Recover(ex);};renderer.Presented+=()=>{if(renderer==next&&!closed){UpdateGlass();RefreshStatus(false);}};renderer.HoldOriginal(originalHeld);renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateGlass();App.Log("Viewer renderer attached");}
     private async Task DisplayAsync(int selected)
     {
         if(closed||sequence.Count==0||selected<0||selected>=sequence.Count)return;
+        if(renderer is null){index=selected;return;}
         index=selected;current=sequence[index];int generation=++request;enhancementCancellation?.Cancel();loadingCancellation?.Cancel();loadingCancellation?.Dispose();loadingCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=loadingCancellation.Token;
         var timing=Stopwatch.StartNew();uint previewEdge=PreviewEdge;
         viewTimer.Stop();zoom=1;panX=panY=0;rotation=0;FileTitle.Text=current.Name;Title=$"{current.Name} — Luma";ErrorPanel.Visibility=Visibility.Collapsed;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;_ = ShowLoadingAfterDelayAsync(generation,token);ShowControls();UpdatePosition();UpdateInfo();
         try
         {
             var photo=current;var lease=await cache.GetAsync(photo.Path,token,previewEdge);if(closed||generation!=request){lease.Dispose();return;}
+            // Install known panel geometry before the upload's first Present.
+            // Keep a readable fallback until that composed frame is ready.
+            UpdateGlass();
             try{await renderer!.ShowAsync(lease.Frame,token);if(closed||generation!=request){lease.Dispose();return;}}catch{lease.Dispose();throw;}
             currentLease?.Dispose();currentLease=lease;displayedRequest=generation;UpdateView();UpdateGlass();cache.Trim(photo.Path);Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;
             FirstFrameMilliseconds=timing.ElapsedMilliseconds;FirstFrameReady.TrySetResult();App.Log($"Photo first frame: {photo.Name}; {FirstFrameMilliseconds} ms; {lease.Frame.Info.Width}x{lease.Frame.Info.Height}; original {lease.Frame.Info.OriginalWidth}x{lease.Frame.Info.OriginalHeight}");
@@ -193,7 +208,7 @@ public sealed partial class ViewerWindow : Window
         try
         {
             var timer=Stopwatch.StartNew();lease=await cache.GetAsync(path,token,0,true);token.ThrowIfCancellationRequested();if(closed||generation!=request||active!=renderer)return;
-            await active.ShowAsync(lease.Frame,token);if(closed||generation!=request||active!=renderer)return;
+            UpdateGlass();await active.ShowAsync(lease.Frame,token,renderedZoom,renderedPanX,renderedPanY,rotation);if(closed||generation!=request||active!=renderer)return;
             currentLease?.Dispose();currentLease=lease;lease=null;UpdateView();UpdateGlass();cache.Trim(path);App.Log($"Photo full detail: {System.IO.Path.GetFileName(path)}; {timer.ElapsedMilliseconds} ms");
         }
         finally{lease?.Dispose();}
@@ -234,7 +249,7 @@ public sealed partial class ViewerWindow : Window
         // Direct file activation initially hides the list. Its Loaded event can
         // precede the ScrollViewer template, and the template can be replaced.
         // Rebind to the current visual tree after layout, without duplicate hooks.
-        var active=FindChild<ScrollViewer>(Filmstrip);
+        var active=filmstripScroller??FindChild<ScrollViewer>(Filmstrip);
         if(!ReferenceEquals(active,filmstripScroller))
         {
             if(filmstripScroller is not null){filmstripScroller.ViewChanged-=FilmstripViewChanged;filmstripScroller.SizeChanged-=FilmstripSizeChanged;}
@@ -389,7 +404,7 @@ public sealed partial class ViewerWindow : Window
                 if((hdrRequested&&support.HdrAvailable!=0&&support.HdrActive!=0)||(vsrRequested&&support.VsrAvailable!=0))await EnsureFullResolutionAsync().WaitAsync(token);
                 if(closed||generation!=request||active!=renderer)return;
             }
-            await active.EffectsAsync(hdrRequested,vsrRequested,preset,gray,peak,token);if(closed||generation!=request||active!=renderer||token.IsCancellationRequested)return;UpdateView();RefreshStatus();
+            await active.EffectsAsync(hdrRequested,vsrRequested,preset,gray,peak,token);if(closed||generation!=request||active!=renderer||token.IsCancellationRequested)return;UpdateView();await active.PresentPendingAsync(token);RefreshStatus();
         }
         catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(COMException ex){if(!closed&&generation==request)Recover(ex);}catch(Exception ex){App.Log(ex.ToString());if(!closed&&generation==request)RefreshStatus();}
     }
@@ -425,10 +440,10 @@ public sealed partial class ViewerWindow : Window
     }
     private void UpdateGlass()
     {
-        if(renderer is null||closed||currentFrame is null)return;
+        if(renderer is null||closed)return;
         bool effects=uiSettings.AdvancedEffectsEnabled&&!accessibilitySettings.HighContrast;
-        var material=(effects,accessibilitySettings.HighContrast,Root.ActualTheme);
-        if(glassMaterial!=material){glassMaterial=material;var fill=effects?Colors.Transparent:accessibilitySettings.HighContrast?uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background):Root.ActualTheme==ElementTheme.Dark?Color.FromArgb(255,40,40,40):Color.FromArgb(255,247,247,247);foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.Background=new SolidColorBrush(fill);}
+        bool ready=renderer.Metrics.BlurBuilds>0;var material=(effects,accessibilitySettings.HighContrast,Root.ActualTheme,ready);
+        if(glassMaterial!=material){glassMaterial=material;var fill=effects&&ready?Colors.Transparent:accessibilitySettings.HighContrast?uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background):Root.ActualTheme==ElementTheme.Dark?Color.FromArgb(255,40,40,40):Color.FromArgb(255,247,247,247);foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.Background=new SolidColorBrush(fill);}
         var rects=new List<GlassRect>();double dpi=Surface.CompositionScaleX;
         if(effects)foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})
         {
@@ -436,7 +451,7 @@ public sealed partial class ViewerWindow : Window
             if(panel.Visibility!=Visibility.Visible||panel.ActualWidth<=0||panel.ActualHeight<=0||opacity<.001)continue;
             var p=panel.TransformToVisual(Canvas).TransformPoint(new(0,0));rects.Add(new((float)(p.X*dpi),(float)(p.Y*dpi),(float)(panel.ActualWidth*dpi),(float)(panel.ActualHeight*dpi),(float)(panel.CornerRadius.TopLeft*dpi),(float)opacity));
         }
-        var popups=Root.XamlRoot is null?[]:VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot).ToArray();
+        var popups=Root.XamlRoot is null||(menuDepth==0&&popupMaterials.Count==0)?[]:VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot).ToArray();
         var children=popups.Select(p=>p.Child).OfType<FrameworkElement>().ToHashSet();foreach(var old in popupMaterials.Keys.Where(c=>!children.Contains(c)).ToArray())popupMaterials.Remove(old);
         foreach(var popup in popups)
         {
@@ -454,6 +469,11 @@ public sealed partial class ViewerWindow : Window
             catch(ArgumentException){PopupBackground(child,(Brush)Application.Current.Resources["FloatingBrush"]);}
         }
         try{renderer.Glass(rects.ToArray(),Root.ActualTheme==ElementTheme.Dark);}catch(COMException ex){Recover(ex);}
+    }
+    private void ScheduleGlass()
+    {
+        if(closed||glassUpdateScheduled)return;glassUpdateScheduled=true;
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,()=>{glassUpdateScheduled=false;UpdateGlass();});
     }
     private async void IdleTick(object? sender,object e)
     {
