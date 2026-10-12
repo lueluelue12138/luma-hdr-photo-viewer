@@ -3,13 +3,17 @@
     <OutputType>WinExe</OutputType><TargetFramework>net8.0-windows10.0.26100.0</TargetFramework><TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <UseWinUI>true</UseWinUI><WindowsPackageType>None</WindowsPackageType><ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\Luma.ico</ApplicationIcon>
-    <Product>Luma</Product><Title>Luma</Title><Description>Windows 原生图库和 HDR 图片查看器</Description><Company>Luma contributors</Company><Version>0.1.8</Version>
+    <Product>Luma</Product><Title>Luma</Title><Description>Windows 原生图库和 HDR 图片查看器</Description><Company>Luma contributors</Company><Version>0.1.9</Version>
     <Platforms>x64</Platforms><PlatformTarget>x64</PlatformTarget><RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained><SelfContained>true</SelfContained><WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
     <EnableMsixTooling>true</EnableMsixTooling><PublishReadyToRun>false</PublishReadyToRun>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <!-- Keep the same WinUI/Foundation binaries from the tested SDK 2.5.1,
+         without unused AI, Windows ML, Search, Widgets and Runtime metapackages. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.9" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.9" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.1.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
     <ProjectReference Include="..\Luma.Core\Luma.Core.csproj" />
     <Content Include="..\Luma.Native\bin\Luma.Native.dll" Link="Luma.Native.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

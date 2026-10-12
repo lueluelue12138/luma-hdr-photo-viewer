@@ -8,7 +8,7 @@ using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Windowing;
 using Windows.System;
-using Windows.Storage.Pickers;
+using Microsoft.Windows.Storage.Pickers;
 using Windows.UI;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -427,7 +427,7 @@ public sealed partial class ViewerWindow : Window
     private void RevealClick(object sender,RoutedEventArgs e){if(current is not null)Process.Start(new ProcessStartInfo("explorer.exe",$"/select,\"{current.Path}\""){UseShellExecute=true});}
     private async void OpenClick(object sender,RoutedEventArgs e)
     {
-        try{var picker=new FileOpenPicker();foreach(var ext in SupportedFormats.Extensions)picker.FileTypeFilter.Add(ext);WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));var f=await picker.PickSingleFileAsync();if(f is not null){new ViewerWindow(f.Path).Activate();Close();}}catch(Exception ex){Fail(ex);}
+        try{var picker=new FileOpenPicker(AppWindow.Id);foreach(var ext in SupportedFormats.Extensions)picker.FileTypeFilter.Add(ext);var f=await picker.PickSingleFileAsync();if(f is not null){new ViewerWindow(f.Path).Activate();Close();}}catch(Exception ex){Fail(ex);}
     }
     private void Fail(Exception ex){App.Log(ex.ToString());ErrorText.Text=ex.Message;ErrorPanel.Visibility=Visibility.Visible;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;ShowControls();}
     private void ShowControls(bool force=false){lastActivity=DateTime.UtcNow;if(force)manuallyHidden=false;if(manuallyHidden)return;if(!controlsVisible){controlsVisible=true;AnimateChrome(true);}}

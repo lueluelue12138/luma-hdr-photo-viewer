@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Windowing;
-using Windows.Storage.Pickers;
+using Microsoft.Windows.Storage.Pickers;
 using Windows.System;
 using Windows.UI;
 using System.Diagnostics;
@@ -124,7 +124,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            var picker=new FolderPicker();picker.FileTypeFilter.Add("*");WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));var folder=await picker.PickSingleFolderAsync();if(folder is not null)await ImportAsync(folder.Path);
+            var picker=new FolderPicker(AppWindow.Id);var folder=await picker.PickSingleFolderAsync();if(folder is not null)await ImportAsync(folder.Path);
         }catch(Exception ex){await ErrorAsync("无法导入文件夹",ex.Message);}
     }
     private async Task ImportAsync(string path)
@@ -185,7 +185,7 @@ public sealed partial class MainWindow : Window
     }
     private async void OpenPhotoClick(object sender,RoutedEventArgs e)
     {
-        try{var picker=new FileOpenPicker();foreach(var ext in SupportedFormats.Extensions)picker.FileTypeFilter.Add(ext);WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));var f=await picker.PickSingleFileAsync();if(f is not null)new ViewerWindow(f.Path,null,this).Activate();}catch(Exception ex){await ErrorAsync("无法打开照片",ex.Message);}
+        try{var picker=new FileOpenPicker(AppWindow.Id);foreach(var ext in SupportedFormats.Extensions)picker.FileTypeFilter.Add(ext);var f=await picker.PickSingleFileAsync();if(f is not null)new ViewerWindow(f.Path,null,this).Activate();}catch(Exception ex){await ErrorAsync("无法打开照片",ex.Message);}
     }
     private void DragOver(object sender,DragEventArgs e)
     {

@@ -5,7 +5,7 @@ Luma's MIT license applies to its original source and original geometric icon on
 | Component | Version | License / source |
 | --- | --- | --- |
 | .NET runtime and libraries | 8.0.31 runtime used by SDK 8.0.425 | MIT and bundled third-party notices; preserve runtime notices |
-| Microsoft.WindowsAppSDK | 2.5.1 | Microsoft package license and NOTICE.txt; bundled runtime components retain their own terms |
+| Windows App SDK components | WinUI 2.3.9, Foundation 2.3.12, InteractiveExperiences 2.1.9, DWrite 2.1.0, Base 2.0.4 (same component versions as SDK 2.5.1) | Microsoft package licenses and notices in `licenses`; bundled components retain their own terms |
 | Microsoft.Windows.SDK.BuildTools | 10.0.26100.9169 | Microsoft package SDK license; build dependency |
 | Microsoft.Data.Sqlite / Microsoft.Data.Sqlite.Core | 8.0.31 | MIT |
 | SQLitePCLRaw components | 2.1.12 | Apache-2.0 for managed wrappers; SQLite public domain; package native dependency notices apply |
