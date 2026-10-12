@@ -18,12 +18,14 @@ using Microsoft.UI.Xaml.Media.Imaging;
 namespace Luma.App;
 public sealed partial class ViewerWindow : Window
 {
-    private readonly FrameCache cache=new();private NativeRenderer? renderer;private FrameLease? currentLease;private int displayedRequest;private DecodedFrame? currentFrame=>current is not null&&displayedRequest==request?currentLease?.Frame:null;
+    private readonly FrameCache cache=FrameCache.Shared;private NativeRenderer? renderer;private FrameLease? currentLease;private int displayedRequest;private DecodedFrame? currentFrame=>current is not null&&displayedRequest==request?currentLease?.Frame:null;
     private List<Photo> sequence=[];private Photo? current;private int index,request,rotation;private bool closed,selecting,fullScreen,dragging,hover,originalHeld;
     private double zoom=1,panX,panY,startX,startY;private int menuDepth;private DateTime lastActivity=DateTime.UtcNow,keyboardUntil=DateTime.MinValue;
     private AppWindowPresenter? windowedPresenter;private Windows.Graphics.RectInt32 windowedBounds;private bool windowedMaximized;
     private CancellationTokenSource? loadingCancellation;private readonly CancellationTokenSource lifetime=new();
     private readonly DispatcherTimer idleTimer=new(){Interval=TimeSpan.FromMilliseconds(500)};
+    private readonly DispatcherTimer displayTimer=new(){Interval=TimeSpan.FromMilliseconds(120)};
+    private long lastDisplayProbe;private bool displayProbeRunning;
     private readonly string initial;private readonly IReadOnlyList<Photo>? initialSequence;private readonly Task<List<Photo>>? siblingEnumeration;private bool recovering;
     private bool hdrRequested,vsrRequested,updatingEnhancements;
     private bool controlsVisible=true,manuallyHidden,panMoved;
@@ -63,6 +65,7 @@ public sealed partial class ViewerWindow : Window
     internal long FirstFrameMilliseconds {get;private set;}
     internal RenderMetrics VerificationRenderMetrics=>renderer?.Metrics??default;
     internal Task VerificationPresentationAsync()=>renderer?.PresentPendingAsync(lifetime.Token)??Task.CompletedTask;
+    internal Task VerificationShowFrameAsync(DecodedFrame frame)=>renderer!.ShowAsync(frame,lifetime.Token);
     internal (double Zoom,double X,double Y) VerificationView=>(zoom,panX,panY);
     internal string? VerificationPhoto=>current?.Path;
     internal FrameInfo? VerificationFrameInfo=>currentFrame?.Info;
@@ -139,8 +142,9 @@ public sealed partial class ViewerWindow : Window
         foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.SizeChanged+=(_,_)=>ScheduleGlass();Root.ActualThemeChanged+=(_,_)=>ScheduleGlass();Root.LayoutUpdated+=(_,_)=>{if(filmstripScroller is null)UpdateFilmstripBar();ScheduleGlass();};
         viewTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-viewStarted).TotalMilliseconds/180,0,1);double ease=1-Math.Pow(1-t,3);renderedZoom=viewStartZoom+(zoom-viewStartZoom)*ease;renderedPanX=viewStartX+(panX-viewStartX)*ease;renderedPanY=viewStartY+(panY-viewStartY)*ease;try{renderer?.View(renderedZoom,renderedPanX,renderedPanY,rotation);}catch(COMException ex){viewTimer.Stop();Recover(ex);}if(t>=1)viewTimer.Stop();};
         WindowLayout.SizeForDpi(this,Root,1240,850,owner);AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
-        idleTimer.Tick+=IdleTick;Closed+=(_,_)=>{closed=true;request++;lifetime.Cancel();loadingCancellation?.Cancel();VerificationReady.TrySetCanceled();idleTimer.Stop();viewTimer.Stop();chromeTimer.Stop();renderer?.Dispose();currentLease?.Dispose();cache.Dispose();};
-        AppWindow.Changed+=(_,args)=>{if(args.DidPositionChange)RefreshStatus();};Activated+=(_,args)=>{if(closed)return;if(args.WindowActivationState==WindowActivationState.Deactivated){dragging=false;InputLayer.ReleasePointerCaptures();SetOriginalHeld(false);}if(renderer is not null)RefreshStatus();};
+        displayTimer.Tick+=async(_,_)=>{displayTimer.Stop();await ProbeDisplayAsync(true);};
+        idleTimer.Tick+=IdleTick;Closed+=(_,_)=>{closed=true;request++;lifetime.Cancel();loadingCancellation?.Cancel();VerificationReady.TrySetCanceled();idleTimer.Stop();displayTimer.Stop();viewTimer.Stop();chromeTimer.Stop();renderer?.Dispose();currentLease?.Dispose();};
+        AppWindow.Changed+=(_,args)=>{if(args.DidPositionChange&&!closed){displayTimer.Stop();displayTimer.Start();}};Activated+=(_,args)=>{if(closed)return;if(args.WindowActivationState==WindowActivationState.Deactivated){dragging=false;InputLayer.ReleasePointerCaptures();SetOriginalHeld(false);}else if(renderer is not null)_=ProbeDisplayAsync(true);};
     }
     public void ApplyTheme(ElementTheme theme){if(!closed)Root.RequestedTheme=theme;}
     private async void SurfaceLoaded(object sender,RoutedEventArgs e)
@@ -477,12 +481,19 @@ public sealed partial class ViewerWindow : Window
     }
     private async void IdleTick(object? sender,object e)
     {
-        if(closed)return;UpdateGlass();
+        if(closed)return;
         if(menuDepth==0&&!hover&&!leftNavigationHover&&!rightNavigationHover&&!dragging&&!originalHeld&&InfoPanel.Visibility!=Visibility.Visible&&DateTime.UtcNow>=keyboardUntil&&DateTime.UtcNow-lastActivity>=TimeSpan.FromSeconds(3.5)&&controlsVisible){controlsVisible=false;AnimateChrome(false);}
         // DXGI/display configuration calls may wait on the driver. Keep this
         // polling off the shared XAML thread, including while gallery resizing.
-        try{if(renderer is {} active)await active.PollDisplayAsync();if(!closed)RefreshStatus(false);}
+        await ProbeDisplayAsync(false);
+    }
+    private async Task ProbeDisplayAsync(bool force)
+    {
+        if(closed||renderer is null||displayProbeRunning||(!force&&Stopwatch.GetElapsedTime(lastDisplayProbe).TotalSeconds<2))return;
+        displayProbeRunning=true;lastDisplayProbe=Stopwatch.GetTimestamp();
+        try{await renderer.PollDisplayAsync();if(!closed)RefreshStatus(false);}
         catch(COMException ex){if(!closed)Recover(ex);}
+        finally{displayProbeRunning=false;}
     }
     private void RootPointerMoved(object sender,PointerRoutedEventArgs e)=>ShowControls();
     private void PanelEntered(object sender,PointerRoutedEventArgs e){hover=true;ShowControls();}private void PanelExited(object sender,PointerRoutedEventArgs e){hover=false;lastActivity=DateTime.UtcNow;}

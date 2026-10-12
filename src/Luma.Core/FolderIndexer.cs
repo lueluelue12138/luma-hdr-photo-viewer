@@ -13,7 +13,7 @@ public sealed class FolderIndexer(LibraryStore store) : IDisposable
         await scanGate.WaitAsync(cancellation);
         try
         {
-            if (!Directory.Exists(album.Folder)) { Forget(album.Id);await store.ApplyScanAsync(album.Id, [], false, true); return new(album.Id,0,0,0,true); }
+            if (!await Task.Run(()=>Directory.Exists(album.Folder),cancellation)) { Forget(album.Id);await store.ApplyScanAsync(album.Id, [], false, true); return new(album.Id,0,0,0,true); }
             var old = (await store.PhotosAsync(PhotoScope.Album, album.Id)).ToDictionary(p=>p.Path,StringComparer.OrdinalIgnoreCase);
             var files = new List<Photo>(); string? error=null;
             await Task.Run(() =>

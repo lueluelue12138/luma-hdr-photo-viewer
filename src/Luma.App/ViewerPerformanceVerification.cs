@@ -56,6 +56,7 @@ internal static class ViewerPerformanceVerification
             var first=viewer.VerificationRenderMetrics;
             if(first.PhotoPresents==0||first.UnfrostedPhotoPresents!=0)throw new InvalidOperationException("The initial photo must be composed with its floating glass in the same Present");
             results.Add(new{scenario="first-photo-glass",viewer.FirstFrameMilliseconds,first.PhotoPresents,first.UnfrostedPhotoPresents,first.BlurBuilds});await viewer.VerificationReady.Task;
+            results.Add(await FrameCacheVerification.RunAsync(path,viewer));
             results.Add(await viewer.VerificationResponsivenessAsync(false));results.Add(await viewer.VerificationFadeCacheAsync());results.Add(await viewer.VerificationResponsivenessAsync(true));
             viewer.Close();await viewer.VerificationDisposeAsync();viewer=null;
             // Repeat the user's saved-HDR startup case, including real NGX work.

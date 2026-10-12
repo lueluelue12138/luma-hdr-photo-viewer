@@ -45,7 +45,7 @@
     <TextBlock Text="默认图片查看器" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="将 Luma 添加到开始菜单及可选图片查看器，在 Windows 设置中选择支持的图片格式。" TextWrapping="Wrap" LineHeight="21" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><Button Content="在 Windows 中选择 Luma" Click="DefaultAppsClick"/>
     <TextBlock Text="如果应用列表未显示 Luma，可在默认应用页面输入 .jpg、.png 等文件类型，再选择 Luma。" TextWrapping="Wrap" LineHeight="21" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
     <TextBlock Text="显示与增强" FontSize="18" FontWeight="SemiBold"/><TextBlock x:Name="EnvironmentText" Text="RTX HDR 可增强普通照片的高光与色彩，需要兼容的 NVIDIA RTX 显卡及开启 HDR 的显示器。&#xA;VSR 用于 AI 超分辨率，与 HDR 独立控制，默认关闭。&#xA;在照片顶部的“显示增强”面板中查看支持情况并调整效果。" TextWrapping="Wrap" LineHeight="21" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-    <TextBlock Text="关于 Luma" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Luma 0.1.7 · Windows 原生图库&#xA;支持 JPEG、PNG、BMP、GIF、TIFF、JPEG XR、ICO。&#xA;GIF / 多页 TIFF 当前显示第一帧；支持含线性 HDR 数据的 JPEG XR。" TextWrapping="Wrap" LineHeight="21" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+    <TextBlock Text="关于 Luma" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Luma 0.1.8 · Windows 原生图库&#xA;支持 JPEG、PNG、BMP、GIF、TIFF、JPEG XR、ICO。&#xA;GIF / 多页 TIFF 当前显示第一帧；支持含线性 HDR 数据的 JPEG XR。" TextWrapping="Wrap" LineHeight="21" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
     <TextBlock Text="This software contains source code provided by NVIDIA Corporation.&#xA;NVIDIA RTX™ Video SDK 组件及文档适用 NVIDIA 独立许可，应用目录中附有原文。" FontSize="12" TextWrapping="Wrap" LineHeight="21" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
     <Button Content="打开本地数据目录" Click="DataFolderClick"/>
    </StackPanel></ScrollViewer>

@@ -29,6 +29,10 @@ public sealed partial class MainWindow : Window
         Check(cover?.DisplayedPath is {} displayed&&!Path.GetFileName(displayed).StartsWith("000-"),"Corrupt default cover must fall back to a readable photograph");
         string removed=Path.Combine(folder,"photo-00.jpg");File.Delete(removed);await RefreshAllAsync();
         Check((await App.Store.PhotosAsync(PhotoScope.Album,id)).All(p=>p.Path!=removed&&!p.Name.StartsWith("._")),"Refresh button path must hide removed and metadata entries");
+        await Task.Delay(350);cover=AlbumsRepeat.TryGetElement(0) is {} refreshed?FindThumbnail(refreshed):null;var items=AlbumsRepeat.ItemsSource;var image=cover?.DisplayedPath;long loads=Thumbnail.ShellLoads;
+        await RefreshAllAsync();Check(ReferenceEquals(items,AlbumsRepeat.ItemsSource),"Unchanged refresh must preserve realized album cards");
+        Check(cover?.DisplayedPath==image,"Unchanged refresh must keep its loaded cover visible");
+        Check(Thumbnail.ShellLoads==loads,"Unchanged refresh must not reload Shell thumbnails");
         Nav.SelectedItem=Nav.MenuItems.OfType<NavigationViewItem>().First(n=>n.Tag is long album&&album==id);await ReloadAsync();await Task.Delay(700);
         var position=AppWindow.Position;var size=AppWindow.Size;var samples=new List<double>();
         for(int n=0;n<24;n++)
@@ -93,7 +97,7 @@ public sealed partial class MainWindow : Window
         if(page=="albums")
         {
             FolderText.Text="照片保留在原文件夹";
-            var filtered=albums.Where(a=>a.Name.Contains(Search.Text,StringComparison.CurrentCultureIgnoreCase)).ToList();AlbumsRepeat.ItemsSource=filtered;AlbumsRepeat.Visibility=Visibility.Visible;PhotosRepeat.Visibility=Visibility.Collapsed;PageTitle.Text="相册";CountText.Text=$"{filtered.Count} 个相册";EmptyState.Visibility=filtered.Count==0?Visibility.Visible:Visibility.Collapsed;SortBox.Visibility=Visibility.Collapsed;
+            var filtered=albums.Where(a=>a.Name.Contains(Search.Text,StringComparison.CurrentCultureIgnoreCase)).ToList();if(AlbumsRepeat.ItemsSource is not List<Album> displayed||!displayed.SequenceEqual(filtered))AlbumsRepeat.ItemsSource=filtered;AlbumsRepeat.Visibility=Visibility.Visible;PhotosRepeat.Visibility=Visibility.Collapsed;PageTitle.Text="相册";CountText.Text=$"{filtered.Count} 个相册";EmptyState.Visibility=filtered.Count==0?Visibility.Visible:Visibility.Collapsed;SortBox.Visibility=Visibility.Collapsed;
         }
         else
         {
@@ -133,11 +137,11 @@ public sealed partial class MainWindow : Window
     private async Task RefreshAllAsync(long onlyAlbum=0)
     {
         if(scanning||closed)return;scanning=true;ScanProgress.IsActive=true;ScanProgress.Visibility=Visibility.Visible;
-        try{foreach(var a in (await App.Store.AlbumsAsync()).Where(a=>onlyAlbum==0||a.Id==onlyAlbum)){ScanText.Text=$"正在刷新 {a.Name}…";var r=await App.Indexer.RefreshAsync(a,lifetime.Token);if(r.Error is not null)App.Log(r.Error);}if(!closed){ScanText.Text="";Thumbnail.ClearCache();await ReloadAsync();}}
+        try{foreach(var a in (await App.Store.AlbumsAsync()).Where(a=>onlyAlbum==0||a.Id==onlyAlbum)){ScanText.Text=$"正在刷新 {a.Name}…";var r=await App.Indexer.RefreshAsync(a,lifetime.Token);if(r.Added>0||r.Updated>0||r.Missing>0||r.Offline!=a.Offline)Thumbnail.InvalidateFolder(a.Folder);if(r.Error is not null)App.Log(r.Error);}if(!closed){ScanText.Text="";await ReloadAsync();}}
         catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.ToString());ScanText.Text="刷新失败，可稍后重试";}
         finally{scanning=false;ScanProgress.IsActive=false;ScanProgress.Visibility=Visibility.Collapsed;}
     }
-    private void FolderChanged(long id)=>DispatcherQueue.TryEnqueue(async()=>{if(closed)return;var a=albums.FirstOrDefault(a=>a.Id==id);if(a is null)return;try{var result=await App.Indexer.RefreshAsync(a,lifetime.Token);if(result.Added>0||result.Updated>0||result.Missing>0||result.Offline!=a.Offline){Thumbnail.ClearCache();await ReloadAsync();}}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}});
+    private void FolderChanged(long id)=>DispatcherQueue.TryEnqueue(async()=>{if(closed)return;var a=albums.FirstOrDefault(a=>a.Id==id);if(a is null)return;try{var result=await App.Indexer.RefreshAsync(a,lifetime.Token);if(result.Added>0||result.Updated>0||result.Missing>0||result.Offline!=a.Offline){Thumbnail.InvalidateFolder(a.Folder);await ReloadAsync();}}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}});
     private void RefreshClick(object sender,RoutedEventArgs e)=>_=RefreshAllAsync(page=="album"?albumId:0);
     private async void SortChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;sort=(SortBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"name";if(page=="album")await App.Store.SetAlbumAsync(albumId,sort:sort);await ReloadAsync();}
     private void AlbumClick(object sender,RoutedEventArgs e){if(((Button)sender).Tag is Album a){var nav=Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(n=>n.Tag is long id&&id==a.Id);Nav.SelectedItem=nav;}}
@@ -158,7 +162,7 @@ public sealed partial class MainWindow : Window
     {
         if(((Button)sender).Tag is not Album a)return;var menu=new MenuFlyout();
         Add(menu,"重命名相册",async()=>{var box=new TextBox{Text=a.Name,PlaceholderText="相册名称",MaxLength=120};var d=new ContentDialog{XamlRoot=Root.XamlRoot,Title="重命名相册",Content=box,PrimaryButtonText="保存",CloseButtonText="取消",DefaultButton=ContentDialogButton.Primary};if(await d.ShowAsync()==ContentDialogResult.Primary&&!string.IsNullOrWhiteSpace(box.Text)){await App.Store.SetAlbumAsync(a.Id,name:box.Text.Trim());await ReloadAsync();}});
-        Add(menu,"刷新",async()=>{await App.Indexer.RefreshAsync(a);Thumbnail.ClearCache();await ReloadAsync();});
+        Add(menu,"刷新",async()=>{var result=await App.Indexer.RefreshAsync(a);if(result.Added>0||result.Updated>0||result.Missing>0||result.Offline!=a.Offline)Thumbnail.InvalidateFolder(a.Folder);await ReloadAsync();});
         Add(menu,"在资源管理器中打开",()=>{OpenFolder(a.Folder);return Task.CompletedTask;});
         menu.Items.Add(new MenuFlyoutSeparator());Add(menu,"从图库移除（保留原文件）",async()=>{var d=new ContentDialog{XamlRoot=Root.XamlRoot,Title=$"移除“{a.Name}”？",Content="只移除相册索引，原始照片仍保留在文件夹中。",PrimaryButtonText="移除相册",CloseButtonText="取消"};if(await d.ShowAsync()==ContentDialogResult.Primary){App.Indexer.Forget(a.Id);await App.Store.RemoveAlbumAsync(a.Id);await ReloadAsync();}});menu.ShowAt((FrameworkElement)sender);e.Handled=true;
     }

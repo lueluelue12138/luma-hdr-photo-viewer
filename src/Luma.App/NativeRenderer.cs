@@ -66,48 +66,6 @@ internal sealed class FrameLease : IDisposable
     public FrameLease(DecodedFrame frame){Frame=frame;frame.DangerousAddRef(ref held);}
     public void Dispose(){if(held){held=false;Frame.DangerousRelease();}}
 }
-internal sealed class FrameCache : IDisposable
-{
-    private readonly SemaphoreSlim foreground=new(1),background=new(1);
-    private readonly Dictionary<string,(DecodedFrame Frame,long Modified,long Used)> frames=new(StringComparer.OrdinalIgnoreCase);
-    private long tick; private bool disposed;
-    private readonly object sync=new();
-    private const ulong Budget=256*1024*1024;
-    public async Task<FrameLease> GetAsync(string path,CancellationToken token,uint maxEdge=0,bool prefetch=false)
-    {
-        string key=path+"\0"+maxEdge;
-        long modified=File.GetLastWriteTimeUtc(path).Ticks;
-        lock(sync){if(disposed)throw new ObjectDisposedException(nameof(FrameCache));if(frames.TryGetValue(key,out var hit)&&hit.Modified==modified){frames[key]=(hit.Frame,modified,++tick);return new(hit.Frame);}}
-        var workers=prefetch?background:foreground;
-        await workers.WaitAsync(token);
-        DecodedFrame? decoded=null;
-        try
-        {
-            token.ThrowIfCancellationRequested();
-            lock(sync){if(frames.TryGetValue(key,out var hit)&&hit.Modified==modified)return new(hit.Frame);}
-            decoded=await Task.Run(()=>{Native.Check(Native.LumaDecodeSized(path,maxEdge,out var info,out var p));return new DecodedFrame(p,info);});
-            lock(sync)
-            {
-                if(disposed)throw new ObjectDisposedException(nameof(FrameCache));
-                if(frames.TryGetValue(key,out var hit)&&hit.Modified==modified){decoded.Dispose();decoded=null;return new(hit.Frame);}
-                if(frames.Remove(key,out var old))old.Frame.Dispose();
-                frames[key]=(decoded,modified,++tick);var result=new FrameLease(decoded);decoded=null;return result;
-            }
-        }
-        finally{decoded?.Dispose();workers.Release();}
-    }
-    // Called on the UI thread after use. Keep current image pinned while evicting prefetch.
-    public void Trim(string current)
-    {
-        lock(sync)
-        {
-            ulong total=0;foreach(var e in frames.Values)total+=e.Frame.Info.Bytes;
-            foreach(var e in frames.OrderBy(x=>x.Value.Used).ToList())
-            {if(total<=Budget&&frames.Count<=8)break;if(e.Key.StartsWith(current+"\0",StringComparison.OrdinalIgnoreCase))continue;frames.Remove(e.Key);total-=e.Value.Frame.Info.Bytes;e.Value.Frame.Dispose();}
-        }
-    }
-    public void Dispose(){lock(sync){disposed=true;foreach(var f in frames.Values)f.Frame.Dispose();frames.Clear();}}
-}
 internal sealed class NativeRenderer : IDisposable
 {
     private IntPtr handle;
