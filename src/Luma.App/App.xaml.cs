@@ -13,7 +13,7 @@ public partial class App : Application
     private static MainWindow? gallery;
     public static void RegisterGallery(MainWindow value){gallery=value;value.Closed+=(_,_)=>{if(gallery==value)gallery=null;};}
     public static void ShowGallery(){if(gallery is null)gallery=new MainWindow();gallery.Activate();}
-    public static ElementTheme Theme { get; internal set; } = ElementTheme.Light;
+    public static ElementTheme Theme { get; internal set; } = ElementTheme.Default;
     public App() { InitializeComponent(); UnhandledException+=(_,e)=>Log(e.Exception.ToString()); }
     public static void Log(string message)
     {
@@ -26,9 +26,13 @@ public partial class App : Application
         DataDirectory=test>=0&&test+1<cli.Length?Path.GetFullPath(cli[test+1]):Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Luma");
         try
         {
-            Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();
+            Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();await ViewerPreferences.LoadAsync();
             Log($"Launch {Environment.ProcessId}");
             string? file=cli.FirstOrDefault(p=>File.Exists(p)&&SupportedFormats.IsSupported(p));
+            if(test>=0&&cli.Contains("--verify-viewer-preferences"))
+            {
+                window=new MainWindow();window.Activate();await ViewerVerification.RunPreferencesAsync((MainWindow)window,file??throw new ArgumentException("Verification requires a photo"));return;
+            }
             if(test>=0&&cli.Contains("--verify-viewer-lifecycle"))
             {
                 window=new MainWindow();window.Activate();await ViewerVerification.RunAsync((MainWindow)window,file??throw new ArgumentException("Verification requires a photo"));return;
@@ -40,5 +44,5 @@ public partial class App : Application
         }
         catch(Exception e){Log(e.ToString());throw;}
     }
-    public static async Task<ElementTheme> ThemeAsync() => await Store.GetSettingAsync("theme") switch {null or "light"=>ElementTheme.Light,"dark"=>ElementTheme.Dark,_=>ElementTheme.Default};
+    public static async Task<ElementTheme> ThemeAsync() => await Store.GetSettingAsync("theme") switch {"light"=>ElementTheme.Light,"dark"=>ElementTheme.Dark,_=>ElementTheme.Default};
 }

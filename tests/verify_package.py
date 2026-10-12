@@ -1,8 +1,8 @@
 import pathlib, zipfile, hashlib, xml.etree.ElementTree as ET
 root=pathlib.Path(__file__).resolve().parents[1]
 payload=root/'artifacts/Luma'
-package=root/'artifacts/Luma_0.1.1.0_x64.msix'
-portable=root/'artifacts/Luma_0.1.1_x64.zip'
+package=root/'artifacts/Luma_0.1.2.0_x64.msix'
+portable=root/'artifacts/Luma_0.1.2_x64.zip'
 files=sorted(p for p in payload.rglob('*') if p.is_file())
 assert files and (payload/'Luma.App.exe').is_file()
 for p in files:
@@ -15,6 +15,8 @@ with zipfile.ZipFile(package) as z:
         assert rel in names,rel
         if rel!='AppxManifest.xml':assert z.read(names[rel])==p.read_bytes(),rel
     manifest=ET.fromstring(z.read(names['AppxManifest.xml']))
+    identity=next(n for n in manifest.iter() if n.tag.endswith('Identity'))
+    assert identity.attrib['Version']=='0.1.2.0',identity.attrib
     formats={n.text for n in manifest.iter() if n.tag.endswith('FileType')}
     assert formats=={'.jpg','.jpeg','.png','.bmp','.gif','.tif','.tiff','.jxr','.wdp','.hdp','.ico'},formats
 sdk=root/'external/nvidia/sdk'

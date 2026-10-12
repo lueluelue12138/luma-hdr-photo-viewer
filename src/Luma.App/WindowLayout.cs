@@ -37,7 +37,12 @@ internal static class WindowLayout
         finally{Microsoft.UI.Xaml.Media.CompositionTarget.Rendering-=Rendered;window.Closed-=Closed;}
         if(closed||root.XamlRoot is null||window.AppWindow is null)return;
         window.AppWindow.Hide();int cloak=0;DwmSetWindowAttribute(WinRT.Interop.WindowNative.GetWindowHandle(window),13,ref cloak,4);window.Activate();
-        App.Log($"Window revealed {window.Title}: {window.AppWindow.Size.Width}x{window.AppWindow.Size.Height}, composition frames {frames}");
+        if(Motion.Enabled)
+        {
+            string title=window.Title;var compositor=Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(root).Compositor;
+            var animation=compositor.CreateScopedBatch(Microsoft.UI.Composition.CompositionBatchTypes.Animation);animation.Completed+=(_,_)=>App.Log($"Native Composition entrance completed: {title}");Motion.Enter(root,8);animation.End();
+        }
+        App.Log($"Window revealed {window.Title}: {window.AppWindow.Size.Width}x{window.AppWindow.Size.Height}, composition frames {frames}, native Composition entrance {Motion.Enabled}, duration 260 ms");
     }
     public static void SizeForDpi(Window window,FrameworkElement root,int width,int height)
     {

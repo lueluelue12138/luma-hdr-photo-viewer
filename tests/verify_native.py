@@ -107,7 +107,14 @@ try:
         assert all(popup[n]==255 for n in range(3,len(popup),4)),'Popup background must occlude underlying XAML chrome'
         assert pixel(r,15,200)==outside,'Popup background readback must not change FP16 photo output'
         check(d.LumaSetGlass(r,rect,1,1));check(d.LumaRepaint(r));dark=pixel(r,90,200);assert sum(dark[:3])<sum(left[:3]),'Dark theme glass'
+        assert sum(dark[ch]*weight for ch,weight in enumerate((.2126,.7152,.0722)))<.05*s.sdrWhite,'Dark chrome must retain white-text contrast above a bright photo'
         rect[0].opacity=0;check(d.LumaSetGlass(r,rect,1,0));check(d.LumaRepaint(r));assert pixel(r,90,200)==red,'Hidden toolbar must reveal original pixels'
+        # A portrait/zoomed-out photograph leaves transparent margins. The glass
+        # must transition smoothly across that boundary, including blurred alpha.
+        rect[0].opacity=1;check(d.LumaSetGlass(r,rect,1,0));check(d.LumaView(r,.5,0,0,0));
+        edge=[pixel(r,x,200) for x in range(65,135)]
+        assert max(abs(a[ch]-b[ch]) for a,b in zip(edge,edge[1:]) for ch in range(3))<.08*s.sdrWhite,'Glass has a hard seam at the transparent photo boundary'
+        assert max(abs(edge[0][ch]-edge[-1][ch]) for ch in range(3))>.25,'Native Gaussian must retain a gradual photo/letterbox transition'
         check(d.LumaSetGlass(r,None,0,0));check(d.LumaRepaint(r))
         print(f'PASS: real photo-sampled FP16 glass, rounded panels, dark theme, untouched photo and fade; red {left}, blue {right}')
     finally:d.LumaFreeFrame(p)

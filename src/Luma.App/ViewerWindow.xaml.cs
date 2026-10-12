@@ -27,6 +27,10 @@ public sealed partial class ViewerWindow : Window
     private readonly string initial;private readonly IReadOnlyList<Photo>? initialSequence;private readonly Task<List<Photo>>? siblingEnumeration;private bool recovering;
     private bool hdrRequested,vsrRequested,updatingEnhancements;
     private bool controlsVisible=true;
+    private ScrollViewer? filmstripScroller;
+    private bool leftNavigationHover,rightNavigationHover;
+    private ViewerPreferences CapturePreferences()=>new(hdrRequested,vsrRequested,Math.Clamp(HdrPreset.SelectedIndex,0,2),AutoBrightnessSwitch.IsOn,AutoPeakSwitch.IsOn,(uint)MiddleGraySlider.Value,(uint)PeakSlider.Value);
+    private async Task SavePreferencesAsync(){try{await ViewerPreferences.UpdateAsync(CapturePreferences());}catch(Exception ex){App.Log("Save viewer preferences: "+ex.Message);}}
     private CancellationTokenSource? tuningCancellation,enhancementCancellation;
     private (int Hdr,float White,float Peak)? displayState;
     private readonly DispatcherTimer viewTimer=new(){Interval=TimeSpan.FromMilliseconds(16)};
@@ -57,6 +61,18 @@ public sealed partial class ViewerWindow : Window
     internal RenderStatus VerificationStatus=>renderer?.Status()??default;
     internal async Task VerificationEffectsAsync(bool hdr,bool vsr){hdrRequested=hdr;vsrRequested=vsr;await ApplyEffectsAsync();}
     internal Task VerificationSelectAsync(int selected)=>DisplayAsync(selected);
+    internal ViewerPreferences VerificationPreferences=>CapturePreferences();
+    internal async Task VerificationPersistAsync(bool hdr,bool vsr){hdrRequested=hdr;vsrRequested=vsr;await SavePreferencesAsync();await ApplyEffectsAsync();}
+    internal async Task VerificationScrollAsync()
+    {
+        // Initial selection can still have a queued BringIntoView after decoding.
+        // Wait for that initial layout before exercising a user's list scroll.
+        await Task.Delay(400);
+        if(filmstripScroller is null||filmstripScroller.ScrollableWidth<100||FilmstripBar.Maximum<100||!FilmstripBar.IsEnabled)throw new InvalidOperationException("Filmstrip needs a real horizontal scroll range and an enabled scrollbar");
+        int selected=index;double before=filmstripScroller.HorizontalOffset;bool scheduled=filmstripScroller.ChangeView(Math.Min(before+300,filmstripScroller.ScrollableWidth),null,null,false);await Task.Delay(700);
+        if(index!=selected||filmstripScroller.HorizontalOffset<=before+20)throw new InvalidOperationException($"Filmstrip scroll: index {selected}->{index}, offset {before}->{filmstripScroller.HorizontalOffset}, scheduled {scheduled}, range {filmstripScroller.ScrollableWidth}");
+        if(Math.Abs(FilmstripBar.Value-filmstripScroller.HorizontalOffset)>1)throw new InvalidOperationException("Native scrollbar did not track the list offset");
+    }
     internal void VerificationZoom(double value){zoom=value;UpdateView();ShowControls();}
     internal async Task VerificationPopupAsync()
     {
@@ -69,6 +85,9 @@ public sealed partial class ViewerWindow : Window
     public ViewerWindow(string path,IReadOnlyList<Photo>? photos=null)
     {
         initial=SupportedFormats.Normalize(path);initialSequence=photos;InitializeComponent();ExtendsContentIntoTitleBar=true;SetTitleBar(TitleDrag);SystemBackdrop=new DesktopAcrylicBackdrop();
+        var options=ViewerPreferences.Current;updatingEnhancements=true;hdrRequested=options.Hdr;vsrRequested=options.Vsr;HdrSwitch.IsOn=hdrRequested;VsrSwitch.IsOn=vsrRequested;HdrPreset.SelectedIndex=options.Preset;AutoBrightnessSwitch.IsOn=options.AutoBrightness;AutoPeakSwitch.IsOn=options.AutoPeak;MiddleGraySlider.Value=options.MiddleGray;PeakSlider.Value=options.Peak;MiddleGraySlider.IsEnabled=!options.AutoBrightness;PeakSlider.IsEnabled=!options.AutoPeak;updatingEnhancements=false;
+        Filmstrip.AddHandler(UIElement.PointerWheelChangedEvent,new PointerEventHandler(FilmstripWheel),true);
+        foreach(var button in new[]{PreviousButton,NextButton}){button.Opacity=1;ElementCompositionPreview.GetElementVisual(button).Opacity=0;}
         FileTitle.Text=System.IO.Path.GetFileName(initial);Title=$"{FileTitle.Text} — Luma";Loading.IsActive=true;Loading.Visibility=Visibility.Visible;StatusText.Text="正在加载照片…";
         // Prepare known gallery items before the first composed frame, rather
         // than growing a tiny empty filmstrip after GPU initialization.
@@ -78,7 +97,7 @@ public sealed partial class ViewerWindow : Window
         if(initialSequence is null){BottomPanel.Visibility=Visibility.Collapsed;siblingEnumeration=Task.Run(()=>FolderIndexer.Siblings(initial),lifetime.Token);}
         WindowLayout.Configure(this,Root);
         chromeTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-chromeStarted).TotalMilliseconds/(chromeTarget>chromeStart?180:240),0,1);chromeOpacity=chromeStart+(chromeTarget-chromeStart)*(1-Math.Pow(1-t,3));ApplyChrome();if(t>=1)chromeTimer.Stop();};
-        foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.SizeChanged+=(_,_)=>UpdateGlass();Root.ActualThemeChanged+=(_,_)=>UpdateGlass();Root.LayoutUpdated+=(_,_)=>UpdateGlass();
+        foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.SizeChanged+=(_,_)=>UpdateGlass();Root.ActualThemeChanged+=(_,_)=>UpdateGlass();Root.LayoutUpdated+=(_,_)=>{UpdateFilmstripBar();UpdateGlass();};
         viewTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-viewStarted).TotalMilliseconds/180,0,1);double ease=1-Math.Pow(1-t,3);renderedZoom=viewStartZoom+(zoom-viewStartZoom)*ease;renderedPanX=viewStartX+(panX-viewStartX)*ease;renderedPanY=viewStartY+(panY-viewStartY)*ease;try{renderer?.View(renderedZoom,renderedPanX,renderedPanY,rotation);}catch(COMException ex){viewTimer.Stop();Recover(ex);}if(t>=1)viewTimer.Stop();};
         WindowLayout.SizeForDpi(this,Root,1240,850);AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
         idleTimer.Tick+=IdleTick;Closed+=(_,_)=>{closed=true;request++;lifetime.Cancel();loadingCancellation?.Cancel();VerificationReady.TrySetCanceled();idleTimer.Stop();viewTimer.Stop();chromeTimer.Stop();renderer?.Dispose();currentLease?.Dispose();cache.Dispose();};
@@ -133,6 +152,57 @@ public sealed partial class ViewerWindow : Window
     private void Move(int delta){if(index+delta>=0&&index+delta<sequence.Count)_=DisplayAsync(index+delta);}
     private void PreviousClick(object sender,RoutedEventArgs e)=>Move(-1);
     private void NextClick(object sender,RoutedEventArgs e)=>Move(1);
+    private static T? FindChild<T>(DependencyObject parent)where T:DependencyObject
+    {
+        for(int n=0;n<VisualTreeHelper.GetChildrenCount(parent);n++){var child=VisualTreeHelper.GetChild(parent,n);if(child is T match)return match;if(FindChild<T>(child) is {} nested)return nested;}return null;
+    }
+    private void FilmstripLoaded(object sender,RoutedEventArgs e)
+    {
+        UpdateFilmstripBar();
+    }
+    private void FilmstripViewChanged(object? sender,ScrollViewerViewChangedEventArgs e)=>UpdateFilmstripBar();
+    private void FilmstripSizeChanged(object sender,SizeChangedEventArgs e)=>UpdateFilmstripBar();
+    private void UpdateFilmstripBar()
+    {
+        if(closed||Filmstrip.XamlRoot is null)return;
+        // Direct file activation initially hides the list. Its Loaded event can
+        // precede the ScrollViewer template, and the template can be replaced.
+        // Rebind to the current visual tree after layout, without duplicate hooks.
+        var active=FindChild<ScrollViewer>(Filmstrip);
+        if(!ReferenceEquals(active,filmstripScroller))
+        {
+            if(filmstripScroller is not null){filmstripScroller.ViewChanged-=FilmstripViewChanged;filmstripScroller.SizeChanged-=FilmstripSizeChanged;}
+            filmstripScroller=active;
+            if(active is not null){active.ViewChanged+=FilmstripViewChanged;active.SizeChanged+=FilmstripSizeChanged;}
+        }
+        if(filmstripScroller is null)return;
+        if(Math.Abs(FilmstripBar.Maximum-filmstripScroller.ScrollableWidth)>.01)FilmstripBar.Maximum=filmstripScroller.ScrollableWidth;
+        if(Math.Abs(FilmstripBar.ViewportSize-filmstripScroller.ViewportWidth)>.01)FilmstripBar.ViewportSize=filmstripScroller.ViewportWidth;
+        if(Math.Abs(FilmstripBar.Value-filmstripScroller.HorizontalOffset)>.01)FilmstripBar.Value=filmstripScroller.HorizontalOffset;
+        FilmstripBar.LargeChange=Math.Max(88,filmstripScroller.ViewportWidth*.8);FilmstripBar.SmallChange=96;FilmstripBar.IsEnabled=filmstripScroller.ScrollableWidth>0;
+    }
+    private void FilmstripBarScroll(object sender,Microsoft.UI.Xaml.Controls.Primitives.ScrollEventArgs e)
+    {
+        filmstripScroller?.ChangeView(e.NewValue,null,null,e.ScrollEventType==Microsoft.UI.Xaml.Controls.Primitives.ScrollEventType.ThumbTrack);ShowControls();
+    }
+    private void FilmstripWheel(object sender,PointerRoutedEventArgs e)
+    {
+        UpdateFilmstripBar();
+        if(filmstripScroller is null)return;
+        var point=e.GetCurrentPoint(Filmstrip);double delta=point.Properties.MouseWheelDelta;
+        if(point.Properties.IsHorizontalMouseWheel)delta=-delta;
+        filmstripScroller.ChangeView(Math.Clamp(filmstripScroller.HorizontalOffset-delta*1.8,0,filmstripScroller.ScrollableWidth),null,null,false);ShowControls();e.Handled=true;
+    }
+    private void NavigationEntered(object sender,PointerRoutedEventArgs e)
+    {
+        bool left=ReferenceEquals(sender,LeftNavigationZone);if(left)leftNavigationHover=true;else rightNavigationHover=true;
+        var button=left?PreviousButton:NextButton;Motion.Visibility(button,button.IsEnabled,0);ShowControls();
+    }
+    private void NavigationExited(object sender,PointerRoutedEventArgs e)
+    {
+        bool left=ReferenceEquals(sender,LeftNavigationZone);if(left)leftNavigationHover=false;else rightNavigationHover=false;
+        Motion.Visibility(left?PreviousButton:NextButton,false,0);
+    }
     private void UpdateView(bool animate=false)
     {
         try{viewTimer.Stop();if(animate&&Motion.Enabled){viewStartZoom=renderedZoom;viewStartX=renderedPanX;viewStartY=renderedPanY;viewStarted=DateTime.UtcNow;viewTimer.Start();}else{renderedZoom=zoom;renderedPanX=panX;renderedPanY=panY;renderer?.View(zoom,panX,panY,rotation);}var actual=PixelScale();FitButton.Content=Math.Abs(zoom-1)<0.001?"适合窗口":$"{actual*100:0}%";UpdateInfo();}catch(COMException ex){Recover(ex);}
@@ -178,7 +248,7 @@ public sealed partial class ViewerWindow : Window
         TitleRow.Height=new GridLength(fullScreen?0:44);ShowControls();InputLayer.Focus(FocusState.Programmatic);
     }
     private void BackClick(object sender,RoutedEventArgs e){App.ShowGallery();Close();}
-    private void SurfaceSizeChanged(object sender,SizeChangedEventArgs e){if(closed)return;EnhancementScroll.MaxHeight=Math.Max(160,Canvas.ActualHeight-116);ZoomOutButton.Visibility=ZoomInButton.Visibility=Canvas.ActualWidth<570?Visibility.Collapsed:Visibility.Visible;BottomPanel.MaxWidth=Math.Min(920,Math.Max(240,Canvas.ActualWidth-72));Filmstrip.MaxWidth=Math.Min(740,Math.Max(80,Canvas.ActualWidth-246));if(renderer is null)return;try{renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
+    private void SurfaceSizeChanged(object sender,SizeChangedEventArgs e){if(closed)return;EnhancementScroll.MaxHeight=Math.Max(160,Canvas.ActualHeight-116);ZoomOutButton.Visibility=ZoomInButton.Visibility=Canvas.ActualWidth<570?Visibility.Collapsed:Visibility.Visible;BottomPanel.MaxWidth=Math.Min(920,Math.Max(240,Canvas.ActualWidth-72));Filmstrip.MaxWidth=Math.Min(820,Math.Max(120,Canvas.ActualWidth-158));if(renderer is null)return;try{renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
     private void ScaleChanged(SwapChainPanel sender,object args){if(renderer is null||closed)return;try{renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
     private async void Recover(Exception reason)
     {
@@ -223,11 +293,11 @@ public sealed partial class ViewerWindow : Window
     private async void TuningChanged(object sender,RoutedEventArgs e)
     {
         if(renderer is null||updatingEnhancements)return;MiddleGraySlider.IsEnabled=!AutoBrightnessSwitch.IsOn;PeakSlider.IsEnabled=!AutoPeakSwitch.IsOn;tuningCancellation?.Cancel();tuningCancellation?.Dispose();tuningCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=tuningCancellation.Token;
-        try{await Task.Delay(220,token);if(!closed)ApplyEffects();}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}
+        try{await SavePreferencesAsync();await Task.Delay(220,token);if(!closed)ApplyEffects();}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}
     }
     private void TuningValueChanged(object sender,Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)=>TuningChanged(sender,new RoutedEventArgs());
-    private void EnhancementToggled(object sender,RoutedEventArgs e){if(updatingEnhancements||renderer is null)return;hdrRequested=HdrSwitch.IsOn;vsrRequested=VsrSwitch.IsOn;try{ApplyEffects();}catch(Exception ex){App.Log(ex.Message);HdrReasonText.Text=ex.Message;RefreshStatus();}ShowControls();}
-    private void PresetChanged(object sender,SelectionChangedEventArgs e){if(renderer is null)return;try{ApplyEffects();}catch(Exception ex){App.Log(ex.Message);}}
+    private async void EnhancementToggled(object sender,RoutedEventArgs e){if(updatingEnhancements||renderer is null)return;hdrRequested=HdrSwitch.IsOn;vsrRequested=VsrSwitch.IsOn;await SavePreferencesAsync();if(closed)return;try{ApplyEffects();}catch(Exception ex){App.Log(ex.Message);HdrReasonText.Text=ex.Message;RefreshStatus();}ShowControls();}
+    private async void PresetChanged(object sender,SelectionChangedEventArgs e){if(renderer is null||updatingEnhancements)return;await SavePreferencesAsync();if(closed)return;try{ApplyEffects();}catch(Exception ex){App.Log(ex.Message);}}
     private void UpdateInfo(){if(current is null)return;var i=currentFrame?.Info;InfoText.Text=$"{current.Name}\n\n{(i is null?"":$"{i.Value.OriginalWidth} × {i.Value.OriginalHeight} 像素")}\n{current.Size/1048576.0:0.00} MB\n缩放 {PixelScale()*100:0}%\n旋转 {rotation*90}°\n{(i?.Downsampled==1?"大图已按内存预算缩小解码\n":"")}\n{current.Path}";}
     private void InfoClick(object sender,RoutedEventArgs e){InfoPanel.Visibility=InfoPanel.Visibility==Visibility.Visible?Visibility.Collapsed:Visibility.Visible;ShowControls();UpdateInfo();UpdateGlass();}
     private void CloseInfoClick(object sender,RoutedEventArgs e){InfoPanel.Visibility=Visibility.Collapsed;UpdateGlass();}
@@ -284,7 +354,7 @@ public sealed partial class ViewerWindow : Window
     private void IdleTick(object? sender,object e)
     {
         RefreshStatus();UpdateGlass();
-        if(menuDepth>0||hover||dragging||originalHeld||InfoPanel.Visibility==Visibility.Visible||DateTime.UtcNow<keyboardUntil||DateTime.UtcNow-lastActivity<TimeSpan.FromSeconds(3.5))return;
+        if(menuDepth>0||hover||leftNavigationHover||rightNavigationHover||dragging||originalHeld||InfoPanel.Visibility==Visibility.Visible||DateTime.UtcNow<keyboardUntil||DateTime.UtcNow-lastActivity<TimeSpan.FromSeconds(3.5))return;
         if(controlsVisible){controlsVisible=false;AnimateChrome(false);}
         // Poll display state without continuously processing the photo.
     }

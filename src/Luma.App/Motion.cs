@@ -13,7 +13,7 @@ internal static class Motion
         if(!Enabled)return;
         ElementCompositionPreview.SetIsTranslationEnabled(element,true);
         var visual=ElementCompositionPreview.GetElementVisual(element);
-        var fade=visual.Compositor.CreateScalarKeyFrameAnimation();fade.InsertKeyFrame(0,.25f);fade.InsertKeyFrame(1,1);fade.Duration=TimeSpan.FromMilliseconds(220);
+        var fade=visual.Compositor.CreateScalarKeyFrameAnimation();fade.InsertKeyFrame(0,0);fade.InsertKeyFrame(1,1);fade.Duration=TimeSpan.FromMilliseconds(260);
         var move=visual.Compositor.CreateVector3KeyFrameAnimation();move.InsertKeyFrame(0,new(0,distance,0));move.InsertKeyFrame(1,Vector3.Zero,visual.Compositor.CreateCubicBezierEasingFunction(new(.16f,1),new(.3f,1)));move.Duration=fade.Duration;
         visual.StartAnimation("Opacity",fade);visual.StartAnimation("Translation",move);
     }

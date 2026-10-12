@@ -4,6 +4,8 @@
 #include <d3d11.h>
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
+#include <d2d1_1.h>
+#include <d2d1effects.h>
 #include <wincodec.h>
 #include <wrl/client.h>
 #include <string>
@@ -32,6 +34,8 @@ std::mutex ngxMutex;
 #pragma comment(lib,"d3d11.lib")
 #pragma comment(lib,"dxgi.lib")
 #pragma comment(lib,"d3dcompiler.lib")
+#pragma comment(lib,"d2d1.lib")
+#pragma comment(lib,"dxguid.lib")
 #pragma comment(lib,"windowscodecs.lib")
 #pragma comment(lib,"ole32.lib")
 #pragma comment(lib,"user32.lib")
@@ -125,6 +129,7 @@ struct Renderer {
     ComPtr<ID3D11VertexShader> vs;ComPtr<ID3D11PixelShader> ps,inputPs;ComPtr<ID3D11Buffer> constants;ComPtr<ID3D11SamplerState> sampler;ComPtr<ID3D11ShaderResourceView> image,originalView,hdrView,vsrView;
     ComPtr<ID3D11Texture2D> originalTexture,sdkInput,hdrTexture,vsrTexture;bool requestedHdr=false,requestedVsr=false,holdOriginal=false,hdrCached=false,vsrCached=false;unsigned cachedPeak=0;int hdrCapability=0,vsrCapability=0;UINT vsrWidth=0,vsrHeight=0;
     std::unique_ptr<GlassRenderer> glass;
+    float compositionDpi=1;
 #ifdef LUMA_NVIDIA
     NVSDK_NGX_Parameter* hdrParams=nullptr;NVSDK_NGX_Parameter* vsrParams=nullptr;NVSDK_NGX_Handle* hdrFeature=nullptr;NVSDK_NGX_Handle* vsrFeature=nullptr;bool ngxInitialized=false;
 #endif
@@ -278,7 +283,7 @@ struct Renderer {
         if(image){float w=float(rotation%2?ih:iw),h=float(rotation%2?iw:ih);float fit=std::min(width/w,height/h);
             float values[]={w*fit*zoom/width,h*fit*zoom/height,2*panX/width,-2*panY/height,status.sdrWhite,float(status.nativeHdr||status.hdrEffective),float(rotation),float(status.vsrEffective&&!status.hdrEffective)};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
             context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(ps.Get(),nullptr,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->PSSetConstantBuffers(0,1,&c);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);auto i=image.Get();context->PSSetShaderResources(0,1,&i);context->Draw(6,0);}
-        if(frosted)glass->composite(context.Get(),target.Get(),sampler.Get(),status.sdrWhite);
+        if(frosted)glass->composite(context.Get(),target.Get(),sampler.Get(),status.sdrWhite,compositionDpi);
         if(swap)check(swap->Present(1,0));else context->Flush();
     }
 };
@@ -293,7 +298,7 @@ API HRESULT __cdecl LumaDetach(void* r){if(!r)return E_POINTER;return safe([&]{s
 API HRESULT __cdecl LumaSetGlass(void* r,const GlassRect* rects,UINT count,int dark){if(!r||count>8||(count&&!rects))return E_INVALIDARG;return safe([&]{auto& g=*static_cast<Renderer*>(r)->glass;g.rects.clear();if(count)g.rects.assign(rects,rects+count);g.dark=dark!=0;});}
 API HRESULT __cdecl LumaRepaint(void* r){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->draw();});}
 API HRESULT __cdecl LumaReadGlass(void* r,GlassRect rect,int dark,UINT w,UINT h,uint8_t* bgra,UINT bytes){if(!r||!bgra||uint64_t(bytes)<uint64_t(w)*h*4)return E_INVALIDARG;return safe([&]{auto& a=*static_cast<Renderer*>(r);a.glass->readPanel(a.context.Get(),a.sampler.Get(),rect,dark!=0,a.status.sdrWhite,w,h,bgra);});}
-API HRESULT __cdecl LumaResize(void* r,UINT w,UINT h,float scaleX,float scaleY){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.resize(w,h);if(x.swap){DXGI_MATRIX_3X2_F inverse{1/std::max(0.1f,scaleX),0,0,1/std::max(0.1f,scaleY),0,0};check(x.swap->SetMatrixTransform(&inverse));}x.draw();});}
+API HRESULT __cdecl LumaResize(void* r,UINT w,UINT h,float scaleX,float scaleY){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.compositionDpi=std::max(.1f,scaleX);x.resize(w,h);if(x.swap){DXGI_MATRIX_3X2_F inverse{1/std::max(0.1f,scaleX),0,0,1/std::max(0.1f,scaleY),0,0};check(x.swap->SetMatrixTransform(&inverse));}x.draw();});}
 API HRESULT __cdecl LumaUseFrame(void* r,void* f){if(!r||!f)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.use(*static_cast<Frame*>(f));x.draw();});}
 API HRESULT __cdecl LumaPrepareFrame(void* r,void* f){if(!r||!f)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->use(*static_cast<Frame*>(f));});}
 API HRESULT __cdecl LumaView(void* r,float zoom,float x,float y,int rotation){if(!r)return E_POINTER;return safe([&]{auto& a=*static_cast<Renderer*>(r);a.zoom=std::clamp(zoom,0.05f,64.0f);a.panX=x;a.panY=y;a.rotation=(rotation%4+4)%4;a.draw();});}

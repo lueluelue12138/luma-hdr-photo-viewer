@@ -8,17 +8,30 @@ namespace Luma.App;
 // windows, thumbnail I/O, SwapChainPanel attachment, GPU work and window teardown.
 internal static class ViewerVerification
 {
+    internal static async Task RunPreferencesAsync(MainWindow host,string path)
+    {
+        ViewerWindow? viewer=null;string report=Path.Combine(App.DataDirectory,"viewer-preferences.json");
+        try
+        {
+            await host.VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));viewer=new(path);viewer.Activate();await viewer.VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            var prefs=viewer.VerificationPreferences;var status=viewer.VerificationStatus;
+            if(!prefs.Hdr||prefs.Vsr||status.HdrEffective==0||status.VsrEffective!=0)throw new InvalidOperationException("Saved HDR-only preference did not survive a fresh process");
+            File.WriteAllText(report,JsonSerializer.Serialize(new{complete=true,prefs.Hdr,prefs.Vsr,status.HdrEffective,status.VsrEffective}));
+        }
+        catch(Exception ex){File.WriteAllText(report,JsonSerializer.Serialize(new{complete=false,failure=ex.ToString()}));App.Log(ex.ToString());Environment.ExitCode=1;}
+        finally{if(viewer is not null){viewer.Close();await viewer.VerificationDisposeAsync();}host.Close();}
+    }
     internal static async Task RunAsync(MainWindow host,string path)
     {
-        var results=new List<object>();int windows=0;string report=Path.Combine(App.DataDirectory,"viewer-lifecycle.json");
+        var results=new List<object>();var openWindows=new HashSet<ViewerWindow>();int windows=0;string report=Path.Combine(App.DataDirectory,"viewer-lifecycle.json");
         void Save(bool complete)=>File.WriteAllText(report,JsonSerializer.Serialize(new{complete,windows,results},new JsonSerializerOptions{WriteIndented=true}));
         async Task<ViewerWindow> Open(string file,IReadOnlyList<Photo>? photos=null)
         {
-            var timer=Stopwatch.StartNew();var viewer=new ViewerWindow(file,photos);windows++;viewer.Activate();
+            var timer=Stopwatch.StartNew();var viewer=new ViewerWindow(file,photos);openWindows.Add(viewer);viewer.Closed+=(_,_)=>openWindows.Remove(viewer);windows++;viewer.Activate();
             await viewer.VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));
             results.Add(new{scenario="open",window=windows,milliseconds=timer.ElapsedMilliseconds});Save(false);return viewer;
         }
-        async Task Close(ViewerWindow viewer){viewer.Close();await viewer.VerificationDisposeAsync().WaitAsync(TimeSpan.FromSeconds(30));}
+        async Task Close(ViewerWindow viewer){viewer.Close();openWindows.Remove(viewer);await viewer.VerificationDisposeAsync().WaitAsync(TimeSpan.FromSeconds(30));}
         void Check(bool condition,string name){if(!condition)throw new InvalidOperationException(name);}
         try
         {
@@ -63,9 +76,21 @@ internal static class ViewerVerification
             }
             // Uncached PNG + JPEG shell thumbnail requests on a fresh XAML tree.
             for(int n=0;n<5;n++){var v=await Open(path,siblings);await Task.Delay(400);await Close(v);}
+            // Persist real user preferences, then check new windows and a storage
+            // reload. The default stays VSR-off, but an explicit choice is retained.
+            Check(App.Theme==Microsoft.UI.Xaml.ElementTheme.Default,"Unset theme must follow Windows");
+            var remembered=await Open(small);await remembered.VerificationPersistAsync(true,true);var options=remembered.VerificationPreferences;await Close(remembered);
+            await ViewerPreferences.LoadAsync();Check(ViewerPreferences.Current==options,"Viewer settings survive storage reload");
+            var combined=await Open(small);Check(combined.VerificationPreferences.Hdr&&combined.VerificationPreferences.Vsr&&combined.VerificationStatus.HdrEffective!=0&&combined.VerificationStatus.VsrEffective!=0,"New photo automatically applies saved HDR/VSR");
+            await combined.VerificationPersistAsync(true,false);await Close(combined);
+            var hdrOnly=await Open(path,siblings);Check(hdrOnly.VerificationStatus.HdrEffective!=0&&hdrOnly.VerificationStatus.VsrEffective==0,"Saved HDR-only does not run VSR");await hdrOnly.VerificationScrollAsync();await Close(hdrOnly);
+            var direct=await Open(path);await direct.VerificationScrollAsync();await Close(direct);
+            results.Add(new{scenario="direct-file-filmstrip-scrollbar-binding"});
+            await ViewerPreferences.UpdateAsync(new(Hdr:true,Vsr:false));
+            results.Add(new{scenario="persisted-enhancement-and-independent-filmstrip-scroll"});Save(false);
             Save(true);App.Log($"PASS viewer lifecycle: {windows} windows; HDR/VSR close-reopen, concurrent NGX, rapid navigation, busy teardown");
         }
         catch(Exception ex){results.Add(new{failure=ex.ToString()});Save(false);App.Log("FAIL viewer lifecycle: "+ex);Environment.ExitCode=1;}
-        finally{host.Close();}
+        finally{foreach(var viewer in openWindows.ToArray()){viewer.Close();await viewer.VerificationDisposeAsync();}host.Close();}
     }
 }

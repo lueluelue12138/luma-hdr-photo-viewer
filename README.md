@@ -18,9 +18,13 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 
 预览默认按比例完整适配，不裁切；缩放、平移、旋转、100%、全屏、邻图预读、过时解码取消、原图对照；浮层闲置淡出，鼠标移动及键盘操作时恢复。增强在后台准备，GPU 完成后由界面线程呈现。页面、卡片、缩放和加载指示使用 Composition 动画，浮层与 GPU 玻璃同步渐变，并遵循 Windows 关闭动画的设置。底部缩略图栏保持居中且有宽度上限。
 
+0.1.2 默认跟随 Windows 主题；明确选择浅色或深色时保留选择。HDR、VSR、风格、中间灰、峰值及自动匹配开关保存至本地设置，新照片和应用重启后沿用。VSR 仅在首次使用时默认关闭；增强请求与实际生效状态独立，当前照片或设备不支持时仍明确报告原因。
+
+底部缩略图使用 WinUI 的横向虚拟化列表、滚动条及平滑滚动；滚轮只浏览列表，不更换当前照片。翻图按钮位于预览左右边缘，鼠标悬停时淡入，方向键继续翻图。窗口内容通过 Windows Composition 在准备首帧后淡入和位移，列表使用原生主题过渡。系统关闭动画时尊重设置；远程连接可能改变动画观感，未强制修改系统设置。
+
 0.1.1 修复反复打开照片导致的 WinUI 重入崩溃：Windows 文件与缩略图服务全部移至后台，返回内存数据后才更新界面。窗口在最终 DPI 布局与两次合成帧完成后显示；D3D / NVIDIA 初始化及释放在后台，SwapChainPanel 的绑定和解绑留在界面线程，多个窗口的 NGX 调用串行执行。
 
-玻璃通过 GPU 对实际线性 FP16 照片场景进行高斯模糊，仅用于控件背景，照片本身不透明且不会变模糊。弹窗使用独立的照片材质背景以正确遮挡下层控件；其控件背景转换为 SDR 位图，照片的 HDR 呈现始终保留 FP16。关闭 Windows 透明效果或启用高对比度时使用可读的不透明背景。系统材质与应用内材质的区别见 [Microsoft 材质说明](https://learn.microsoft.com/en-us/windows/apps/develop/ui/materials)。
+玻璃使用 Windows Direct2D 的原生高斯模糊，对实际线性 FP16 照片场景处理，仅用于控件背景，照片本身不透明且不会变模糊。保留模糊后的预乘 alpha，使照片与透明留边交界处渐变，避免硬边。弹窗使用独立的照片材质背景以正确遮挡下层控件；其控件背景转换为 SDR 位图，照片的 HDR 呈现始终保留 FP16。关闭 Windows 透明效果或启用高对比度时使用可读的不透明背景。WinUI Acrylic 无法采样 SwapChainPanel，见 [微软说明](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.swapchainpanel)；使用的 [原生高斯模糊](https://learn.microsoft.com/en-us/windows/win32/direct2d/gaussian-blur) 由 Windows 实现。
 
 NVIDIA RTX™ Video SDK 1.1 的 TrueHDR 与 VSR 独立控制，VSR 默认关闭。仅 HDR 不创建或执行 VSR。成功调用并在当前 HDR 屏幕上呈现后才显示“已生效”。结果缓存于当前照片的 GPU 纹理；原图对照不重复执行 AI。SDK 缺失或不兼容时可正常查看 SDR / 原生 HDR 图片。
 
@@ -51,7 +55,7 @@ python .\tests\verify_viewer_lifecycle.py "D:\Photos\large.jpg" --runs 3
 
 实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。解锁后已补完全屏恢复、小窗口布局、收藏快捷键及系统注册检查；完整系统选择器交互、跨屏和休眠恢复仍需扩展验收。
 
-MSIX 为 `artifacts/Luma_0.1.1.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.1_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
+MSIX 为 `artifacts/Luma_0.1.2.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.2_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
 
 ## 许可与发行
 
