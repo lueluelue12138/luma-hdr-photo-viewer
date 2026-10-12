@@ -14,6 +14,8 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 
 ## 已实现
 
+0.1.3 优化看图：按显示尺寸解码预览，JPEG 使用 WIC 原生缩小解码，在色彩转换前降低像素量；放大或真正执行增强时加载原始细节。邻图预读与当前图片解码独立排队，普通 SDR 看图跳过 NGX 初始化。窗口按目标屏幕工作区居中，图库工具栏统一尺寸；缩小自动居中、放大可拖拽并约束边界；玻璃使用中性灰色材质，保留实际照片的采样颜色。
+
 浅色、深色及跟随系统；图库 Mica 外壳、预览 Desktop Acrylic 透光留边、原生标题栏、实际采样照片的模糊悬浮面板；图库虚拟化、后台缩略图；递归导入、多文件夹相册、汇总图库、搜索、收藏、最近打开；相册重命名、封面、排序、刷新、变更监听及离线索引保留。从图库移除相册保留原文件。
 
 预览默认按比例完整适配，不裁切；缩放、平移、旋转、100%、全屏、邻图预读、过时解码取消、原图对照；浮层闲置淡出，鼠标移动及键盘操作时恢复。增强在后台准备，GPU 完成后由界面线程呈现。页面、卡片、缩放和加载指示使用 Composition 动画，浮层与 GPU 玻璃同步渐变，并遵循 Windows 关闭动画的设置。底部缩略图栏保持居中且有宽度上限。
@@ -48,6 +50,8 @@ JPEG、PNG、BMP、GIF、TIFF、JPEG XR（JXR/WDP/HDP）、ICO。GIF 与多页 T
 .\scripts\Verify.ps1                # 15 项图库检查 + WIC / D3D11 / RTX 检查
 .\scripts\Verify.ps1 -Photo "D:\Photos\large.jpg"
 python .\tests\verify_viewer_lifecycle.py "D:\Photos\large.jpg" --runs 3
+python .\tests\verify_viewer_interaction.py "D:\Photos\large.jpg"
+python .\tests\benchmark_decode.py "D:\Photos\large.jpg"
 .\scripts\Package.ps1 -SkipBuild    # 生成并验证未签名 MSIX
 ```
 
@@ -55,7 +59,9 @@ python .\tests\verify_viewer_lifecycle.py "D:\Photos\large.jpg" --runs 3
 
 实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。解锁后已补完全屏恢复、小窗口布局、收藏快捷键及系统注册检查；完整系统选择器交互、跨屏和休眠恢复仍需扩展验收。
 
-MSIX 为 `artifacts/Luma_0.1.2.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.2_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
+MSIX 为 `artifacts/Luma_0.1.3.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.3_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
+
+用户反馈、性能/体积优化和发行准备持续记录在 [待办清单](docs/TODO.md)，新增事项也统一写入此文档。
 
 ## 许可与发行
 

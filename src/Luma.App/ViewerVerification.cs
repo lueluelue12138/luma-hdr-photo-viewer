@@ -8,6 +8,49 @@ namespace Luma.App;
 // windows, thumbnail I/O, SwapChainPanel attachment, GPU work and window teardown.
 internal static class ViewerVerification
 {
+    internal static async Task RunInteractionAsync(MainWindow host,string path)
+    {
+        string report=Path.Combine(App.DataDirectory,"viewer-interaction.json");var results=new List<object>();ViewerWindow? viewer=null;
+        void Check(bool condition,string message){if(!condition)throw new InvalidOperationException(message);}
+        void Bounds(Microsoft.UI.Xaml.Window window)
+        {
+            var a=Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(window.AppWindow.Id,Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;var p=window.AppWindow.Position;var s=window.AppWindow.Size;
+            Check(p.X>=a.X&&p.Y>=a.Y&&p.X+s.Width<=a.X+a.Width&&p.Y+s.Height<=a.Y+a.Height,"Window must stay inside the current monitor work area");
+            Check(Math.Abs(p.X+s.Width/2.0-a.X-a.Width/2.0)<=2&&Math.Abs(p.Y+s.Height/2.0-a.Y-a.Height/2.0)<=2,"Window must be centered");
+            results.Add(new{scenario="centered-window",position=new[]{p.X,p.Y},size=new[]{s.Width,s.Height},work=new[]{a.X,a.Y,a.Width,a.Height}});
+        }
+        try
+        {
+            await host.VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));Bounds(host);await ViewerPreferences.UpdateAsync(new());
+            var photos=FolderIndexer.Siblings(path);Check(photos.Count>=12,"Interaction test needs at least 12 photos");
+            var opening=Stopwatch.StartNew();viewer=new(path,photos,host);viewer.Activate();await viewer.VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));Bounds(viewer);
+            results.Add(new{scenario="first-window",milliseconds=opening.ElapsedMilliseconds,firstFrame=viewer.FirstFrameMilliseconds,sdrGpuMiB=viewer.VerificationStatus.GpuBytes/1048576});
+            Check(viewer.VerificationStatus.HdrEvaluations==0&&viewer.VerificationStatus.VsrEvaluations==0&&viewer.VerificationStatus.SdkAvailable==0,"SDR viewing must not initialize or invoke NGX");
+            foreach(int selected in new[]{7,2,9,4,11,1})
+            {
+                var timer=Stopwatch.StartNew();await viewer.VerificationSelectAsync(selected);
+                Check(viewer.VerificationPhoto==photos[selected].Path,"Random navigation displayed a stale photo");results.Add(new{scenario="random-SDR",selected,milliseconds=timer.ElapsedMilliseconds,firstFrame=viewer.FirstFrameMilliseconds});
+            }
+            for(int selected=2;selected<12;selected++)
+            {
+                await Task.Delay(450);var timer=Stopwatch.StartNew();await viewer.VerificationSelectAsync(selected);
+                results.Add(new{scenario="prefetched-SDR",selected,milliseconds=timer.ElapsedMilliseconds,firstFrame=viewer.FirstFrameMilliseconds});
+            }
+            Check(viewer.VerificationStatus.HdrEvaluations==0&&viewer.VerificationStatus.VsrEvaluations==0,"SDR navigation must never run AI");
+            viewer.VerificationZoom(.65);viewer.VerificationPan(400,-300);Check(viewer.VerificationView.X==0&&viewer.VerificationView.Y==0,"Zoomed-out photo must be centered");
+            viewer.VerificationZoom(2);viewer.VerificationPan(150,-80);Check(Math.Abs(viewer.VerificationView.X)>1||Math.Abs(viewer.VerificationView.Y)>1,"Zoomed-in photo must pan");
+            await viewer.VerificationDetailAsync();Check(viewer.VerificationFrameInfo?.Downsampled!=2,"Zoom must load actual full resolution");
+            viewer.VerificationPan(1e9,-1e9);Check(Math.Abs(viewer.VerificationView.X)<100000&&Math.Abs(viewer.VerificationView.Y)<100000,"Pan must be constrained");viewer.VerificationZoom(1);Check(viewer.VerificationView.X==0&&viewer.VerificationView.Y==0,"Fit must recenter");
+            results.Add(new{scenario="zoom-pan-fit-full-detail",width=viewer.VerificationFrameInfo?.Width,height=viewer.VerificationFrameInfo?.Height});
+            var overlapping=Enumerable.Range(0,10).Select(n=>viewer.VerificationSelectAsync(n)).ToArray();await Task.WhenAll(overlapping);Check(viewer.VerificationPhoto==photos[9].Path,"Fast navigation must finish on the latest selection");
+            results.Add(new{scenario="ten-overlapping-requests"});await viewer.VerificationScrollAsync();
+            await viewer.VerificationEffectsAsync(true,false);Check(viewer.VerificationStatus.HdrEffective!=0&&viewer.VerificationStatus.VsrEvaluations==0,"Lazy initialization must preserve real independent HDR");
+            results.Add(new{scenario="lazy-HDR",gpuMiB=viewer.VerificationStatus.GpuBytes/1048576});
+            File.WriteAllText(report,JsonSerializer.Serialize(new{complete=true,results},new JsonSerializerOptions{WriteIndented=true}));
+        }
+        catch(Exception ex){File.WriteAllText(report,JsonSerializer.Serialize(new{complete=false,results,failure=ex.ToString()},new JsonSerializerOptions{WriteIndented=true}));App.Log(ex.ToString());Environment.ExitCode=1;}
+        finally{if(viewer is not null){viewer.Close();await viewer.VerificationDisposeAsync();}host.Close();}
+    }
     internal static async Task RunPreferencesAsync(MainWindow host,string path)
     {
         ViewerWindow? viewer=null;string report=Path.Combine(App.DataDirectory,"viewer-preferences.json");

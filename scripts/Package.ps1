@@ -10,7 +10,8 @@ Copy-Item "$root\LICENSE","$root\THIRD-PARTY-NOTICES.md","$root\README.md" $payl
 $sdk='C:\Program Files (x86)\Windows Kits\10\bin'
 $makeappx=(Get-ChildItem "$sdk\*\x64\makeappx.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
 if(!$makeappx){throw 'Windows SDK MakeAppx.exe is required.'}
-$package=Join-Path $root 'artifacts\Luma_0.1.2.0_x64.msix'
+$manifest=[xml](Get-Content -LiteralPath "$root\packaging\AppxManifest.xml" -Raw)
+$package=Join-Path $root ("artifacts\Luma_"+$manifest.Package.Identity.Version+"_x64.msix")
 $log=Join-Path $root 'artifacts\package.log'
 & $makeappx pack /d $payload /p $package /o > $log
 if($LASTEXITCODE -ne 0){Get-Content $log -Tail 35;throw 'MSIX schema/payload validation failed.'}

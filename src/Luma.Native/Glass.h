@@ -19,7 +19,7 @@ float4 Panel(Vertex v):SV_TARGET{
  float distance=length(max(q,0))+min(max(q.x,q.y),0)-style.x;
  float coverage=saturate(.5-distance)*style.y;if(coverage<=0)discard;
  float4 blurred=scene.Sample(sampling,pos/canvas.xy);
- float3 tint=lerp(float3(.91,.93,.97),float3(.021,.026,.035),style.z)*style.w;
+ float3 tint=lerp(float3(.93,.93,.93),float3(.026,.026,.026),style.z)*style.w;
  // Keep the blurred premultiplied alpha at photo/letterbox boundaries. Dividing
  // by alpha erased the Gaussian edge and produced the user's hard vertical seam.
  float3 color=blurred.rgb+tint*(1-saturate(blurred.a));

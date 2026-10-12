@@ -29,6 +29,10 @@ public partial class App : Application
             Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();await ViewerPreferences.LoadAsync();
             Log($"Launch {Environment.ProcessId}");
             string? file=cli.FirstOrDefault(p=>File.Exists(p)&&SupportedFormats.IsSupported(p));
+            if(test>=0&&cli.Contains("--verify-viewer-interaction"))
+            {
+                window=new MainWindow();window.Activate();await ViewerVerification.RunInteractionAsync((MainWindow)window,file??throw new ArgumentException("Verification requires a photo"));return;
+            }
             if(test>=0&&cli.Contains("--verify-viewer-preferences"))
             {
                 window=new MainWindow();window.Activate();await ViewerVerification.RunPreferencesAsync((MainWindow)window,file??throw new ArgumentException("Verification requires a photo"));return;

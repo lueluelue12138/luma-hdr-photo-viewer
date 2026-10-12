@@ -17,6 +17,8 @@ d.LumaResize.argtypes=[c.c_void_p,c.c_uint,c.c_uint,c.c_float,c.c_float];d.LumaU
 d.LumaView.argtypes=[c.c_void_p,c.c_float,c.c_float,c.c_float,c.c_int];d.LumaReadPixel.argtypes=[c.c_void_p,c.c_uint,c.c_uint,c.POINTER(c.c_uint16)];d.LumaFreeFrame.argtypes=[c.c_void_p];d.LumaDestroy.argtypes=[c.c_void_p];d.LumaError.restype=c.c_wchar_p
 d.LumaEffects.argtypes=[c.c_void_p,c.c_int,c.c_int,c.c_int,c.c_uint]
 d.LumaPrepareEffects.argtypes=d.LumaEffects.argtypes
+d.LumaDecodeSized.argtypes=[c.c_wchar_p,c.c_uint,c.POINTER(Info),c.POINTER(c.c_void_p)]
+d.LumaCreateFast.argtypes=d.LumaCreate.argtypes;d.LumaInitEffects.argtypes=[c.c_void_p]
 d.LumaWaitForGpu.argtypes=[c.c_void_p]
 d.LumaSetGlass.argtypes=[c.c_void_p,c.POINTER(GlassRect),c.c_uint,c.c_int];d.LumaRepaint.argtypes=[c.c_void_p]
 d.LumaReadGlass.argtypes=[c.c_void_p,GlassRect,c.c_int,c.c_uint,c.c_uint,c.POINTER(c.c_uint8),c.c_uint]
@@ -127,6 +129,36 @@ try:
         assert s.gpuBytes>i.bytes,'GPU budget must include mip levels and canvas'
         print('PASS: linear-light mip resampling and owned GPU allocation reporting')
     finally:d.LumaFreeFrame(p)
+    from PIL import ImageCms
+    Image.new('RGB',(800,400),(110,80,45)).save(out/'profile.jpg',quality=98,icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes())
+    original=None
+    for edge in (0,128):
+        i=Info();p=c.c_void_p();check(d.LumaDecodeSized(str(out/'profile.jpg'),edge,c.byref(i),c.byref(p)))
+        try:
+            assert (i.ow,i.oh)==(800,400) and (not edge or max(i.width,i.height)<=edge)
+            check(d.LumaResize(r,200,200,1,1));check(d.LumaUseFrame(r,p));check(d.LumaView(r,1,0,0,0));color=pixel(r,100,100)
+            if original is None:original=color
+            else:assert max(abs(a-b) for a,b in zip(color,original))<.006*s.sdrWhite,'Scaled JPEG must retain ICC-managed color'
+        finally:d.LumaFreeFrame(p)
+    for filename,expected_hdr in [('orientation.jpg',0),('alpha.png',0),('linear-hdr.jxr',1)]:
+        if not (out/filename).exists():continue
+        i=Info();p=c.c_void_p();check(d.LumaDecodeSized(str(out/filename),16,c.byref(i),c.byref(p)))
+        try:
+            assert max(i.width,i.height)<=16 and i.hdr==expected_hdr
+            if filename=='orientation.jpg':assert i.height>i.width and (i.ow,i.oh)==(40,90)
+            check(d.LumaUseFrame(r,p));check(d.LumaView(r,1,0,0,0));color=pixel(r,100,100)
+            if expected_hdr:assert color[0]>3.8,'Fast preview must keep linear HDR above SDR white'
+            if filename=='alpha.png':assert abs(color[3]-128/255)<.001,'Fast preview must preserve alpha'
+        finally:d.LumaFreeFrame(p)
+    fast=c.c_void_p();check(d.LumaCreateFast(None,None,c.byref(fast)))
+    try:
+        check(d.LumaStatus(fast,c.byref(s)));assert not s.sdkAvailable and s.hdrEvaluations==s.vsrEvaluations==0,'SDR startup must skip NGX'
+        i,p=decode('alpha.png')
+        try:check(d.LumaUseFrame(fast,p))
+        finally:d.LumaFreeFrame(p)
+        check(d.LumaInitEffects(fast));check(d.LumaStatus(fast,c.byref(s)));assert not s.hdrAvailable and not s.vsrAvailable,'Lazy SDK initialization must not enable alpha enhancement'
+    finally:d.LumaDestroy(fast)
+    print('PASS: sized JPEG ICC/EXIF, alpha, native HDR previews; lazy NGX preserves unavailable enhancement')
 finally:d.LumaDestroy(r)
 if len(sys.argv)>1:
     import time

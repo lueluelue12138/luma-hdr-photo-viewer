@@ -21,8 +21,11 @@ internal static class Native
     private const string Dll="Luma.Native.dll";
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern IntPtr LumaError();
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaDecode(string path,out FrameInfo info,out IntPtr frame);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaDecodeSized(string path,uint maxEdge,out FrameInfo info,out IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern void LumaFreeFrame(IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCreate(IntPtr panel,IntPtr hwnd,out IntPtr renderer);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCreateFast(IntPtr panel,IntPtr hwnd,out IntPtr renderer);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaInitEffects(IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern void LumaDestroy(IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaAttach(IntPtr renderer,IntPtr panel);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaDetach(IntPtr renderer);
@@ -58,29 +61,30 @@ internal sealed class FrameLease : IDisposable
 }
 internal sealed class FrameCache : IDisposable
 {
-    private readonly SemaphoreSlim workers=new(1);
+    private readonly SemaphoreSlim foreground=new(1),background=new(1);
     private readonly Dictionary<string,(DecodedFrame Frame,long Modified,long Used)> frames=new(StringComparer.OrdinalIgnoreCase);
     private long tick; private bool disposed;
     private readonly object sync=new();
     private const ulong Budget=256*1024*1024;
-    public async Task<FrameLease> GetAsync(string path,CancellationToken token)
+    public async Task<FrameLease> GetAsync(string path,CancellationToken token,uint maxEdge=0,bool prefetch=false)
     {
+        string key=path+"\0"+maxEdge;
         long modified=File.GetLastWriteTimeUtc(path).Ticks;
-        lock(sync){if(disposed)throw new ObjectDisposedException(nameof(FrameCache));if(frames.TryGetValue(path,out var hit)&&hit.Modified==modified){frames[path]=(hit.Frame,modified,++tick);return new(hit.Frame);}}
+        lock(sync){if(disposed)throw new ObjectDisposedException(nameof(FrameCache));if(frames.TryGetValue(key,out var hit)&&hit.Modified==modified){frames[key]=(hit.Frame,modified,++tick);return new(hit.Frame);}}
+        var workers=prefetch?background:foreground;
         await workers.WaitAsync(token);
         DecodedFrame? decoded=null;
         try
         {
             token.ThrowIfCancellationRequested();
-            lock(sync){if(frames.TryGetValue(path,out var hit)&&hit.Modified==modified)return new(hit.Frame);}
-            decoded=await Task.Run(()=>{Native.Check(Native.LumaDecode(path,out var info,out var p));return new DecodedFrame(p,info);});
-            token.ThrowIfCancellationRequested();
+            lock(sync){if(frames.TryGetValue(key,out var hit)&&hit.Modified==modified)return new(hit.Frame);}
+            decoded=await Task.Run(()=>{Native.Check(Native.LumaDecodeSized(path,maxEdge,out var info,out var p));return new DecodedFrame(p,info);});
             lock(sync)
             {
                 if(disposed)throw new ObjectDisposedException(nameof(FrameCache));
-                if(frames.TryGetValue(path,out var hit)&&hit.Modified==modified){decoded.Dispose();decoded=null;return new(hit.Frame);}
-                if(frames.Remove(path,out var old))old.Frame.Dispose();
-                frames[path]=(decoded,modified,++tick);var result=new FrameLease(decoded);decoded=null;return result;
+                if(frames.TryGetValue(key,out var hit)&&hit.Modified==modified){decoded.Dispose();decoded=null;return new(hit.Frame);}
+                if(frames.Remove(key,out var old))old.Frame.Dispose();
+                frames[key]=(decoded,modified,++tick);var result=new FrameLease(decoded);decoded=null;return result;
             }
         }
         finally{decoded?.Dispose();workers.Release();}
@@ -92,7 +96,7 @@ internal sealed class FrameCache : IDisposable
         {
             ulong total=0;foreach(var e in frames.Values)total+=e.Frame.Info.Bytes;
             foreach(var e in frames.OrderBy(x=>x.Value.Used).ToList())
-            {if(total<=Budget&&frames.Count<=5)break;if(string.Equals(e.Key,current,StringComparison.OrdinalIgnoreCase))continue;frames.Remove(e.Key);total-=e.Value.Frame.Info.Bytes;e.Value.Frame.Dispose();}
+            {if(total<=Budget&&frames.Count<=8)break;if(e.Key.StartsWith(current+"\0",StringComparison.OrdinalIgnoreCase))continue;frames.Remove(e.Key);total-=e.Value.Frame.Info.Bytes;e.Value.Frame.Dispose();}
         }
     }
     public void Dispose(){lock(sync){disposed=true;foreach(var f in frames.Values)f.Frame.Dispose();frames.Clear();}}
@@ -115,7 +119,7 @@ internal sealed class NativeRenderer : IDisposable
     public static async Task<NativeRenderer> CreateAsync(SwapChainPanel panel,IntPtr hwnd,CancellationToken token)
     {
         var value=new NativeRenderer(panel);
-        await Task.Run(()=>Native.Check(Native.LumaCreate(IntPtr.Zero,hwnd,out value.handle)));
+        await Task.Run(()=>Native.Check(Native.LumaCreateFast(IntPtr.Zero,hwnd,out value.handle)));
         if(token.IsCancellationRequested){await Task.Run(value.Destroy);token.ThrowIfCancellationRequested();}
         var pointer=WinRT.MarshalInspectable<SwapChainPanel>.FromManaged(panel);
         try{Native.Check(Native.LumaAttach(value.handle,pointer));Native.Check(Native.LumaPeekStatus(value.handle,out value.snapshot));return value;}
@@ -155,6 +159,7 @@ internal sealed class NativeRenderer : IDisposable
         token.ThrowIfCancellationRequested();pendingView=null;TryFlush();
     }
     public RenderStatus Status(){if(disposed||!access.Wait(0))return snapshot;try{Native.Check(Native.LumaPeekStatus(handle,out snapshot));return snapshot;}finally{access.Release();}}
+    public Task InitializeEffectsAsync(CancellationToken token)=>RunAsync(()=>Native.Check(Native.LumaInitEffects(handle)),token);
     public async Task EffectsAsync(bool hdr,bool vsr,bool original,int preset,uint middleGray,uint peak,CancellationToken token)
     {
         await RunAsync(()=>{Native.Check(Native.LumaHdrTuning(handle,middleGray,peak));Native.Check(Native.LumaPrepareEffects(handle,hdr?1:0,vsr?1:0,original?1:0,(uint)preset));},token);

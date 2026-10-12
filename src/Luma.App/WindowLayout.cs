@@ -44,12 +44,16 @@ internal static class WindowLayout
         }
         App.Log($"Window revealed {window.Title}: {window.AppWindow.Size.Width}x{window.AppWindow.Size.Height}, composition frames {frames}, native Composition entrance {Motion.Enabled}, duration 260 ms");
     }
-    public static void SizeForDpi(Window window,FrameworkElement root,int width,int height)
+    public static void SizeForDpi(Window window,FrameworkElement root,int width,int height,Window? owner=null)
     {
-        double scale=GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(window))/96.0;
-        var area=DisplayArea.GetFromWindowId(window.AppWindow.Id,DisplayAreaFallback.Primary).WorkArea;
-        window.AppWindow.Resize(new Windows.Graphics.SizeInt32((int)Math.Min(width*scale,area.Width*.92),(int)Math.Min(height*scale,area.Height*.92)));
+        var target=owner is null?GetForegroundWindow():WinRT.Interop.WindowNative.GetWindowHandle(owner);
+        var area=target==IntPtr.Zero?DisplayArea.Primary.WorkArea:DisplayArea.GetFromWindowId(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(target),DisplayAreaFallback.Primary).WorkArea;
+        double scale=Math.Max(96,GetDpiForWindow(target))/96.0;
+        int w=(int)Math.Min(width*scale,Math.Max(1,area.Width-32*scale)),h=(int)Math.Min(height*scale,Math.Max(1,area.Height-32*scale));
+        window.AppWindow.MoveAndResize(new(area.X+(area.Width-w)/2,area.Y+(area.Height-h)/2,w,h));
+        App.Log($"Window centered: {window.Title}; work {area.X},{area.Y},{area.Width},{area.Height}; bounds {window.AppWindow.Position.X},{window.AppWindow.Position.Y},{w},{h}");
     }
+    [DllImport("user32.dll")]private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")]private static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("dwmapi.dll")]private static extern int DwmSetWindowAttribute(IntPtr hwnd,int attribute,ref int value,int size);
 }

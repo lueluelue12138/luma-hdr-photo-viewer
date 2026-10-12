@@ -54,7 +54,7 @@ struct Frame {FrameInfo info{}; std::vector<uint8_t> pixels;};
 struct Status { wchar_t gpu[128]; wchar_t display[128]; int32_t nvidia,hdrActive,fp16,nativeHdr; float maxNits,sdrWhite; uint64_t gpuBytes; int32_t hdrEffective,vsrEffective,sdkAvailable,hdrAvailable,vsrAvailable; uint32_t ngxResult,hdrEvaluations,vsrEvaluations; wchar_t hdrMessage[256],vsrMessage[256];};
 #include "Glass.h"
 
-std::unique_ptr<Frame> decode(const wchar_t* path) {
+std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0) {
     HRESULT init=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
     struct Uninit{bool yes;~Uninit(){if(yes)CoUninitialize();}} uninit{SUCCEEDED(init)};
     ComPtr<IWICImagingFactory> wic; check(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&wic)));
@@ -65,6 +65,27 @@ std::unique_ptr<Frame> decode(const wchar_t* path) {
     // Float JPEG XR is encoded in linear scRGB. Integer-depth files/gain maps are not guessed HDR.
     bool hdr=IsEqualGUID(format,GUID_WICPixelFormat128bppRGBAFloat)||IsEqualGUID(format,GUID_WICPixelFormat128bppRGBFloat)||IsEqualGUID(format,GUID_WICPixelFormat64bppRGBAHalf)||IsEqualGUID(format,GUID_WICPixelFormat48bppRGBHalf)||IsEqualGUID(format,GUID_WICPixelFormat64bppRGBHalf);
     ComPtr<IWICBitmapSource> source=first;
+    // Decode JPEG at its codec's native reduced resolution before ICC conversion.
+    // A screen-sized preview should not transform 33 million pixels first.
+    double budget=hdr?16000000.0:64000000.0;
+    double ratio=std::min({1.0,16384.0/ow,16384.0/oh,std::sqrt(budget/(double(ow)*oh))});
+    if(maxEdge)ratio=std::min(ratio,double(maxEdge)/std::max(ow,oh));
+    UINT width=std::max(1u,UINT(std::ceil(ow*ratio))),height=std::max(1u,UINT(std::ceil(oh*ratio)));
+    std::vector<uint8_t> reduced;
+    GUID container{};decoder->GetContainerFormat(&container);
+    if(!hdr&&ratio<1&&IsEqualGUID(container,GUID_ContainerFormatJpeg)) {
+        ComPtr<IWICBitmapSourceTransform> fast;
+        if(SUCCEEDED(first.As(&fast))) {
+            UINT fw=width,fh=height;WICPixelFormatGUID pixel=GUID_WICPixelFormat24bppBGR;BOOL supported=FALSE;
+            if(SUCCEEDED(fast->GetClosestSize(&fw,&fh))&&SUCCEEDED(fast->GetClosestPixelFormat(&pixel))&&IsEqualGUID(pixel,GUID_WICPixelFormat24bppBGR)&&SUCCEEDED(fast->DoesSupportTransform(WICBitmapTransformRotate0,&supported))&&supported&&uint64_t(fw)*fh*3<=256ull*1024*1024) {
+                reduced.resize(size_t(fw)*fh*3);
+                if(SUCCEEDED(fast->CopyPixels(nullptr,fw,fh,&pixel,WICBitmapTransformRotate0,fw*3,UINT(reduced.size()),reduced.data()))) {
+                    ComPtr<IWICBitmap> bitmap;check(wic->CreateBitmapFromMemory(fw,fh,pixel,fw*3,UINT(reduced.size()),reduced.data(),&bitmap));source=bitmap;
+                }
+            }
+        }
+    }
+    if(ratio<1) {ComPtr<IWICBitmapScaler> scaler;check(wic->CreateBitmapScaler(&scaler));check(scaler->Initialize(source.Get(),width,height,WICBitmapInterpolationModeFant));source=scaler;}
     if(!hdr) {
         UINT count=0; first->GetColorContexts(0,nullptr,&count);
         if(count) {
@@ -73,15 +94,10 @@ std::unique_ptr<Frame> decode(const wchar_t* path) {
             if(SUCCEEDED(first->GetColorContexts(1,contexts,&count))&&SUCCEEDED(output->InitializeFromExifColorSpace(1))) {
                 ComPtr<IWICColorTransform> transform; check(wic->CreateColorTransformer(&transform));
                 // If a supplied profile cannot be applied, fail rather than silently display wrong colors.
-                check(transform->Initialize(first.Get(),input.Get(),output.Get(),GUID_WICPixelFormat32bppRGBA)); source=transform;
+                check(transform->Initialize(source.Get(),input.Get(),output.Get(),GUID_WICPixelFormat32bppRGBA)); source=transform;
             }
         }
     }
-    // 256 MiB per decoded image, plus the actual D3D11 16384-axis texture limit.
-    double budget=hdr?16000000.0:64000000.0;
-    double ratio=std::min({1.0,16384.0/ow,16384.0/oh,std::sqrt(budget/(double(ow)*oh))});
-    UINT width=std::max(1u,UINT(ow*ratio)),height=std::max(1u,UINT(oh*ratio));
-    if(ratio<1) {ComPtr<IWICBitmapScaler> scaler; check(wic->CreateBitmapScaler(&scaler));check(scaler->Initialize(source.Get(),width,height,WICBitmapInterpolationModeFant));source=scaler;}
     ComPtr<IWICFormatConverter> converter;check(wic->CreateFormatConverter(&converter));
     check(converter->Initialize(source.Get(),hdr?GUID_WICPixelFormat128bppRGBAFloat:GUID_WICPixelFormat32bppRGBA,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom));source=converter;
     UINT orientation=1; ComPtr<IWICMetadataQueryReader> metadata;
@@ -95,7 +111,7 @@ std::unique_ptr<Frame> decode(const wchar_t* path) {
     switch(orientation){case 2:opt=WICBitmapTransformFlipHorizontal;break;case 3:opt=WICBitmapTransformRotate180;break;case 4:opt=WICBitmapTransformFlipVertical;break;case 5:opt=WICBitmapTransformOptions(WICBitmapTransformRotate90|WICBitmapTransformFlipHorizontal);break;case 6:opt=WICBitmapTransformRotate90;break;case 7:opt=WICBitmapTransformOptions(WICBitmapTransformRotate270|WICBitmapTransformFlipHorizontal);break;case 8:opt=WICBitmapTransformRotate270;break;}
     if(opt!=WICBitmapTransformRotate0){ComPtr<IWICBitmapFlipRotator> rotate;check(wic->CreateBitmapFlipRotator(&rotate));check(rotate->Initialize(source.Get(),opt));source=rotate;}
     check(source->GetSize(&width,&height)); if(orientation>=5&&orientation<=8)std::swap(ow,oh);
-    auto frame=std::make_unique<Frame>();frame->info={width,height,ow,oh,hdr?1:0,ratio<1?1:0,uint64_t(width)*height*(hdr?16:4)};
+    auto frame=std::make_unique<Frame>();frame->info={width,height,ow,oh,hdr?1:0,ratio<1?(maxEdge?2:1):0,uint64_t(width)*height*(hdr?16:4)};
     frame->pixels.resize(size_t(frame->info.bytes)); check(source->CopyPixels(nullptr,width*(hdr?16:4),UINT(frame->pixels.size()),frame->pixels.data()));
     return frame;
 }
@@ -127,14 +143,15 @@ struct Renderer {
     HWND hwnd{};ComPtr<PanelNative> panel;ComPtr<ID3D11Device> device;ComPtr<ID3D11DeviceContext> context;ComPtr<IDXGIFactory6> factory;ComPtr<IDXGIAdapter1> adapter;
     ComPtr<IDXGISwapChain3> swap;ComPtr<ID3D11RenderTargetView> target;ComPtr<ID3D11Texture2D> offscreen;
     ComPtr<ID3D11VertexShader> vs;ComPtr<ID3D11PixelShader> ps,inputPs;ComPtr<ID3D11Buffer> constants;ComPtr<ID3D11SamplerState> sampler;ComPtr<ID3D11ShaderResourceView> image,originalView,hdrView,vsrView;
-    ComPtr<ID3D11Texture2D> originalTexture,sdkInput,hdrTexture,vsrTexture;bool requestedHdr=false,requestedVsr=false,holdOriginal=false,hdrCached=false,vsrCached=false;unsigned cachedPeak=0;int hdrCapability=0,vsrCapability=0;UINT vsrWidth=0,vsrHeight=0;
+    ComPtr<ID3D11Texture2D> originalTexture,sdkInput,hdrTexture,vsrTexture;bool requestedHdr=false,requestedVsr=false,holdOriginal=false,hdrCached=false,vsrCached=false,sourceAlpha=false;unsigned cachedPeak=0;int hdrCapability=0,vsrCapability=0;UINT vsrWidth=0,vsrHeight=0;
     std::unique_ptr<GlassRenderer> glass;
     float compositionDpi=1;
 #ifdef LUMA_NVIDIA
     NVSDK_NGX_Parameter* hdrParams=nullptr;NVSDK_NGX_Parameter* vsrParams=nullptr;NVSDK_NGX_Handle* hdrFeature=nullptr;NVSDK_NGX_Handle* vsrFeature=nullptr;bool ngxInitialized=false;
 #endif
     uint32_t width=1,height=1,iw=1,ih=1,processWidth=1,processHeight=1;float zoom=1,panX=0,panY=0;int rotation=0;unsigned currentPreset=1,middleGrayOverride=0,peakOverride=0;Status status{};uint64_t textureBudget=1024ull*1024*1024;
-    Renderer(IUnknown* p,HWND h):hwnd(h) {
+    bool effectsInitialized=false;
+    Renderer(IUnknown* p,HWND h,bool deferEffects=false):hwnd(h) {
         if(p)check(p->QueryInterface(IID_PPV_ARGS(&panel)));
         check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
         for(UINT i=0;;i++){ComPtr<IDXGIAdapter1> a;if(factory->EnumAdapterByGpuPreference(i,DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,IID_PPV_ARGS(&a))==DXGI_ERROR_NOT_FOUND)break;DXGI_ADAPTER_DESC1 desc{};a->GetDesc1(&desc);if(!(desc.Flags&DXGI_ADAPTER_FLAG_SOFTWARE)&&desc.VendorId==0x10de){adapter=a;break;}}
@@ -150,7 +167,9 @@ struct Renderer {
         D3D11_SAMPLER_DESC sd{};sd.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sd.AddressU=sd.AddressV=sd.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sd.MaxLOD=D3D11_FLOAT32_MAX;check(device->CreateSamplerState(&sd,&sampler));
         glass=std::make_unique<GlassRenderer>(device.Get());
         if(panel)attach(p);
-        status.fp16=1; resize(1,1);probe();initEffects();
+        status.fp16=1;resize(1,1);probe();
+        wcscpy_s(status.hdrMessage,L"打开显示增强面板以检测 RTX HDR");wcscpy_s(status.vsrMessage,L"打开显示增强面板以检测 VSR");
+        if(!deferEffects)initEffects();
     }
     void attach(IUnknown* p){
         check(p->QueryInterface(IID_PPV_ARGS(&panel)));
@@ -171,6 +190,7 @@ struct Renderer {
     }
     ~Renderer(){if(panel)panel->SetSwapChain(nullptr);if(context){context->ClearState();context->Flush();}}
     void initEffects(){
+        if(effectsInitialized)return;effectsInitialized=true;
         wcscpy_s(status.hdrMessage,L"缺少 NVIDIA RTX Video SDK 1.1");wcscpy_s(status.vsrMessage,L"缺少 NVIDIA RTX Video SDK 1.1");
 #ifdef LUMA_NVIDIA
         std::lock_guard lock(ngxMutex);
@@ -186,6 +206,8 @@ struct Renderer {
         status.sdkAvailable=1;int available=0;hdrParams->Get(NVSDK_NGX_Parameter_TrueHDR_Available,&available);status.hdrAvailable=available;
         if(available)wcscpy_s(status.hdrMessage,L"TrueHDR 可用，尚未开启");else{int driver=0;hdrParams->Get(NVSDK_NGX_Parameter_TrueHDR_NeedsUpdatedDriver,&driver);wcscpy_s(status.hdrMessage,driver?L"TrueHDR 需要更新 NVIDIA 驱动":L"TrueHDR 运行库未报告支持");}
         hdrParams->Get(NVSDK_NGX_Parameter_VSR_Available,&available);status.vsrAvailable=available;wcscpy_s(status.vsrMessage,available?L"VSR 可用，默认关闭":L"VSR 运行库未报告支持");hdrCapability=status.hdrAvailable;vsrCapability=status.vsrAvailable;
+        if(originalTexture&&sourceAlpha){status.hdrAvailable=status.vsrAvailable=0;wcscpy_s(status.hdrMessage,L"透明图片保留原始透明度，暂不支持增强");wcscpy_s(status.vsrMessage,L"透明图片暂不支持 VSR");}
+        else if(originalTexture&&vsrWidth<=iw*1.05f&&status.vsrAvailable){status.vsrAvailable=0;wcscpy_s(status.vsrMessage,L"当前显存预算不足以放大这张照片，HDR 仍可独立使用");}
 #endif
     }
     // Stable address within this module for its DLL search directory.
@@ -228,8 +250,8 @@ struct Renderer {
         ComPtr<ID3D11Texture2D> tex;check(device->CreateTexture2D(&d,nullptr,&tex));context->UpdateSubresource(tex.Get(),0,nullptr,f.pixels.data(),f.info.width*(f.info.nativeHdr?16:4),0);ComPtr<ID3D11ShaderResourceView> view;check(device->CreateShaderResourceView(tex.Get(),nullptr,&view));context->GenerateMips(view.Get());originalTexture=tex;originalView=view;image=view;iw=f.info.width;ih=f.info.height;status.nativeHdr=f.info.nativeHdr;
         hdrCached=vsrCached=false;hdrView.Reset();vsrView.Reset();hdrTexture.Reset();vsrTexture.Reset();sdkInput.Reset();selectImage();
         if(status.sdkAvailable){status.hdrAvailable=hdrCapability;status.vsrAvailable=vsrCapability;wcscpy_s(status.hdrMessage,status.hdrAvailable?L"TrueHDR 可用，尚未开启":L"TrueHDR 不可用");wcscpy_s(status.vsrMessage,status.vsrAvailable?L"VSR 可用，默认关闭":L"VSR 不可用");}
-        bool hasAlpha=false;if(!f.info.nativeHdr)for(size_t i=3;i<f.pixels.size();i+=4)if(f.pixels[i]!=255){hasAlpha=true;break;}
-        if(hasAlpha){status.hdrAvailable=status.vsrAvailable=0;wcscpy_s(status.hdrMessage,L"透明图片保留原始透明度，暂不支持增强");wcscpy_s(status.vsrMessage,L"透明图片暂不支持 VSR");}
+        sourceAlpha=false;if(!f.info.nativeHdr)for(size_t i=3;i<f.pixels.size();i+=4)if(f.pixels[i]!=255){sourceAlpha=true;break;}
+        if(sourceAlpha){status.hdrAvailable=status.vsrAvailable=0;wcscpy_s(status.hdrMessage,L"透明图片保留原始透明度，暂不支持增强");wcscpy_s(status.vsrMessage,L"透明图片暂不支持 VSR");}
         updateMemory();uint64_t canvasBytes=uint64_t(width)*height*16,sourceBytes=status.gpuBytes-(swap?canvasBytes:canvasBytes/2);
         double available=double(textureBudget>canvasBytes+sourceBytes?textureBudget-canvasBytes-sourceBytes:64ull*1024*1024);
         // Reserve 4 bytes/pixel for SDK input + 8 for FP16 output. Full resolution whenever budget permits.
@@ -290,6 +312,9 @@ struct Renderer {
 #define API extern "C" __declspec(dllexport)
 API const wchar_t* __cdecl LumaError(){return lastError.c_str();}
 API HRESULT __cdecl LumaDecode(const wchar_t* path,FrameInfo* info,void** result){if(!path||!info||!result)return E_POINTER;*result=nullptr;return safe([&]{auto f=decode(path);*info=f->info;*result=f.release();});}
+API HRESULT __cdecl LumaDecodeSized(const wchar_t* path,UINT maxEdge,FrameInfo* info,void** result){if(!path||!info||!result)return E_POINTER;*result=nullptr;return safe([&]{auto f=decode(path,maxEdge);*info=f->info;*result=f.release();});}
+API HRESULT __cdecl LumaCreateFast(IUnknown* panel,HWND hwnd,void** result){if(!result)return E_POINTER;*result=nullptr;return safe([&]{*result=new Renderer(panel,hwnd,true);});}
+API HRESULT __cdecl LumaInitEffects(void* r){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->initEffects();});}
 API void __cdecl LumaFreeFrame(void* f){delete static_cast<Frame*>(f);}
 API HRESULT __cdecl LumaCreate(IUnknown* panel,HWND hwnd,void** result){if(!result)return E_POINTER;*result=nullptr;return safe([&]{*result=new Renderer(panel,hwnd);});}
 API void __cdecl LumaDestroy(void* r){if(r){auto p=static_cast<Renderer*>(r);p->shutdownEffects();delete p;}}

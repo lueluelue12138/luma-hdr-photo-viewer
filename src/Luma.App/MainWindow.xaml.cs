@@ -24,7 +24,7 @@ public sealed partial class MainWindow : Window
         WindowLayout.Configure(this,Root);
         App.RegisterGallery(this);
         WindowLayout.SizeForDpi(this,Root,1160,800);AppWindow.TitleBar.PreferredHeightOption=TitleBarHeightOption.Standard;AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
-        Root.Loaded+=Loaded;Root.SizeChanged+=(_,_)=>{bool compact=Root.ActualWidth<950;Nav.PaneDisplayMode=compact?NavigationViewPaneDisplayMode.LeftCompact:NavigationViewPaneDisplayMode.Left;Nav.IsPaneToggleButtonVisible=compact;ImportLabel.Visibility=Root.ActualWidth<720?Visibility.Collapsed:Visibility.Visible;SortBox.Visibility=Root.ActualWidth<650||page is "albums" or "settings" or "recent"?Visibility.Collapsed:Visibility.Visible;Gallery.Padding=new Thickness(Root.ActualWidth<720?16:28,22,Root.ActualWidth<720?16:28,16);Search.Width=Math.Min(370,Math.Max(170,Root.ActualWidth-300));Search.HorizontalAlignment=Root.ActualWidth<800?HorizontalAlignment.Left:HorizontalAlignment.Center;Search.Margin=Root.ActualWidth<800?new Thickness(130,0,0,0):new Thickness(0);};Closed+=(_,_)=>{closed=true;lifetime.Cancel();searchCancellation?.Cancel();App.Indexer.FolderChanged-=FolderChanged;};
+        Root.Loaded+=Loaded;Root.SizeChanged+=(_,_)=>{bool compact=Root.ActualWidth<950;Nav.PaneDisplayMode=compact?NavigationViewPaneDisplayMode.LeftCompact:NavigationViewPaneDisplayMode.Left;Nav.IsPaneToggleButtonVisible=compact;ImportLabel.Visibility=Root.ActualWidth<720?Visibility.Collapsed:Visibility.Visible;OpenPhotoLabel.Visibility=Root.ActualWidth<950?Visibility.Collapsed:Visibility.Visible;SortBox.Visibility=Root.ActualWidth<650||page is "albums" or "settings" or "recent"?Visibility.Collapsed:Visibility.Visible;Gallery.Padding=new Thickness(Root.ActualWidth<720?16:28,22,Root.ActualWidth<720?16:28,16);Search.Width=Math.Min(370,Math.Max(170,Root.ActualWidth-300));Search.HorizontalAlignment=Root.ActualWidth<800?HorizontalAlignment.Left:HorizontalAlignment.Center;Search.Margin=Root.ActualWidth<800?new Thickness(130,0,0,0):new Thickness(0);};Closed+=(_,_)=>{closed=true;lifetime.Cancel();searchCancellation?.Cancel();App.Indexer.FolderChanged-=FolderChanged;};
         App.Indexer.FolderChanged+=FolderChanged;
     }
     private async void Loaded(object sender,RoutedEventArgs e)
@@ -98,7 +98,7 @@ public sealed partial class MainWindow : Window
     private void CardExited(object sender,PointerRoutedEventArgs e)=>Motion.Hover((FrameworkElement)sender,false);
     private void PhotoClick(object sender,RoutedEventArgs e)
     {
-        if(((Button)sender).Tag is not Photo p)return;var v=new ViewerWindow(p.Path,photos);viewers.Add(v);v.Closed+=async(_,_)=>{viewers.Remove(v);await ReloadAsync();};v.Activate();
+        if(((Button)sender).Tag is not Photo p)return;var v=new ViewerWindow(p.Path,photos,this);viewers.Add(v);v.Closed+=async(_,_)=>{viewers.Remove(v);await ReloadAsync();};v.Activate();
     }
     private async Task ErrorAsync(string title,string message){if(closed)return;await new ContentDialog{XamlRoot=Root.XamlRoot,Title=title,Content=message,CloseButtonText="关闭"}.ShowAsync();}
     private void AlbumRightTapped(object sender,RightTappedRoutedEventArgs e)
@@ -128,7 +128,7 @@ public sealed partial class MainWindow : Window
     }
     private async void OpenPhotoClick(object sender,RoutedEventArgs e)
     {
-        try{var picker=new FileOpenPicker();foreach(var ext in SupportedFormats.Extensions)picker.FileTypeFilter.Add(ext);WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));var f=await picker.PickSingleFileAsync();if(f is not null)new ViewerWindow(f.Path).Activate();}catch(Exception ex){await ErrorAsync("无法打开照片",ex.Message);}
+        try{var picker=new FileOpenPicker();foreach(var ext in SupportedFormats.Extensions)picker.FileTypeFilter.Add(ext);WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));var f=await picker.PickSingleFileAsync();if(f is not null)new ViewerWindow(f.Path,null,this).Activate();}catch(Exception ex){await ErrorAsync("无法打开照片",ex.Message);}
     }
     private void DragOver(object sender,DragEventArgs e)
     {
@@ -136,7 +136,7 @@ public sealed partial class MainWindow : Window
     }
     private async void DropItems(object sender,DragEventArgs e)
     {
-        try{foreach(var item in await e.DataView.GetStorageItemsAsync()){if(item is Windows.Storage.StorageFolder)await ImportAsync(item.Path);else if(SupportedFormats.IsSupported(item.Path)){new ViewerWindow(item.Path).Activate();break;}}}catch(Exception ex){await ErrorAsync("无法打开拖入的文件",ex.Message);}
+        try{foreach(var item in await e.DataView.GetStorageItemsAsync()){if(item is Windows.Storage.StorageFolder)await ImportAsync(item.Path);else if(SupportedFormats.IsSupported(item.Path)){new ViewerWindow(item.Path,null,this).Activate();break;}}}catch(Exception ex){await ErrorAsync("无法打开拖入的文件",ex.Message);}
     }
     private void DataFolderClick(object sender,RoutedEventArgs e)=>OpenFolder(App.DataDirectory);
 }

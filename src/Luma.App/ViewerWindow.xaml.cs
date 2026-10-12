@@ -57,6 +57,15 @@ public sealed partial class ViewerWindow : Window
     }
     internal TaskCompletionSource VerificationReady {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Task rendererInitialization=Task.CompletedTask;
+    private Task fullResolution=Task.CompletedTask;private int fullResolutionRequest;
+    internal TaskCompletionSource FirstFrameReady {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal long FirstFrameMilliseconds {get;private set;}
+    internal (double Zoom,double X,double Y) VerificationView=>(zoom,panX,panY);
+    internal string? VerificationPhoto=>current?.Path;
+    internal FrameInfo? VerificationFrameInfo=>currentFrame?.Info;
+    internal Task VerificationDetailAsync()=>EnsureFullResolutionAsync();
+    internal void VerificationPan(double x,double y){panX=x;panY=y;UpdateView();}
+    private uint PreviewEdge=>(uint)Math.Clamp(Math.Ceiling(Math.Max(Surface.ActualWidth*Surface.CompositionScaleX,Surface.ActualHeight*Surface.CompositionScaleY)/256)*256,1024,4096);
     internal async Task VerificationDisposeAsync(){try{await rendererInitialization;}catch(OperationCanceledException){}if(renderer is not null)await renderer.DisposedAsync;}
     internal RenderStatus VerificationStatus=>renderer?.Status()??default;
     internal async Task VerificationEffectsAsync(bool hdr,bool vsr){hdrRequested=hdr;vsrRequested=vsr;await ApplyEffectsAsync();}
@@ -82,7 +91,7 @@ public sealed partial class ViewerWindow : Window
         await Task.Delay(350);EnhancementButton.Flyout.Hide();await Task.Delay(50);
     }
     private double renderedZoom=1,renderedPanX,renderedPanY,viewStartZoom,viewStartX,viewStartY;private DateTime viewStarted;
-    public ViewerWindow(string path,IReadOnlyList<Photo>? photos=null)
+    public ViewerWindow(string path,IReadOnlyList<Photo>? photos=null,Window? owner=null)
     {
         initial=SupportedFormats.Normalize(path);initialSequence=photos;InitializeComponent();ExtendsContentIntoTitleBar=true;SetTitleBar(TitleDrag);SystemBackdrop=new DesktopAcrylicBackdrop();
         var options=ViewerPreferences.Current;updatingEnhancements=true;hdrRequested=options.Hdr;vsrRequested=options.Vsr;HdrSwitch.IsOn=hdrRequested;VsrSwitch.IsOn=vsrRequested;HdrPreset.SelectedIndex=options.Preset;AutoBrightnessSwitch.IsOn=options.AutoBrightness;AutoPeakSwitch.IsOn=options.AutoPeak;MiddleGraySlider.Value=options.MiddleGray;PeakSlider.Value=options.Peak;MiddleGraySlider.IsEnabled=!options.AutoBrightness;PeakSlider.IsEnabled=!options.AutoPeak;updatingEnhancements=false;
@@ -99,7 +108,7 @@ public sealed partial class ViewerWindow : Window
         chromeTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-chromeStarted).TotalMilliseconds/(chromeTarget>chromeStart?180:240),0,1);chromeOpacity=chromeStart+(chromeTarget-chromeStart)*(1-Math.Pow(1-t,3));ApplyChrome();if(t>=1)chromeTimer.Stop();};
         foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.SizeChanged+=(_,_)=>UpdateGlass();Root.ActualThemeChanged+=(_,_)=>UpdateGlass();Root.LayoutUpdated+=(_,_)=>{UpdateFilmstripBar();UpdateGlass();};
         viewTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-viewStarted).TotalMilliseconds/180,0,1);double ease=1-Math.Pow(1-t,3);renderedZoom=viewStartZoom+(zoom-viewStartZoom)*ease;renderedPanX=viewStartX+(panX-viewStartX)*ease;renderedPanY=viewStartY+(panY-viewStartY)*ease;try{renderer?.View(renderedZoom,renderedPanX,renderedPanY,rotation);}catch(COMException ex){viewTimer.Stop();Recover(ex);}if(t>=1)viewTimer.Stop();};
-        WindowLayout.SizeForDpi(this,Root,1240,850);AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
+        WindowLayout.SizeForDpi(this,Root,1240,850,owner);AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
         idleTimer.Tick+=IdleTick;Closed+=(_,_)=>{closed=true;request++;lifetime.Cancel();loadingCancellation?.Cancel();VerificationReady.TrySetCanceled();idleTimer.Stop();viewTimer.Stop();chromeTimer.Stop();renderer?.Dispose();currentLease?.Dispose();cache.Dispose();};
         AppWindow.Changed+=(_,args)=>{if(args.DidPositionChange)RefreshStatus();};Activated+=(_,args)=>{if(closed)return;if(args.WindowActivationState==WindowActivationState.Deactivated){dragging=false;InputLayer.ReleasePointerCaptures();if(originalHeld){originalHeld=false;ApplyEffects();}}if(renderer is not null)RefreshStatus();};
     }
@@ -126,17 +135,47 @@ public sealed partial class ViewerWindow : Window
     {
         if(closed||sequence.Count==0||selected<0||selected>=sequence.Count)return;
         index=selected;current=sequence[index];int generation=++request;enhancementCancellation?.Cancel();loadingCancellation?.Cancel();loadingCancellation?.Dispose();loadingCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=loadingCancellation.Token;
-        viewTimer.Stop();zoom=1;panX=panY=0;rotation=0;FileTitle.Text=current.Name;Title=$"{current.Name} — Luma";ErrorPanel.Visibility=Visibility.Collapsed;Loading.IsActive=true;Loading.Visibility=Visibility.Visible;ShowControls();UpdatePosition();UpdateInfo();
+        var timing=Stopwatch.StartNew();uint previewEdge=PreviewEdge;
+        viewTimer.Stop();zoom=1;panX=panY=0;rotation=0;FileTitle.Text=current.Name;Title=$"{current.Name} — Luma";ErrorPanel.Visibility=Visibility.Collapsed;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;_ = ShowLoadingAfterDelayAsync(generation,token);ShowControls();UpdatePosition();UpdateInfo();
         try
         {
-            var photo=current;var lease=await cache.GetAsync(photo.Path,token);if(closed||generation!=request){lease.Dispose();return;}
+            var photo=current;var lease=await cache.GetAsync(photo.Path,token,previewEdge);if(closed||generation!=request){lease.Dispose();return;}
             try{await renderer!.ShowAsync(lease.Frame,token);if(closed||generation!=request){lease.Dispose();return;}}catch{lease.Dispose();throw;}
-            currentLease?.Dispose();currentLease=lease;displayedRequest=generation;UpdateView();UpdateGlass();cache.Trim(photo.Path);await ApplyEffectsAsync();if(closed||generation!=request)return;
+            currentLease?.Dispose();currentLease=lease;displayedRequest=generation;UpdateView();UpdateGlass();cache.Trim(photo.Path);Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;
+            FirstFrameMilliseconds=timing.ElapsedMilliseconds;FirstFrameReady.TrySetResult();App.Log($"Photo first frame: {photo.Name}; {FirstFrameMilliseconds} ms; {lease.Frame.Info.Width}x{lease.Frame.Info.Height}; original {lease.Frame.Info.OriginalWidth}x{lease.Frame.Info.OriginalHeight}");
+            Prefetch();await ApplyEffectsAsync();if(closed||generation!=request)return;
             var stored=await App.Store.IsFavoriteAsync(photo.Path);if(generation!=request)return;current=photo with{Favorite=stored};UpdateFavorite();
-            await App.Store.RecordOpenAsync(current);if(closed||generation!=request)return;RefreshStatus();UpdateInfo();Prefetch();VerificationReady.TrySetResult();
+            await App.Store.RecordOpenAsync(current);if(closed||generation!=request)return;RefreshStatus();UpdateInfo();VerificationReady.TrySetResult();
         }
         catch(OperationCanceledException){}catch(Exception ex){if(generation==request&&!closed){VerificationReady.TrySetException(ex);Fail(ex);}}
         finally{if(generation==request&&!closed){Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;}}
+    }
+    private async Task ShowLoadingAfterDelayAsync(int generation,CancellationToken token)
+    {
+        try{await Task.Delay(180,token);if(!closed&&generation==request&&displayedRequest!=generation){Loading.IsActive=true;Loading.Visibility=Visibility.Visible;}}catch(OperationCanceledException){}
+    }
+    private Task EnsureFullResolutionAsync()
+    {
+        if(currentFrame?.Info.Downsampled!=2||renderer is null||closed)return Task.CompletedTask;
+        if(fullResolutionRequest==request&&!fullResolution.IsCompleted)return fullResolution;
+        fullResolutionRequest=request;return fullResolution=LoadFullResolutionAsync(request,current!.Path,renderer,loadingCancellation?.Token??lifetime.Token);
+    }
+    private async Task LoadFullResolutionAsync(int generation,string path,NativeRenderer active,CancellationToken token)
+    {
+        FrameLease? lease=null;
+        try
+        {
+            var timer=Stopwatch.StartNew();lease=await cache.GetAsync(path,token,0,true);token.ThrowIfCancellationRequested();if(closed||generation!=request||active!=renderer)return;
+            await active.ShowAsync(lease.Frame,token);if(closed||generation!=request||active!=renderer)return;
+            currentLease?.Dispose();currentLease=lease;lease=null;UpdateView();UpdateGlass();cache.Trim(path);App.Log($"Photo full detail: {System.IO.Path.GetFileName(path)}; {timer.ElapsedMilliseconds} ms");
+        }
+        finally{lease?.Dispose();}
+    }
+    private async void RequestDetail()
+    {
+        if(currentFrame is not {} frame||frame.Info.Downsampled!=2||PixelScale()<=frame.Info.Width/(double)frame.Info.OriginalWidth*.95)return;
+        if(fullResolutionRequest==request&&!fullResolution.IsCompleted)return;
+        try{await EnsureFullResolutionAsync();if(!closed)await ApplyEffectsAsync();}catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(Exception ex){App.Log("Photo detail: "+ex.Message);}
     }
     private async void Prefetch()
     {
@@ -144,7 +183,7 @@ public sealed partial class ViewerWindow : Window
         foreach(var adjacent in new[]{index+1,index-1})
         {
             if(adjacent<0||adjacent>=sequence.Count||token.IsCancellationRequested)continue;
-            try{using var lease=await cache.GetAsync(sequence[adjacent].Path,token);if(!closed&&current is not null)cache.Trim(current.Path);}catch(Exception ex)when(ex is IOException or COMException or OperationCanceledException or ObjectDisposedException){ }
+            try{using var lease=await cache.GetAsync(sequence[adjacent].Path,token,PreviewEdge,true);if(!closed&&current is not null)cache.Trim(current.Path);}catch(Exception ex)when(ex is IOException or COMException or OperationCanceledException or ObjectDisposedException){ }
         }
     }
     private void UpdatePosition(){PositionText.Text=$"{index+1} / {sequence.Count}";PreviousButton.IsEnabled=index>0;NextButton.IsEnabled=index<sequence.Count-1;selecting=true;Filmstrip.SelectedIndex=index;if(current is not null)Filmstrip.ScrollIntoView(sequence.ElementAtOrDefault(index));selecting=false;}
@@ -205,7 +244,15 @@ public sealed partial class ViewerWindow : Window
     }
     private void UpdateView(bool animate=false)
     {
-        try{viewTimer.Stop();if(animate&&Motion.Enabled){viewStartZoom=renderedZoom;viewStartX=renderedPanX;viewStartY=renderedPanY;viewStarted=DateTime.UtcNow;viewTimer.Start();}else{renderedZoom=zoom;renderedPanX=panX;renderedPanY=panY;renderer?.View(zoom,panX,panY,rotation);}var actual=PixelScale();FitButton.Content=Math.Abs(zoom-1)<0.001?"适合窗口":$"{actual*100:0}%";UpdateInfo();}catch(COMException ex){Recover(ex);}
+        ClampPan();
+        try{viewTimer.Stop();if(animate&&Motion.Enabled){viewStartZoom=renderedZoom;viewStartX=renderedPanX;viewStartY=renderedPanY;viewStarted=DateTime.UtcNow;viewTimer.Start();}else{renderedZoom=zoom;renderedPanX=panX;renderedPanY=panY;renderer?.View(zoom,panX,panY,rotation);}var actual=PixelScale();FitButton.Content=Math.Abs(zoom-1)<0.001?"适合窗口":$"{actual*100:0}%";UpdateInfo();RequestDetail();}catch(COMException ex){Recover(ex);}
+    }
+    private void ClampPan()
+    {
+        if(currentFrame is null||zoom<=1){panX=panY=0;return;}
+        var i=currentFrame.Info;double w=rotation%2==0?i.OriginalWidth:i.OriginalHeight,h=rotation%2==0?i.OriginalHeight:i.OriginalWidth,scale=FitScale()*zoom;
+        double maxX=Math.Max(0,(w*scale-Surface.ActualWidth*Surface.CompositionScaleX)/2),maxY=Math.Max(0,(h*scale-Surface.ActualHeight*Surface.CompositionScaleY)/2);
+        panX=Math.Clamp(panX,-maxX,maxX);panY=Math.Clamp(panY,-maxY,maxY);
     }
     private double FitScale(){if(currentFrame is null)return 1;var i=currentFrame.Info;double w=rotation%2==0?i.OriginalWidth:i.OriginalHeight,h=rotation%2==0?i.OriginalHeight:i.OriginalWidth;return Math.Min(Surface.ActualWidth*Surface.CompositionScaleX/w,Surface.ActualHeight*Surface.CompositionScaleY/h);}
     private double PixelScale()=>FitScale()*zoom;
@@ -219,9 +266,9 @@ public sealed partial class ViewerWindow : Window
     {
         var p=e.GetCurrentPoint(InputLayer);double old=zoom;zoom=Math.Clamp(zoom*Math.Pow(1.0015,p.Properties.MouseWheelDelta),0.05,64);double ratio=zoom/old;double x=(p.Position.X-Surface.ActualWidth/2)*Surface.CompositionScaleX,y=(p.Position.Y-Surface.ActualHeight/2)*Surface.CompositionScaleY;panX=x-(x-panX)*ratio;panY=y-(y-panY)*ratio;UpdateView();ShowControls();e.Handled=true;
     }
-    private void CanvasPressed(object sender,PointerRoutedEventArgs e){var p=e.GetCurrentPoint(InputLayer);InputLayer.Focus(FocusState.Pointer);if(!p.Properties.IsLeftButtonPressed||zoom<=1)return;dragging=true;startX=p.Position.X;startY=p.Position.Y;InputLayer.CapturePointer(e.Pointer);}
-    private void CanvasMoved(object sender,PointerRoutedEventArgs e){if(!dragging)return;var p=e.GetCurrentPoint(InputLayer);panX+=(p.Position.X-startX)*Surface.CompositionScaleX;panY+=(p.Position.Y-startY)*Surface.CompositionScaleY;startX=p.Position.X;startY=p.Position.Y;UpdateView();}
-    private void CanvasReleased(object sender,PointerRoutedEventArgs e){dragging=false;InputLayer.ReleasePointerCapture(e.Pointer);}
+    private void CanvasPressed(object sender,PointerRoutedEventArgs e){var p=e.GetCurrentPoint(InputLayer);InputLayer.Focus(FocusState.Pointer);if(!p.Properties.IsLeftButtonPressed||zoom<=1)return;dragging=InputLayer.CapturePointer(e.Pointer);startX=p.Position.X;startY=p.Position.Y;e.Handled=dragging;}
+    private void CanvasMoved(object sender,PointerRoutedEventArgs e){if(!dragging)return;var p=e.GetCurrentPoint(InputLayer);panX+=(p.Position.X-startX)*Surface.CompositionScaleX;panY+=(p.Position.Y-startY)*Surface.CompositionScaleY;startX=p.Position.X;startY=p.Position.Y;UpdateView();ShowControls();e.Handled=true;}
+    private void CanvasReleased(object sender,PointerRoutedEventArgs e){dragging=false;InputLayer.ReleasePointerCapture(e.Pointer);e.Handled=true;}
     private void CanvasDoubleTapped(object sender,DoubleTappedRoutedEventArgs e){if(Math.Abs(zoom-1)<0.001)ActualSize();else Fit();e.Handled=true;}
     private async void FavoriteClick(object sender,RoutedEventArgs e){if(current is null)return;var photo=current;int generation=request;try{bool favorite=await App.Store.ToggleFavoriteAsync(photo);if(closed||generation!=request)return;current=photo with{Favorite=favorite};UpdateFavorite();ShowControls();}catch(Exception ex){if(!closed&&generation==request)Fail(ex);}}
     private void UpdateFavorite(){FavoriteIcon.Glyph=current?.Favorite==true?"\uEB52":"\uEB51";FavoriteButton.SetValue(AutomationProperties.NameProperty,current?.Favorite==true?"取消收藏":"收藏");}
@@ -286,7 +333,17 @@ public sealed partial class ViewerWindow : Window
         if(renderer is null||currentFrame is null||closed)return;
         enhancementCancellation?.Cancel();enhancementCancellation?.Dispose();enhancementCancellation=CancellationTokenSource.CreateLinkedTokenSource(loadingCancellation?.Token??lifetime.Token,lifetime.Token);var token=enhancementCancellation.Token;int generation=request;var active=renderer;
         uint gray=AutoBrightnessSwitch.IsOn?0:(uint)MiddleGraySlider.Value,peak=AutoPeakSwitch.IsOn?0:(uint)PeakSlider.Value;int preset=Math.Max(0,HdrPreset.SelectedIndex);
-        try{StatusText.Text=hdrRequested||vsrRequested?"正在处理显示增强…":"SDR · 原图";await active.EffectsAsync(hdrRequested,vsrRequested,originalHeld,preset,gray,peak,token);if(closed||generation!=request||active!=renderer||token.IsCancellationRequested)return;UpdateView();RefreshStatus();}
+        try
+        {
+            StatusText.Text=hdrRequested||vsrRequested?"正在处理显示增强…":"SDR · 原图";
+            if((hdrRequested||vsrRequested)&&currentFrame.Info.NativeHdr==0&&!originalHeld)
+            {
+                await active.InitializeEffectsAsync(token);var support=active.Status();
+                if((hdrRequested&&support.HdrAvailable!=0&&support.HdrActive!=0)||(vsrRequested&&support.VsrAvailable!=0))await EnsureFullResolutionAsync().WaitAsync(token);
+                if(closed||generation!=request||active!=renderer)return;
+            }
+            await active.EffectsAsync(hdrRequested,vsrRequested,originalHeld,preset,gray,peak,token);if(closed||generation!=request||active!=renderer||token.IsCancellationRequested)return;UpdateView();RefreshStatus();
+        }
         catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(COMException ex){if(!closed&&generation==request)Recover(ex);}catch(Exception ex){App.Log(ex.ToString());if(!closed&&generation==request)RefreshStatus();}
     }
     private void ApplyEffects()=>_=ApplyEffectsAsync();
@@ -324,7 +381,7 @@ public sealed partial class ViewerWindow : Window
         if(renderer is null||closed||currentFrame is null)return;
         bool effects=uiSettings.AdvancedEffectsEnabled&&!accessibilitySettings.HighContrast;
         var material=(effects,accessibilitySettings.HighContrast,Root.ActualTheme);
-        if(glassMaterial!=material){glassMaterial=material;var fill=effects?Colors.Transparent:accessibilitySettings.HighContrast?uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background):Root.ActualTheme==ElementTheme.Dark?Color.FromArgb(255,35,39,47):Color.FromArgb(255,246,248,252);foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.Background=new SolidColorBrush(fill);}
+        if(glassMaterial!=material){glassMaterial=material;var fill=effects?Colors.Transparent:accessibilitySettings.HighContrast?uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background):Root.ActualTheme==ElementTheme.Dark?Color.FromArgb(255,40,40,40):Color.FromArgb(255,247,247,247);foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.Background=new SolidColorBrush(fill);}
         var rects=new List<GlassRect>();double dpi=Surface.CompositionScaleX;
         if(effects)foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})
         {
@@ -361,7 +418,7 @@ public sealed partial class ViewerWindow : Window
     private void RootPointerMoved(object sender,PointerRoutedEventArgs e)=>ShowControls();
     private void PanelEntered(object sender,PointerRoutedEventArgs e){hover=true;ShowControls();}private void PanelExited(object sender,PointerRoutedEventArgs e){hover=false;lastActivity=DateTime.UtcNow;}
     private void MenuOpened(object sender,object e){menuDepth++;ShowControls();DispatcherQueue.TryEnqueue(UpdateGlass);}private void MenuClosed(object sender,object e){menuDepth=Math.Max(0,menuDepth-1);ShowControls();DispatcherQueue.TryEnqueue(UpdateGlass);}
-    private void EnhancementOpened(object sender,object e){MenuOpened(sender,e);RefreshStatus();}
+    private async void EnhancementOpened(object sender,object e){MenuOpened(sender,e);RefreshStatus();try{if(renderer is not null){await renderer.InitializeEffectsAsync(lifetime.Token);if(!closed)RefreshStatus();}}catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(Exception ex){App.Log("Enhancement detection: "+ex.Message);}}
     private void OriginalPressed(object sender,PointerRoutedEventArgs e){originalHeld=true;OriginalButton.CapturePointer(e.Pointer);ApplyEffects();ShowControls();}
     private void OriginalReleased(object sender,PointerRoutedEventArgs e){originalHeld=false;OriginalButton.ReleasePointerCapture(e.Pointer);ApplyEffects();ShowControls();}
     private void ViewerKeyDown(object sender,KeyRoutedEventArgs e)
