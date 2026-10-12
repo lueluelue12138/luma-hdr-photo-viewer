@@ -36,4 +36,14 @@ internal static class Motion
         var visual=ElementCompositionPreview.GetElementVisual(element);visual.CenterPoint=new((float)element.ActualWidth/2,(float)element.ActualHeight/2,0);
         var scale=visual.Compositor.CreateVector3KeyFrameAnimation();scale.InsertKeyFrame(1,new(over?1.018f:1));scale.Duration=TimeSpan.FromMilliseconds(150);visual.StartAnimation("Scale",scale);
     }
+    public static void Resize(FrameworkElement element,double previousWidth,double previousHeight)
+    {
+        if(!Enabled||previousWidth<=0||previousHeight<=0||element.ActualWidth<=0||element.ActualHeight<=0)return;
+        var visual=ElementCompositionPreview.GetElementVisual(element);visual.CenterPoint=new((float)element.ActualWidth/2,(float)element.ActualHeight/2,0);
+        // The OS owns the fullscreen presenter. Animate its newly sized content
+        // with native Composition, leaving the FP16 swapchain in the compositor.
+        var scale=visual.Compositor.CreateVector3KeyFrameAnimation();
+        scale.InsertKeyFrame(0,new((float)Math.Clamp(previousWidth/element.ActualWidth,.75,1.25),(float)Math.Clamp(previousHeight/element.ActualHeight,.75,1.25),1));
+        scale.InsertKeyFrame(1,Vector3.One,visual.Compositor.CreateCubicBezierEasingFunction(new(.16f,1),new(.3f,1)));scale.Duration=TimeSpan.FromMilliseconds(240);visual.StartAnimation("Scale",scale);
+    }
 }

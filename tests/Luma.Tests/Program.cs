@@ -1,7 +1,7 @@
 using Luma.Core;
 var root=Path.Combine(Path.GetFullPath(args.FirstOrDefault()??"artifacts"),"core-test-"+Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);var source=Path.Combine(root,"source");Directory.CreateDirectory(source);Directory.CreateDirectory(Path.Combine(source,"child"));
-await File.WriteAllTextAsync(Path.Combine(source,"one.JPG"),"fixture");await File.WriteAllTextAsync(Path.Combine(source,"child","two.png"),"fixture");await File.WriteAllTextAsync(Path.Combine(source,"ignored.txt"),"fixture");
+await File.WriteAllTextAsync(Path.Combine(source,"one.JPG"),"fixture");await File.WriteAllTextAsync(Path.Combine(source,"child","two.png"),"fixture");await File.WriteAllTextAsync(Path.Combine(source,"ignored.txt"),"fixture");await File.WriteAllTextAsync(Path.Combine(source,"._one.JPG"),"AppleDouble metadata, not a photo");
 var store=new LibraryStore(Path.Combine(root,"library.db"));await store.InitializeAsync();using var indexer=new FolderIndexer(store);int checks=0;
 void Assert(bool condition,string name){if(!condition)throw new Exception("FAILED: "+name);checks++;Console.WriteLine("PASS: "+name);}
 Assert(new DirectoryInfo(SupportedFormats.Normalize(Path.GetPathRoot(root)!)).FullName==Path.GetPathRoot(root),"drive root stays absolute");
@@ -16,6 +16,13 @@ await store.ApplyScanAsync(id,[],false,true);album=(await store.AlbumsAsync()).S
 await store.ApplyScanAsync(id,[],false,false);Assert((await store.PhotosAsync(PhotoScope.Album,id)).All(p=>!p.Missing),"incomplete scan does not mark photos missing");
 var cts=new CancellationTokenSource();cts.Cancel();try{await indexer.RefreshAsync(album,cts.Token);}catch(OperationCanceledException){}
 Assert((await store.PhotosAsync(PhotoScope.Album,id)).Count==2,"cancelled scan preserves index");
+Assert(!SupportedFormats.IsSupported(Path.Combine(source,"._one.JPG"))&&FolderIndexer.Siblings(photo.Path).All(p=>!p.Name.StartsWith("._")),"AppleDouble excluded from albums and sibling navigation");
+var removed=photos.Single(p=>p.Path!=photo.Path);await store.SetAlbumAsync(id,cover:removed.Path);File.Delete(removed.Path);await indexer.RefreshAsync(album);
+Assert((await store.PhotosAsync(PhotoScope.Album,id)).Count==1,"complete online refresh hides deleted album entries");
+Assert((await store.AlbumsAsync()).Single(a=>a.Id==id).Cover==photo.Path,"deleted explicit cover falls back to a present photo");
+Assert((await store.PhotosAsync()).Count==2,"unrefreshed overlapping album retains its independent index");
+await indexer.RefreshAsync(child);Assert((await store.PhotosAsync()).Count==1,"all photos hides deleted entries after both source scans");
+await store.ApplyScanAsync(id,[],false,true);Assert((await store.PhotosAsync(PhotoScope.Album,id)).Single().Path==photo.Path,"offline source keeps its last complete contents");
 indexer.Forget(id);await store.RemoveAlbumAsync(id);Assert(File.Exists(photo.Path),"removing album preserves originals");Assert((await store.PhotosAsync(PhotoScope.Favorites)).Count==1,"removed album preserves favorite history");
 await store.SetSettingAsync("theme","dark");Assert(await store.GetSettingAsync("theme")=="dark","settings round trip");
 Assert((await store.PhotosAsync(PhotoScope.All,search:"%" )).Count==0,"search escapes wildcard input");

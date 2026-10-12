@@ -49,7 +49,7 @@ public sealed class LibraryStore
     public Task<List<Album>> AlbumsAsync() => Use(async c =>
     {
         using var cmd = Cmd(c, """
-            SELECT a.id,a.name,a.folder,COALESCE(a.cover,(SELECT ap.path FROM album_photos ap WHERE ap.album_id=a.id AND ap.missing=0 ORDER BY ap.path LIMIT 1)),
+            SELECT a.id,a.name,a.folder,COALESCE((SELECT ap.path FROM album_photos ap WHERE ap.album_id=a.id AND ap.path=a.cover AND ap.missing=0),(SELECT ap.path FROM album_photos ap WHERE ap.album_id=a.id AND ap.missing=0 ORDER BY ap.path LIMIT 1)),
             (SELECT COUNT(*) FROM album_photos ap WHERE ap.album_id=a.id AND ap.missing=0),a.offline,a.sort FROM albums a ORDER BY a.name COLLATE NOCASE
             """);
         using var r = await cmd.ExecuteReaderAsync(); var list = new List<Album>();
@@ -58,7 +58,7 @@ public sealed class LibraryStore
     });
     public Task<List<Photo>> PhotosAsync(PhotoScope scope = PhotoScope.All, long albumId = 0, string search = "", string sort = "name") => Use(async c =>
     {
-        string filter = scope switch { PhotoScope.Album => "EXISTS(SELECT 1 FROM album_photos ap WHERE ap.path=p.path AND ap.album_id=$a)", PhotoScope.Favorites => "p.favorite=1", PhotoScope.Recent => "p.opened>0", _ => "EXISTS(SELECT 1 FROM album_photos ap WHERE ap.path=p.path)" };
+        string filter = scope switch { PhotoScope.Album => "EXISTS(SELECT 1 FROM album_photos ap WHERE ap.path=p.path AND ap.album_id=$a AND ap.missing=0)", PhotoScope.Favorites => "p.favorite=1", PhotoScope.Recent => "p.opened>0", _ => "EXISTS(SELECT 1 FROM album_photos ap WHERE ap.path=p.path AND ap.missing=0)" };
         string order = scope == PhotoScope.Recent ? "p.opened DESC" : sort switch { "newest" => "p.modified DESC", "oldest" => "p.modified ASC", _ => "p.name COLLATE NOCASE, p.path" };
         using var cmd = Cmd(c, $"SELECT p.path,p.name,p.size,p.modified,p.favorite,p.opened,CASE WHEN EXISTS(SELECT 1 FROM album_photos ap WHERE ap.path=p.path) AND NOT EXISTS(SELECT 1 FROM album_photos ap WHERE ap.path=p.path AND ap.missing=0) THEN 1 ELSE 0 END FROM photos p WHERE {filter} AND p.name LIKE $q ESCAPE '\\' ORDER BY {order}", ("$a", albumId), ("$q", "%" + search.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%"));
         using var r = await cmd.ExecuteReaderAsync(); var list = new List<Photo>();

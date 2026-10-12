@@ -18,6 +18,8 @@ d.LumaView.argtypes=[c.c_void_p,c.c_float,c.c_float,c.c_float,c.c_int];d.LumaRea
 d.LumaEffects.argtypes=[c.c_void_p,c.c_int,c.c_int,c.c_int,c.c_uint]
 d.LumaPrepareEffects.argtypes=d.LumaEffects.argtypes
 d.LumaSetOriginal.argtypes=[c.c_void_p,c.c_int]
+d.LumaPrepareResize.argtypes=d.LumaResize.argtypes;d.LumaPrepareView.argtypes=d.LumaView.argtypes
+d.LumaProbeDisplay.argtypes=d.LumaStatus.argtypes
 d.LumaDecodeSized.argtypes=[c.c_wchar_p,c.c_uint,c.POINTER(Info),c.POINTER(c.c_void_p)]
 d.LumaCreateFast.argtypes=d.LumaCreate.argtypes;d.LumaInitEffects.argtypes=[c.c_void_p]
 d.LumaWaitForGpu.argtypes=[c.c_void_p]
@@ -39,6 +41,9 @@ try:
         expected=((128/255+0.055)/1.055)**2.4*s.sdrWhite
         assert abs(center[0]-expected)<0.004,(center,expected)
         assert edge==[0,0,0,0],'Fit must reveal desktop backdrop in letterbox, never crop or paint opaque black'
+        check(d.LumaPrepareResize(r,400,400,1,1));check(d.LumaPrepareView(r,2,0,0,0))
+        check(d.LumaProbeDisplay(r,c.byref(s)));assert pixel(r,200,20)==edge,'Preparing view and polling display must not present'
+        check(d.LumaRepaint(r));assert pixel(r,200,20)[0]>.1,'One final repaint must apply the prepared view'
         check(d.LumaView(r,1,0,0,1));assert pixel(r,20,200)[0]<.02,'Rotation must preserve aspect ratio'
         check(d.LumaView(r,2,0,0,0));assert pixel(r,200,20)[0]>.1,'Zoom affects real render'
     finally:d.LumaFreeFrame(p)
@@ -50,6 +55,7 @@ try:
     try:
         check(d.LumaUseFrame(r,p));check(d.LumaView(r,1,0,0,0));before=pixel(r,200,200)
         check(d.LumaPrepareEffects(r,1,0,0,1));check(d.LumaWaitForGpu(r));assert pixel(r,200,200)==before,'Background preparation must not present an obsolete result'
+        check(d.LumaProbeDisplay(r,c.byref(s)));assert pixel(r,200,200)==before,'Background display probe must not draw a prepared enhancement'
         check(d.LumaView(r,1,0,0,0));check(d.LumaStatus(r,c.byref(s)))
         print(f'TrueHDR evaluation: {s.hdrMessage}; result 0x{s.ngxResult:08X}; HDR calls {s.hdrEvaluations}; VSR calls {s.vsrEvaluations}; pixel {pixel(r,200,200)}')
         assert not s.vsrEffective and s.vsrEvaluations==0,'HDR-only must skip VSR entirely'
@@ -57,6 +63,10 @@ try:
             assert s.hdrEffective,'SDK did not evaluate TrueHDR'
             count=s.hdrEvaluations;check(d.LumaEffects(r,1,0,0,1));check(d.LumaStatus(r,c.byref(s)));assert s.hdrEvaluations==count,'Static HDR should be cached'
             enhanced=pixel(r,200,200)
+            check(d.LumaSetOriginal(r,1));check(d.LumaRepaint(r));check(d.LumaPrepareEffects(r,1,0,0,1));check(d.LumaProbeDisplay(r,c.byref(s)))
+            assert not s.hdrEffective and s.hdrEvaluations==count,'Background preparation must preserve the current original selector'
+            check(d.LumaRepaint(r));assert pixel(r,200,200)==before,'A repaint after preparation must still show the held original'
+            check(d.LumaSetOriginal(r,0));check(d.LumaRepaint(r));assert pixel(r,200,200)==enhanced
             for repeat in range(20):
                 check(d.LumaSetOriginal(r,1));check(d.LumaRepaint(r));check(d.LumaStatus(r,c.byref(s)))
                 assert not s.hdrEffective and pixel(r,200,200)==before,'Comparison must present actual original FP16 pixels'

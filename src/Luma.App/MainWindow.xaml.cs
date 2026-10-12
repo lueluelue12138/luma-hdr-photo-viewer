@@ -17,15 +17,60 @@ public sealed partial class MainWindow : Window
     private string page="albums",sort="name";private long albumId;private int generation;private bool ready,closed,scanning;
     private CancellationTokenSource? searchCancellation;private readonly CancellationTokenSource lifetime=new();
     private readonly List<ViewerWindow> viewers=[];
+    private int responsiveBand=-1;
     internal TaskCompletionSource VerificationReady {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal async Task<object> VerificationGalleryAsync(string folder)
+    {
+        Activate();
+        void Check(bool value,string reason){if(!value)throw new InvalidOperationException(reason);}
+        long id=await App.Store.AddFolderAsync(folder);await RefreshAllAsync();await ReloadAsync();
+        var cover=AlbumsRepeat.TryGetElement(0) is {} card?FindThumbnail(card):null;
+        var timeout=Stopwatch.StartNew();while(cover?.DisplayedPath is null&&timeout.Elapsed<TimeSpan.FromSeconds(10)){await Task.Delay(50);cover=AlbumsRepeat.TryGetElement(0) is {} item?FindThumbnail(item):null;}
+        Check(cover?.DisplayedPath is {} displayed&&!Path.GetFileName(displayed).StartsWith("000-"),"Corrupt default cover must fall back to a readable photograph");
+        string removed=Path.Combine(folder,"photo-00.jpg");File.Delete(removed);await RefreshAllAsync();
+        Check((await App.Store.PhotosAsync(PhotoScope.Album,id)).All(p=>p.Path!=removed&&!p.Name.StartsWith("._")),"Refresh button path must hide removed and metadata entries");
+        Nav.SelectedItem=Nav.MenuItems.OfType<NavigationViewItem>().First(n=>n.Tag is long album&&album==id);await ReloadAsync();await Task.Delay(700);
+        var position=AppWindow.Position;var size=AppWindow.Size;var samples=new List<double>();
+        for(int n=0;n<24;n++)
+        {
+            double proportion=.55+.45*(n%12)/11;var timer=Stopwatch.StartNew();AppWindow.Resize(new((int)(size.Width*proportion),(int)(size.Height*(.7+.3*proportion))));
+            var rendered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);int frames=0;
+            void Frame(object? sender,object args){if(++frames>=2)rendered.TrySetResult();}
+            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering+=Frame;
+            try{await rendered.Task.WaitAsync(TimeSpan.FromSeconds(3));}finally{Microsoft.UI.Xaml.Media.CompositionTarget.Rendering-=Frame;}
+            samples.Add(timer.Elapsed.TotalMilliseconds);
+            Check(Math.Abs(Root.ActualWidth*Root.XamlRoot.RasterizationScale-AppWindow.ClientSize.Width)<=3,"Gallery layout must match resized client width");
+        }
+        AppWindow.MoveAndResize(new(position.X,position.Y,size.Width,size.Height));await Task.Delay(150);
+        return new{scenario="gallery-refresh-cover-and-24-resize-composition-samples",milliseconds=samples,cachedThumbnails=Thumbnail.CachedImages,count=photos.Count,cover=Path.GetFileName(cover?.DisplayedPath)};
+    }
+    private static Thumbnail? FindThumbnail(DependencyObject parent)
+    {
+        if(parent is Thumbnail thumbnail)return thumbnail;
+        for(int i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++)if(FindThumbnail(VisualTreeHelper.GetChild(parent,i)) is {} found)return found;return null;
+    }
     public MainWindow()
     {
         InitializeComponent();ExtendsContentIntoTitleBar=true;SetTitleBar(TitleDrag);SystemBackdrop=new MicaBackdrop();
         WindowLayout.Configure(this,Root);
         App.RegisterGallery(this);
         WindowLayout.SizeForDpi(this,Root,1160,800);AppWindow.TitleBar.PreferredHeightOption=TitleBarHeightOption.Standard;AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
-        Root.Loaded+=Loaded;Root.SizeChanged+=(_,_)=>{bool compact=Root.ActualWidth<950;Nav.PaneDisplayMode=compact?NavigationViewPaneDisplayMode.LeftCompact:NavigationViewPaneDisplayMode.Left;Nav.IsPaneToggleButtonVisible=compact;ImportLabel.Visibility=Root.ActualWidth<720?Visibility.Collapsed:Visibility.Visible;OpenPhotoLabel.Visibility=Root.ActualWidth<950?Visibility.Collapsed:Visibility.Visible;SortBox.Visibility=Root.ActualWidth<650||page is "albums" or "settings" or "recent"?Visibility.Collapsed:Visibility.Visible;Gallery.Padding=new Thickness(Root.ActualWidth<720?16:28,22,Root.ActualWidth<720?16:28,16);Search.Width=Math.Min(370,Math.Max(170,Root.ActualWidth-300));Search.HorizontalAlignment=Root.ActualWidth<800?HorizontalAlignment.Left:HorizontalAlignment.Center;Search.Margin=Root.ActualWidth<800?new Thickness(130,0,0,0):new Thickness(0);};Closed+=(_,_)=>{closed=true;lifetime.Cancel();searchCancellation?.Cancel();App.Indexer.FolderChanged-=FolderChanged;};
+        Root.Loaded+=Loaded;Root.SizeChanged+=(_,_)=>UpdateResponsiveLayout();Closed+=(_,_)=>{closed=true;lifetime.Cancel();searchCancellation?.Cancel();App.Indexer.FolderChanged-=FolderChanged;};
         App.Indexer.FolderChanged+=FolderChanged;
+    }
+    private void UpdateResponsiveLayout()
+    {
+        double width=Root.ActualWidth;int band=width<650?0:width<720?1:width<800?2:width<950?3:4;
+        double searchWidth=Math.Min(370,Math.Max(170,width-300));if(Search.Width!=searchWidth)Search.Width=searchWidth;
+        // Pane mode changes start new layouts/transitions; live resizing only
+        // needs those changes when an adaptive breakpoint is crossed.
+        if(band==responsiveBand)return;responsiveBand=band;bool compact=band<4;
+        var mode=compact?NavigationViewPaneDisplayMode.LeftCompact:NavigationViewPaneDisplayMode.Left;
+        if(Nav.PaneDisplayMode!=mode)Nav.PaneDisplayMode=mode;
+        Nav.IsPaneToggleButtonVisible=compact;ImportLabel.Visibility=band<2?Visibility.Collapsed:Visibility.Visible;OpenPhotoLabel.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
+        SortBox.Visibility=band==0||page is "albums" or "settings" or "recent"?Visibility.Collapsed:Visibility.Visible;
+        Gallery.Padding=new Thickness(band<2?16:28,22,band<2?16:28,16);
+        Search.HorizontalAlignment=band<3?HorizontalAlignment.Left:HorizontalAlignment.Center;Search.Margin=band<3?new Thickness(130,0,0,0):new Thickness(0);
     }
     private async void Loaded(object sender,RoutedEventArgs e)
     {
@@ -38,10 +83,9 @@ public sealed partial class MainWindow : Window
     private async Task ReloadAsync()
     {
         int g=++generation;var all=await App.Store.AlbumsAsync();if(closed||g!=generation)return;
-        albums=all;
+        bool navigationChanged=!all.Select(a=>(a.Id,a.Name)).SequenceEqual(albums.Select(a=>(a.Id,a.Name)));albums=all;
         ready=false;
-        while(Nav.MenuItems.Count>5)Nav.MenuItems.RemoveAt(Nav.MenuItems.Count-1);
-        foreach(var a in albums)Nav.MenuItems.Add(new NavigationViewItem{Content=a.Name,Tag=a.Id,Icon=new FontIcon{Glyph="\uE8B7"}});
+        if(navigationChanged){while(Nav.MenuItems.Count>5)Nav.MenuItems.RemoveAt(Nav.MenuItems.Count-1);foreach(var a in albums)Nav.MenuItems.Add(new NavigationViewItem{Content=a.Name,Tag=a.Id,Icon=new FontIcon{Glyph="\uE8B7"}});}
         if(page=="album")Nav.SelectedItem=Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(n=>n.Tag is long id&&id==albumId);
         ready=true;
         if(page=="settings")return;
@@ -52,7 +96,7 @@ public sealed partial class MainWindow : Window
         else
         {
             var a=albums.FirstOrDefault(a=>a.Id==albumId);var scope=page switch{"favorites"=>PhotoScope.Favorites,"recent"=>PhotoScope.Recent,"album"=>PhotoScope.Album,_=>PhotoScope.All};
-            var result=await App.Store.PhotosAsync(scope,albumId,Search.Text,sort);if(closed||g!=generation)return;photos=result;PhotosRepeat.ItemsSource=photos;PhotosRepeat.Visibility=Visibility.Visible;AlbumsRepeat.Visibility=Visibility.Collapsed;EmptyState.Visibility=photos.Count==0?Visibility.Visible:Visibility.Collapsed;CountText.Text=$"{photos.Count} 张照片";PageTitle.Text=page switch{"favorites"=>"收藏","recent"=>"最近打开","album"=>a?.Name??"相册",_=>"所有照片"};SortBox.Visibility=page=="recent"||Root.ActualWidth<650?Visibility.Collapsed:Visibility.Visible;FooterText.Text=a?.Offline==true?"文件夹暂时离线，重新连接后刷新即可恢复":a?.Folder??"照片保留在原文件夹";
+            var result=await App.Store.PhotosAsync(scope,albumId,Search.Text,sort);if(closed||g!=generation)return;if(!photos.SequenceEqual(result)||PhotosRepeat.ItemsSource is null){photos=result;PhotosRepeat.ItemsSource=photos;}PhotosRepeat.Visibility=Visibility.Visible;AlbumsRepeat.Visibility=Visibility.Collapsed;EmptyState.Visibility=photos.Count==0?Visibility.Visible:Visibility.Collapsed;CountText.Text=$"{photos.Count} 张照片";PageTitle.Text=page switch{"favorites"=>"收藏","recent"=>"最近打开","album"=>a?.Name??"相册",_=>"所有照片"};SortBox.Visibility=page=="recent"||Root.ActualWidth<650?Visibility.Collapsed:Visibility.Visible;FooterText.Text=a?.Offline==true?"文件夹暂时离线，重新连接后刷新即可恢复":a?.Folder??"照片保留在原文件夹";
         }
         EmptyTitle.Text=albums.Count==0?"让照片的光影，有个家":"这里还没有照片";EmptyDescription.Text=albums.Count==0?"导入一个文件夹，开始整理你的照片。\n照片始终保留在原位置。":"试试其他搜索词，或导入新的文件夹。";
     }
@@ -83,15 +127,15 @@ public sealed partial class MainWindow : Window
         catch(OperationCanceledException){}
         finally{ScanProgress.IsActive=false;ScanProgress.Visibility=Visibility.Collapsed;}
     }
-    private async Task RefreshAllAsync()
+    private async Task RefreshAllAsync(long onlyAlbum=0)
     {
         if(scanning||closed)return;scanning=true;ScanProgress.IsActive=true;ScanProgress.Visibility=Visibility.Visible;
-        try{foreach(var a in await App.Store.AlbumsAsync()){ScanText.Text=$"正在刷新 {a.Name}…";var r=await App.Indexer.RefreshAsync(a,lifetime.Token);if(r.Error is not null)App.Log(r.Error);}if(!closed){ScanText.Text="";await ReloadAsync();}}
+        try{foreach(var a in (await App.Store.AlbumsAsync()).Where(a=>onlyAlbum==0||a.Id==onlyAlbum)){ScanText.Text=$"正在刷新 {a.Name}…";var r=await App.Indexer.RefreshAsync(a,lifetime.Token);if(r.Error is not null)App.Log(r.Error);}if(!closed){ScanText.Text="";Thumbnail.ClearCache();await ReloadAsync();}}
         catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.ToString());ScanText.Text="刷新失败，可稍后重试";}
         finally{scanning=false;ScanProgress.IsActive=false;ScanProgress.Visibility=Visibility.Collapsed;}
     }
-    private void FolderChanged(long id)=>DispatcherQueue.TryEnqueue(async()=>{if(closed)return;var a=albums.FirstOrDefault(a=>a.Id==id);if(a is null)return;try{await App.Indexer.RefreshAsync(a,lifetime.Token);await ReloadAsync();}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}});
-    private void RefreshClick(object sender,RoutedEventArgs e)=>_=RefreshAllAsync();
+    private void FolderChanged(long id)=>DispatcherQueue.TryEnqueue(async()=>{if(closed)return;var a=albums.FirstOrDefault(a=>a.Id==id);if(a is null)return;try{var result=await App.Indexer.RefreshAsync(a,lifetime.Token);if(result.Added>0||result.Updated>0||result.Missing>0||result.Offline!=a.Offline){Thumbnail.ClearCache();await ReloadAsync();}}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}});
+    private void RefreshClick(object sender,RoutedEventArgs e)=>_=RefreshAllAsync(page=="album"?albumId:0);
     private async void SortChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;sort=(SortBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"name";if(page=="album")await App.Store.SetAlbumAsync(albumId,sort:sort);await ReloadAsync();}
     private void AlbumClick(object sender,RoutedEventArgs e){if(((Button)sender).Tag is Album a){var nav=Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(n=>n.Tag is long id&&id==a.Id);Nav.SelectedItem=nav;}}
     private void CardEntered(object sender,PointerRoutedEventArgs e)=>Motion.Hover((FrameworkElement)sender,true);
@@ -105,7 +149,7 @@ public sealed partial class MainWindow : Window
     {
         if(((Button)sender).Tag is not Album a)return;var menu=new MenuFlyout();
         Add(menu,"重命名相册",async()=>{var box=new TextBox{Text=a.Name,PlaceholderText="相册名称",MaxLength=120};var d=new ContentDialog{XamlRoot=Root.XamlRoot,Title="重命名相册",Content=box,PrimaryButtonText="保存",CloseButtonText="取消",DefaultButton=ContentDialogButton.Primary};if(await d.ShowAsync()==ContentDialogResult.Primary&&!string.IsNullOrWhiteSpace(box.Text)){await App.Store.SetAlbumAsync(a.Id,name:box.Text.Trim());await ReloadAsync();}});
-        Add(menu,"刷新",async()=>{await App.Indexer.RefreshAsync(a);await ReloadAsync();});
+        Add(menu,"刷新",async()=>{await App.Indexer.RefreshAsync(a);Thumbnail.ClearCache();await ReloadAsync();});
         Add(menu,"在资源管理器中打开",()=>{OpenFolder(a.Folder);return Task.CompletedTask;});
         menu.Items.Add(new MenuFlyoutSeparator());Add(menu,"从图库移除（保留原文件）",async()=>{var d=new ContentDialog{XamlRoot=Root.XamlRoot,Title=$"移除“{a.Name}”？",Content="只移除相册索引，原始照片仍保留在文件夹中。",PrimaryButtonText="移除相册",CloseButtonText="取消"};if(await d.ShowAsync()==ContentDialogResult.Primary){App.Indexer.Forget(a.Id);await App.Store.RemoveAlbumAsync(a.Id);await ReloadAsync();}});menu.ShowAt((FrameworkElement)sender);e.Handled=true;
     }

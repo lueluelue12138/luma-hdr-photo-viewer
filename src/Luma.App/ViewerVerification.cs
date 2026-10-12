@@ -10,7 +10,7 @@ internal static class ViewerVerification
 {
     internal static async Task RunInteractionAsync(MainWindow host,string path)
     {
-        string report=Path.Combine(App.DataDirectory,"viewer-interaction.json");var results=new List<object>();ViewerWindow? viewer=null;
+        string report=Path.Combine(App.DataDirectory,"viewer-interaction.json");var results=new List<object>();ViewerWindow? viewer=null,idleViewer=null;
         void Check(bool condition,string message){if(!condition)throw new InvalidOperationException(message);}
         void Bounds(Microsoft.UI.Xaml.Window window)
         {
@@ -44,6 +44,7 @@ internal static class ViewerVerification
             results.Add(new{scenario="zoom-pan-fit-full-detail",width=viewer.VerificationFrameInfo?.Width,height=viewer.VerificationFrameInfo?.Height});
             var overlapping=Enumerable.Range(0,10).Select(n=>viewer.VerificationSelectAsync(n)).ToArray();await Task.WhenAll(overlapping);Check(viewer.VerificationPhoto==photos[9].Path,"Fast navigation must finish on the latest selection");
             results.Add(new{scenario="ten-overlapping-requests"});await viewer.VerificationScrollAsync();
+            await viewer.VerificationChromeAndMotionAsync();results.Add(new{scenario="manual-chrome-selected-outline-wheel-animation-fullscreen-restore"});
             await viewer.VerificationEffectsAsync(true,false);Check(viewer.VerificationStatus.HdrEffective!=0&&viewer.VerificationStatus.VsrEvaluations==0,"Lazy initialization must preserve real independent HDR");
             results.Add(new{scenario="lazy-HDR",gpuMiB=viewer.VerificationStatus.GpuBytes/1048576});
             var cached=viewer.VerificationStatus;int jobs=viewer.VerificationWorkerJobs;var comparisonMs=new List<double>();
@@ -68,10 +69,12 @@ internal static class ViewerVerification
             Check(viewer.VerificationStatus.HdrEffective==0,"Latest original hold must survive in-flight image and AI work");
             viewer.VerificationOriginal(false);Check(viewer.VerificationStatus.HdrEffective!=0,"Release after in-flight work must restore HDR");
             results.Add(new{scenario="original-comparison-during-photo-processing"});
+            idleViewer=new(path,photos,host);idleViewer.Activate();await idleViewer.VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));await idleViewer.VerificationEffectsAsync(true,false);
+            results.Add(await host.VerificationGalleryAsync(Path.Combine(App.DataDirectory,"album-fixture")));
             File.WriteAllText(report,JsonSerializer.Serialize(new{complete=true,results},new JsonSerializerOptions{WriteIndented=true}));
         }
         catch(Exception ex){File.WriteAllText(report,JsonSerializer.Serialize(new{complete=false,results,failure=ex.ToString()},new JsonSerializerOptions{WriteIndented=true}));App.Log(ex.ToString());Environment.ExitCode=1;}
-        finally{if(viewer is not null){viewer.Close();await viewer.VerificationDisposeAsync();}host.Close();}
+        finally{if(idleViewer is not null){idleViewer.Close();await idleViewer.VerificationDisposeAsync();}if(viewer is not null){viewer.Close();await viewer.VerificationDisposeAsync();}host.Close();}
     }
     internal static async Task RunPreferencesAsync(MainWindow host,string path)
     {

@@ -33,12 +33,15 @@ internal static class Native
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaRepaint(IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaReadGlass(IntPtr renderer,GlassRect rect,int dark,uint width,uint height,[Out]byte[] pixels,uint bytes);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaResize(IntPtr renderer,uint w,uint h,float scaleX,float scaleY);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaPrepareResize(IntPtr renderer,uint w,uint h,float scaleX,float scaleY);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaPrepareView(IntPtr renderer,float zoom,float x,float y,int rotation);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaUseFrame(IntPtr renderer,IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaPrepareFrame(IntPtr renderer,IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaView(IntPtr renderer,float zoom,float x,float y,int rotation);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaStatus(IntPtr renderer,out RenderStatus status);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaPeekStatus(IntPtr renderer,out RenderStatus status);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCopyStatus(IntPtr renderer,out RenderStatus status);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaProbeDisplay(IntPtr renderer,out RenderStatus status);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaWaitForGpu(IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaEffects(IntPtr renderer,int hdr,int vsr,int original,uint preset);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaPrepareEffects(IntPtr renderer,int hdr,int vsr,int original,uint preset);
@@ -107,6 +110,9 @@ internal sealed class NativeRenderer : IDisposable
     private IntPtr handle;
     private readonly SemaphoreSlim access=new(1);
     private bool disposed;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueue dispatcher;
+    private bool flushScheduled;
+    internal event Action<COMException>? Faulted;
     private RenderStatus snapshot;
     private bool holdOriginal;private bool? pendingOriginal;
     internal int WorkerJobs {get;private set;}
@@ -119,6 +125,7 @@ internal sealed class NativeRenderer : IDisposable
     public Task DisposedAsync {get;private set;}=Task.CompletedTask;
     private NativeRenderer(SwapChainPanel panel)
     {
+        dispatcher=panel.DispatcherQueue;
     }
     public static async Task<NativeRenderer> CreateAsync(SwapChainPanel panel,IntPtr hwnd,CancellationToken token)
     {
@@ -126,7 +133,7 @@ internal sealed class NativeRenderer : IDisposable
         await Task.Run(()=>Native.Check(Native.LumaCreateFast(IntPtr.Zero,hwnd,out value.handle)));
         if(token.IsCancellationRequested){await Task.Run(value.Destroy);token.ThrowIfCancellationRequested();}
         var pointer=WinRT.MarshalInspectable<SwapChainPanel>.FromManaged(panel);
-        try{Native.Check(Native.LumaAttach(value.handle,pointer));Native.Check(Native.LumaPeekStatus(value.handle,out value.snapshot));return value;}
+        try{Native.Check(Native.LumaAttach(value.handle,pointer));Native.Check(Native.LumaCopyStatus(value.handle,out value.snapshot));return value;}
         catch{value.Dispose();throw;}
         finally{WinRT.MarshalInspectable<SwapChainPanel>.DisposeAbi(pointer);}
     }
@@ -143,15 +150,20 @@ internal sealed class NativeRenderer : IDisposable
         bool repaint=false;
         if(pendingOriginal is {} original){pendingOriginal=null;Native.Check(Native.LumaSetOriginal(handle,original?1:0));Native.Check(Native.LumaCopyStatus(handle,out snapshot));repaint=true;}
         if(pendingGlass is {} glass){pendingGlass=null;Native.Check(Native.LumaSetGlass(handle,glass.Rects,(uint)glass.Rects.Length,glass.Dark?1:0));repaint=true;}
-        if(pendingSize is {} size){pendingSize=null;Native.Check(Native.LumaResize(handle,(uint)Math.Max(1,size.W*size.Dpi),(uint)Math.Max(1,size.H*size.Dpi),(float)size.Dpi,(float)size.Dpi));repaint=false;}
-        if(pendingView is {} view){pendingView=null;Native.Check(Native.LumaView(handle,(float)view.Zoom,(float)view.X,(float)view.Y,view.Rotation));repaint=false;}
-        if(repaint)Native.Check(Native.LumaRepaint(handle));
+        if(pendingSize is {} size){pendingSize=null;Native.Check(Native.LumaPrepareResize(handle,(uint)Math.Max(1,size.W*size.Dpi),(uint)Math.Max(1,size.H*size.Dpi),(float)size.Dpi,(float)size.Dpi));repaint=true;}
+        if(pendingView is {} view){pendingView=null;Native.Check(Native.LumaPrepareView(handle,(float)view.Zoom,(float)view.X,(float)view.Y,view.Rotation));repaint=true;}
+        if(repaint){Native.Check(Native.LumaRepaint(handle));Native.Check(Native.LumaCopyStatus(handle,out snapshot));}
     }
     private void TryFlush(){if(disposed||!access.Wait(0))return;try{Flush();}finally{access.Release();}}
-    public void Resize(double w,double h,double dpi){pendingSize=(w,h,dpi);TryFlush();}
-    public void View(double zoom,double x,double y,int rotation){pendingView=(zoom,x,y,rotation);TryFlush();}
+    private void ScheduleFlush()
+    {
+        if(disposed||flushScheduled)return;flushScheduled=true;
+        if(!dispatcher.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,()=>{flushScheduled=false;try{TryFlush();}catch(COMException ex){Faulted?.Invoke(ex);}}))flushScheduled=false;
+    }
+    public void Resize(double w,double h,double dpi){pendingSize=(w,h,dpi);ScheduleFlush();}
+    public void View(double zoom,double x,double y,int rotation){pendingView=(zoom,x,y,rotation);ScheduleFlush();}
     public void HoldOriginal(bool value){if(disposed||holdOriginal==value)return;holdOriginal=value;pendingOriginal=value;TryFlush();}
-    public void Glass(GlassRect[] rects,bool dark){if(lastGlass is {} previous&&previous.Dark==dark&&previous.Rects.SequenceEqual(rects))return;lastGlass=(rects,dark);pendingGlass=(rects,dark);TryFlush();}
+    public void Glass(GlassRect[] rects,bool dark){if(lastGlass is {} previous&&previous.Dark==dark&&previous.Rects.SequenceEqual(rects))return;lastGlass=(rects,dark);pendingGlass=(rects,dark);ScheduleFlush();}
     public async Task<byte[]> ReadGlassAsync(GlassRect rect,bool dark,uint w,uint h,CancellationToken token)
     {
         var pixels=new byte[checked((int)(w*h*4))];await access.WaitAsync(token);
@@ -164,7 +176,17 @@ internal sealed class NativeRenderer : IDisposable
         await RunAsync(()=>Native.Check(Native.LumaPrepareFrame(handle,frame.DangerousGetHandle())),token);
         token.ThrowIfCancellationRequested();pendingOriginal=holdOriginal;pendingView=null;TryFlush();
     }
-    public RenderStatus Status(){if(disposed||!access.Wait(0))return snapshot;try{Native.Check(Native.LumaPeekStatus(handle,out snapshot));return snapshot;}finally{access.Release();}}
+    public RenderStatus Status(){if(disposed||!access.Wait(0))return snapshot;try{Native.Check(Native.LumaCopyStatus(handle,out snapshot));return snapshot;}finally{access.Release();}}
+    public async Task PollDisplayAsync()
+    {
+        if(disposed||!access.Wait(0))return;
+        var previous=snapshot;RenderStatus next=default;
+        try{await Task.Run(()=>Native.Check(Native.LumaProbeDisplay(handle,out next)));snapshot=next;}
+        finally{access.Release();}
+        if(disposed)return;
+        if(previous.HdrActive!=next.HdrActive||previous.SdrWhite!=next.SdrWhite||previous.HdrEffective!=next.HdrEffective)pendingOriginal=holdOriginal;
+        TryFlush();
+    }
     public Task InitializeEffectsAsync(CancellationToken token)=>RunAsync(()=>Native.Check(Native.LumaInitEffects(handle)),token);
     public async Task EffectsAsync(bool hdr,bool vsr,int preset,uint middleGray,uint peak,CancellationToken token)
     {

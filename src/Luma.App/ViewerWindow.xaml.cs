@@ -26,7 +26,7 @@ public sealed partial class ViewerWindow : Window
     private readonly DispatcherTimer idleTimer=new(){Interval=TimeSpan.FromMilliseconds(500)};
     private readonly string initial;private readonly IReadOnlyList<Photo>? initialSequence;private readonly Task<List<Photo>>? siblingEnumeration;private bool recovering;
     private bool hdrRequested,vsrRequested,updatingEnhancements;
-    private bool controlsVisible=true;
+    private bool controlsVisible=true,manuallyHidden,panMoved;
     private ScrollViewer? filmstripScroller;
     private bool leftNavigationHover,rightNavigationHover;
     private ViewerPreferences CapturePreferences()=>new(hdrRequested,vsrRequested,Math.Clamp(HdrPreset.SelectedIndex,0,2),AutoBrightnessSwitch.IsOn,AutoPeakSwitch.IsOn,(uint)MiddleGraySlider.Value,(uint)PeakSlider.Value);
@@ -86,6 +86,29 @@ public sealed partial class ViewerWindow : Window
         if(Math.Abs(FilmstripBar.Value-filmstripScroller.HorizontalOffset)>1)throw new InvalidOperationException("Native scrollbar did not track the list offset");
     }
     internal void VerificationZoom(double value){zoom=value;UpdateView();ShowControls();}
+    internal async Task VerificationChromeAndMotionAsync()
+    {
+        void Check(bool value,string reason){if(!value)throw new InvalidOperationException(reason);}
+        ShowControls(true);ToggleControls();await Task.Delay(300);ShowControls();
+        Check(manuallyHidden&&!controlsVisible&&chromeOpacity==0&&!TopPanel.IsHitTestVisible&&!BottomPanel.IsHitTestVisible,"Manual hiding must survive pointer/activity changes");
+        ToggleControls();await Task.Delay(250);Check(!manuallyHidden&&controlsVisible&&chromeOpacity==1,"Second canvas click must restore controls");
+        var selected=Filmstrip.ContainerFromIndex(index) as ListViewItem;selected?.ApplyTemplate();
+        var outline=FindVisual<Border>(selected!,"SelectionOutline");
+        Check(outline is not null&&outline.BorderBrush is SolidColorBrush brush&&brush.Color.A>0&&outline.ActualWidth>=92&&outline.ActualHeight>=68,"Selected thumbnail needs a visible, full-size accent outline");
+        ZoomAt(Surface.ActualWidth*.65,Surface.ActualHeight*.55,120);double start=renderedZoom,target=zoom;
+        if(Motion.Enabled){Check(viewTimer.IsEnabled&&start<target,"Wheel zoom must animate from the rendered frame");await Task.Delay(50);Check(renderedZoom>start&&renderedZoom<=target,"Wheel animation must progress toward its target");}
+        await Task.Delay(250);Check(Math.Abs(renderedZoom-zoom)<.001,"Wheel animation must finish on target");
+        for(int n=0;n<8;n++)ZoomAt(Surface.ActualWidth*.65,Surface.ActualHeight*.55,n%2==0?120:-120);
+        await Task.Delay(250);Check(Math.Abs(renderedZoom-zoom)<.001&&double.IsFinite(renderedPanX)&&double.IsFinite(renderedPanY),"Repeated wheel input must converge without invalid pan");Fit();await Task.Delay(250);
+        var p=AppWindow.Position;var s=AppWindow.Size;ToggleFullScreen();await Task.Delay(400);
+        Check(fullScreen&&FullScreenIcon.Glyph=="\uE73F"&&AutomationProperties.GetName(FullScreenButton)=="退出全屏","Fullscreen needs its matching exit action");
+        ToggleFullScreen();await Task.Delay(400);Check(!fullScreen&&FullScreenIcon.Glyph=="\uE740"&&AppWindow.Position==p&&AppWindow.Size==s,"Exiting fullscreen must restore bounds and action");
+    }
+    private static T? FindVisual<T>(DependencyObject parent,string name) where T:FrameworkElement
+    {
+        if(parent is null)return null;if(parent is T item&&item.Name==name)return item;
+        for(int i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++)if(FindVisual<T>(VisualTreeHelper.GetChild(parent,i),name) is {} found)return found;return null;
+    }
     internal async Task VerificationPopupAsync()
     {
         int before=popupGlassSnapshots;EnhancementButton.Flyout.ShowAt(EnhancementButton);
@@ -99,6 +122,7 @@ public sealed partial class ViewerWindow : Window
         initial=SupportedFormats.Normalize(path);initialSequence=photos;InitializeComponent();ExtendsContentIntoTitleBar=true;SetTitleBar(TitleDrag);SystemBackdrop=new DesktopAcrylicBackdrop();
         var options=ViewerPreferences.Current;updatingEnhancements=true;hdrRequested=options.Hdr;vsrRequested=options.Vsr;HdrSwitch.IsOn=hdrRequested;VsrSwitch.IsOn=vsrRequested;HdrPreset.SelectedIndex=options.Preset;AutoBrightnessSwitch.IsOn=options.AutoBrightness;AutoPeakSwitch.IsOn=options.AutoPeak;MiddleGraySlider.Value=options.MiddleGray;PeakSlider.Value=options.Peak;MiddleGraySlider.IsEnabled=!options.AutoBrightness;PeakSlider.IsEnabled=!options.AutoPeak;updatingEnhancements=false;
         Filmstrip.AddHandler(UIElement.PointerWheelChangedEvent,new PointerEventHandler(FilmstripWheel),true);
+        EnhancementScroll.PreviewKeyDown+=ViewerPreviewKeyDown;EnhancementScroll.PreviewKeyUp+=ViewerPreviewKeyUp;
         foreach(var button in new[]{PreviousButton,NextButton}){button.Opacity=1;ElementCompositionPreview.GetElementVisual(button).Opacity=0;}
         FileTitle.Text=System.IO.Path.GetFileName(initial);Title=$"{FileTitle.Text} — Luma";Loading.IsActive=true;Loading.Visibility=Visibility.Visible;StatusText.Text="正在加载照片…";
         // Prepare known gallery items before the first composed frame, rather
@@ -133,7 +157,7 @@ public sealed partial class ViewerWindow : Window
         try{var siblings=await siblingEnumeration!;if(closed)return;var path=current?.Path??initial;if(siblings.Count>0)sequence=siblings;index=Math.Max(0,sequence.FindIndex(p=>string.Equals(p.Path,path,StringComparison.OrdinalIgnoreCase)));selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=index;selecting=false;UpdatePosition();BottomPanel.Visibility=Visibility.Visible;if(currentFrame is not null)Prefetch();}
         catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException){App.Log(ex.Message);if(!closed)BottomPanel.Visibility=Visibility.Visible;}
     }
-    private async Task CreateRendererAsync(){renderer?.Dispose();renderer=null;var next=await NativeRenderer.CreateAsync(Surface,WinRT.Interop.WindowNative.GetWindowHandle(this),lifetime.Token);if(closed){next.Dispose();return;}renderer=next;renderer.HoldOriginal(originalHeld);renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);App.Log("Viewer renderer attached");}
+    private async Task CreateRendererAsync(){renderer?.Dispose();renderer=null;var next=await NativeRenderer.CreateAsync(Surface,WinRT.Interop.WindowNative.GetWindowHandle(this),lifetime.Token);if(closed){next.Dispose();return;}renderer=next;renderer.Faulted+=ex=>{if(renderer==next&&!closed)Recover(ex);};renderer.HoldOriginal(originalHeld);renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);App.Log("Viewer renderer attached");}
     private async Task DisplayAsync(int selected)
     {
         if(closed||sequence.Count==0||selected<0||selected>=sequence.Count)return;
@@ -267,17 +291,34 @@ public sealed partial class ViewerWindow : Window
     private void RotateClick(object sender,RoutedEventArgs e){rotation=(rotation+1)%4;panX=panY=0;UpdateView();ShowControls();}
     private void CanvasWheel(object sender,PointerRoutedEventArgs e)
     {
-        var p=e.GetCurrentPoint(InputLayer);double old=zoom;zoom=Math.Clamp(zoom*Math.Pow(1.0015,p.Properties.MouseWheelDelta),0.05,64);double ratio=zoom/old;double x=(p.Position.X-Surface.ActualWidth/2)*Surface.CompositionScaleX,y=(p.Position.Y-Surface.ActualHeight/2)*Surface.CompositionScaleY;panX=x-(x-panX)*ratio;panY=y-(y-panY)*ratio;UpdateView();ShowControls();e.Handled=true;
+        var p=e.GetCurrentPoint(InputLayer);ZoomAt(p.Position.X,p.Position.Y,p.Properties.MouseWheelDelta);ShowControls();e.Handled=true;
     }
-    private void CanvasPressed(object sender,PointerRoutedEventArgs e){var p=e.GetCurrentPoint(InputLayer);InputLayer.Focus(FocusState.Pointer);if(!p.Properties.IsLeftButtonPressed||zoom<=1)return;dragging=InputLayer.CapturePointer(e.Pointer);startX=p.Position.X;startY=p.Position.Y;e.Handled=dragging;}
-    private void CanvasMoved(object sender,PointerRoutedEventArgs e){if(!dragging)return;var p=e.GetCurrentPoint(InputLayer);panX+=(p.Position.X-startX)*Surface.CompositionScaleX;panY+=(p.Position.Y-startY)*Surface.CompositionScaleY;startX=p.Position.X;startY=p.Position.Y;UpdateView();ShowControls();e.Handled=true;}
+    private void ZoomAt(double pointerX,double pointerY,int delta)
+    {
+        double old=zoom;zoom=Math.Clamp(zoom*Math.Pow(1.0015,delta),0.05,64);double ratio=zoom/old;
+        double x=(pointerX-Surface.ActualWidth/2)*Surface.CompositionScaleX,y=(pointerY-Surface.ActualHeight/2)*Surface.CompositionScaleY;
+        panX=x-(x-panX)*ratio;panY=y-(y-panY)*ratio;UpdateView(true);
+    }
+    private void CanvasPressed(object sender,PointerRoutedEventArgs e)
+    {
+        var p=e.GetCurrentPoint(InputLayer);InputLayer.Focus(FocusState.Pointer);panMoved=false;
+        if(!p.Properties.IsLeftButtonPressed)return;
+        // Start dragging from the currently visible frame, including a wheel
+        // animation in flight, instead of jumping to its unfinished target.
+        viewTimer.Stop();zoom=renderedZoom;panX=renderedPanX;panY=renderedPanY;
+        if(zoom<=1)return;dragging=InputLayer.CapturePointer(e.Pointer);startX=p.Position.X;startY=p.Position.Y;e.Handled=dragging;
+    }
+    private void CanvasMoved(object sender,PointerRoutedEventArgs e){if(!dragging)return;var p=e.GetCurrentPoint(InputLayer);double dx=p.Position.X-startX,dy=p.Position.Y-startY;if(!panMoved&&Math.Abs(dx)+Math.Abs(dy)<4)return;panMoved=true;panX+=dx*Surface.CompositionScaleX;panY+=dy*Surface.CompositionScaleY;startX=p.Position.X;startY=p.Position.Y;UpdateView();ShowControls();e.Handled=true;}
     private void CanvasReleased(object sender,PointerRoutedEventArgs e){dragging=false;InputLayer.ReleasePointerCapture(e.Pointer);e.Handled=true;}
+    private void CanvasTapped(object sender,TappedRoutedEventArgs e){if(!panMoved)ToggleControls();e.Handled=true;}
+    private void ToggleControls(){manuallyHidden=controlsVisible;controlsVisible=!controlsVisible;lastActivity=DateTime.UtcNow;hover=false;AnimateChrome(controlsVisible);}
     private void CanvasDoubleTapped(object sender,DoubleTappedRoutedEventArgs e){if(Math.Abs(zoom-1)<0.001)ActualSize();else Fit();e.Handled=true;}
     private async void FavoriteClick(object sender,RoutedEventArgs e){if(current is null)return;var photo=current;int generation=request;try{bool favorite=await App.Store.ToggleFavoriteAsync(photo);if(closed||generation!=request)return;current=photo with{Favorite=favorite};UpdateFavorite();ShowControls();}catch(Exception ex){if(!closed&&generation==request)Fail(ex);}}
     private void UpdateFavorite(){FavoriteIcon.Glyph=current?.Favorite==true?"\uEB52":"\uEB51";FavoriteButton.SetValue(AutomationProperties.NameProperty,current?.Favorite==true?"取消收藏":"收藏");}
     private void FullScreenClick(object sender,RoutedEventArgs e)=>ToggleFullScreen();
     private void ToggleFullScreen()
     {
+        double previousWidth=Root.ActualWidth,previousHeight=Root.ActualHeight;
         if(!fullScreen)
         {
             windowedPresenter=AppWindow.Presenter;
@@ -295,7 +336,10 @@ public sealed partial class ViewerWindow : Window
             }
             windowedPresenter=null;
         }
-        TitleRow.Height=new GridLength(fullScreen?0:44);ShowControls();InputLayer.Focus(FocusState.Programmatic);
+        TitleRow.Height=new GridLength(fullScreen?0:44);
+        FullScreenIcon.Glyph=fullScreen?"\uE73F":"\uE740";string label=fullScreen?"退出全屏":"全屏";
+        ToolTipService.SetToolTip(FullScreenButton,$"{label}（F / F11）");AutomationProperties.SetName(FullScreenButton,label);
+        DispatcherQueue.TryEnqueue(()=>{if(!closed)Motion.Resize(Root,previousWidth,previousHeight);});ShowControls();InputLayer.Focus(FocusState.Programmatic);
     }
     private void BackClick(object sender,RoutedEventArgs e){App.ShowGallery();Close();}
     private void SurfaceSizeChanged(object sender,SizeChangedEventArgs e){if(closed)return;EnhancementScroll.MaxHeight=Math.Max(160,Canvas.ActualHeight-116);ZoomOutButton.Visibility=ZoomInButton.Visibility=Canvas.ActualWidth<570?Visibility.Collapsed:Visibility.Visible;BottomPanel.MaxWidth=Math.Min(920,Math.Max(240,Canvas.ActualWidth-72));Filmstrip.MaxWidth=Math.Min(820,Math.Max(120,Canvas.ActualWidth-158));if(renderer is null)return;try{renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
@@ -356,7 +400,7 @@ public sealed partial class ViewerWindow : Window
         try{await SavePreferencesAsync();await Task.Delay(220,token);if(!closed)ApplyEffects();}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}
     }
     private void TuningValueChanged(object sender,Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)=>TuningChanged(sender,new RoutedEventArgs());
-    private async void EnhancementToggled(object sender,RoutedEventArgs e){if(updatingEnhancements||renderer is null)return;hdrRequested=HdrSwitch.IsOn;vsrRequested=VsrSwitch.IsOn;await SavePreferencesAsync();if(closed)return;try{ApplyEffects();}catch(Exception ex){App.Log(ex.Message);HdrReasonText.Text=ex.Message;RefreshStatus();}ShowControls();}
+    private async void EnhancementToggled(object sender,RoutedEventArgs e){if(updatingEnhancements||renderer is null)return;hdrRequested=HdrSwitch.IsOn;vsrRequested=VsrSwitch.IsOn;RefreshStatus(false);await SavePreferencesAsync();if(closed)return;try{ApplyEffects();}catch(Exception ex){App.Log(ex.Message);HdrReasonText.Text=ex.Message;RefreshStatus();}ShowControls();}
     private async void PresetChanged(object sender,SelectionChangedEventArgs e){if(renderer is null||updatingEnhancements)return;await SavePreferencesAsync();if(closed)return;try{ApplyEffects();}catch(Exception ex){App.Log(ex.Message);}}
     private void UpdateInfo(){if(current is null)return;var i=currentFrame?.Info;InfoText.Text=$"{current.Name}\n\n{(i is null?"":$"{i.Value.OriginalWidth} × {i.Value.OriginalHeight} 像素")}\n{current.Size/1048576.0:0.00} MB\n缩放 {PixelScale()*100:0}%\n旋转 {rotation*90}°\n{(i?.Downsampled==1?"大图已按内存预算缩小解码\n":"")}\n{current.Path}";}
     private void InfoClick(object sender,RoutedEventArgs e){InfoPanel.Visibility=InfoPanel.Visibility==Visibility.Visible?Visibility.Collapsed:Visibility.Visible;ShowControls();UpdateInfo();UpdateGlass();}
@@ -367,7 +411,7 @@ public sealed partial class ViewerWindow : Window
         try{var picker=new FileOpenPicker();foreach(var ext in SupportedFormats.Extensions)picker.FileTypeFilter.Add(ext);WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));var f=await picker.PickSingleFileAsync();if(f is not null){new ViewerWindow(f.Path).Activate();Close();}}catch(Exception ex){Fail(ex);}
     }
     private void Fail(Exception ex){App.Log(ex.ToString());ErrorText.Text=ex.Message;ErrorPanel.Visibility=Visibility.Visible;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;ShowControls();}
-    private void ShowControls(){lastActivity=DateTime.UtcNow;if(!controlsVisible){controlsVisible=true;AnimateChrome(true);}}
+    private void ShowControls(bool force=false){lastActivity=DateTime.UtcNow;if(force)manuallyHidden=false;if(manuallyHidden)return;if(!controlsVisible){controlsVisible=true;AnimateChrome(true);}}
     private void AnimateChrome(bool visible)
     {
         chromeTimer.Stop();chromeStart=chromeOpacity;chromeTarget=visible?1:0;chromeStarted=DateTime.UtcNow;TopPanel.IsHitTestVisible=BottomPanel.IsHitTestVisible=visible;
@@ -411,16 +455,18 @@ public sealed partial class ViewerWindow : Window
         }
         try{renderer.Glass(rects.ToArray(),Root.ActualTheme==ElementTheme.Dark);}catch(COMException ex){Recover(ex);}
     }
-    private void IdleTick(object? sender,object e)
+    private async void IdleTick(object? sender,object e)
     {
-        RefreshStatus();UpdateGlass();
-        if(menuDepth>0||hover||leftNavigationHover||rightNavigationHover||dragging||originalHeld||InfoPanel.Visibility==Visibility.Visible||DateTime.UtcNow<keyboardUntil||DateTime.UtcNow-lastActivity<TimeSpan.FromSeconds(3.5))return;
-        if(controlsVisible){controlsVisible=false;AnimateChrome(false);}
-        // Poll display state without continuously processing the photo.
+        if(closed)return;UpdateGlass();
+        if(menuDepth==0&&!hover&&!leftNavigationHover&&!rightNavigationHover&&!dragging&&!originalHeld&&InfoPanel.Visibility!=Visibility.Visible&&DateTime.UtcNow>=keyboardUntil&&DateTime.UtcNow-lastActivity>=TimeSpan.FromSeconds(3.5)&&controlsVisible){controlsVisible=false;AnimateChrome(false);}
+        // DXGI/display configuration calls may wait on the driver. Keep this
+        // polling off the shared XAML thread, including while gallery resizing.
+        try{if(renderer is {} active)await active.PollDisplayAsync();if(!closed)RefreshStatus(false);}
+        catch(COMException ex){if(!closed)Recover(ex);}
     }
     private void RootPointerMoved(object sender,PointerRoutedEventArgs e)=>ShowControls();
     private void PanelEntered(object sender,PointerRoutedEventArgs e){hover=true;ShowControls();}private void PanelExited(object sender,PointerRoutedEventArgs e){hover=false;lastActivity=DateTime.UtcNow;}
-    private void MenuOpened(object sender,object e){menuDepth++;ShowControls();DispatcherQueue.TryEnqueue(UpdateGlass);}private void MenuClosed(object sender,object e){menuDepth=Math.Max(0,menuDepth-1);ShowControls();DispatcherQueue.TryEnqueue(UpdateGlass);}
+    private void MenuOpened(object sender,object e){menuDepth++;ShowControls(true);DispatcherQueue.TryEnqueue(UpdateGlass);}private void MenuClosed(object sender,object e){menuDepth=Math.Max(0,menuDepth-1);ShowControls();DispatcherQueue.TryEnqueue(UpdateGlass);}
     private async void EnhancementOpened(object sender,object e){MenuOpened(sender,e);RefreshStatus();try{if(renderer is not null){await renderer.InitializeEffectsAsync(lifetime.Token);if(!closed)RefreshStatus();}}catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(Exception ex){App.Log("Enhancement detection: "+ex.Message);}}
     private void SetOriginalHeld(bool value)
     {
@@ -441,11 +487,25 @@ public sealed partial class ViewerWindow : Window
             case VirtualKey.R:RotateClick(sender,e);break;case VirtualKey.F:case VirtualKey.F11:ToggleFullScreen();break;
             case VirtualKey.D:if(ctrl)FavoriteClick(sender,e);else return;break;
             case VirtualKey.I:InfoClick(sender,e);break;case VirtualKey.O:if(ctrl)OpenClick(sender,e);else return;break;
-            case VirtualKey.Space:SetOriginalHeld(true);break;
             case VirtualKey.Escape:if(fullScreen)ToggleFullScreen();else if(InfoPanel.Visibility==Visibility.Visible)InfoPanel.Visibility=Visibility.Collapsed;else Close();break;
             default:return;
         }
         e.Handled=true;
     }
-    private void ViewerKeyUp(object sender,KeyRoutedEventArgs e){if(e.Key==VirtualKey.Space){SetOriginalHeld(false);e.Handled=true;}}
+    private void ViewerPreviewKeyDown(object sender,KeyRoutedEventArgs e)
+    {
+        if(e.Key!=VirtualKey.Space)return;
+        // Tunnel before Button/ListView class handling. Enter retains its normal
+        // control activation semantics; Space is always image comparison.
+        keyboardUntil=DateTime.UtcNow.AddSeconds(10);SetOriginalHeld(true);e.Handled=true;TraceComparisonInput("press");
+    }
+    private void ViewerPreviewKeyUp(object sender,KeyRoutedEventArgs e){if(e.Key==VirtualKey.Space){SetOriginalHeld(false);e.Handled=true;TraceComparisonInput("release");}}
+    private void TraceComparisonInput(string action)
+    {
+        // Opt-in local validation only: verifies real input delivery rather than
+        // calling the comparison helper directly from an integration test.
+        var cli=Environment.GetCommandLineArgs();if(!cli.Contains("--test-library")||!cli.Contains("--verify-input"))return;
+        var s=renderer?.CachedStatus??default;
+        File.AppendAllText(Path.Combine(App.DataDirectory,"keyboard-input.jsonl"),System.Text.Json.JsonSerializer.Serialize(new{action,originalHeld,photo=current?.Name,index,zoom,favorite=current?.Favorite,hdr=s.HdrEffective,vsr=s.VsrEffective,hdrCalls=s.HdrEvaluations,vsrCalls=s.VsrEvaluations,jobs=renderer?.WorkerJobs})+Environment.NewLine);
+    }
 }

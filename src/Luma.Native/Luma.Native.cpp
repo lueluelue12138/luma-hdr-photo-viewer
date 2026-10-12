@@ -212,7 +212,7 @@ struct Renderer {
     }
     // Stable address within this module for its DLL search directory.
     static void LumaDecodeAddress(){}
-    void probe(bool evaluate=true) {
+    void probe(bool evaluate=true,bool present=true) {
         check(device->GetDeviceRemovedReason());
         int oldHdr=status.hdrActive,oldEffective=status.hdrEffective;float oldWhite=status.sdrWhite,oldPeak=status.maxNits;
         status.hdrActive=0;status.maxNits=0;status.sdrWhite=1;status.display[0]=0;
@@ -232,7 +232,7 @@ struct Renderer {
                 if(status.hdrActive&&DisplayConfigGetDeviceInfo(&white.header)==ERROR_SUCCESS)status.sdrWhite=white.SDRWhiteLevel/1000.0f;
             }
         }
-        if(image){if(evaluate&&requestedHdr&&status.hdrActive&&(oldHdr!=status.hdrActive||oldPeak!=status.maxNits||oldWhite!=status.sdrWhite))effects(requestedHdr,requestedVsr,holdOriginal,currentPreset);else selectImage();if(oldHdr!=status.hdrActive||oldWhite!=status.sdrWhite||oldEffective!=status.hdrEffective)draw();}
+        if(image){if(evaluate&&requestedHdr&&status.hdrActive&&(oldHdr!=status.hdrActive||oldPeak!=status.maxNits||oldWhite!=status.sdrWhite))effects(requestedHdr,requestedVsr,holdOriginal,currentPreset);else selectImage();if(present&&(oldHdr!=status.hdrActive||oldWhite!=status.sdrWhite||oldEffective!=status.hdrEffective))draw();}
     }
     void resize(UINT w,UINT h){w=std::clamp(w,1u,16384u);h=std::clamp(h,1u,16384u);if(target&&w==width&&h==height)return;
         context->OMSetRenderTargets(0,nullptr,nullptr);target.Reset();offscreen.Reset();
@@ -324,15 +324,18 @@ API HRESULT __cdecl LumaSetGlass(void* r,const GlassRect* rects,UINT count,int d
 API HRESULT __cdecl LumaRepaint(void* r){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->draw();});}
 API HRESULT __cdecl LumaReadGlass(void* r,GlassRect rect,int dark,UINT w,UINT h,uint8_t* bgra,UINT bytes){if(!r||!bgra||uint64_t(bytes)<uint64_t(w)*h*4)return E_INVALIDARG;return safe([&]{auto& a=*static_cast<Renderer*>(r);a.glass->readPanel(a.context.Get(),a.sampler.Get(),rect,dark!=0,a.status.sdrWhite,w,h,bgra);});}
 API HRESULT __cdecl LumaResize(void* r,UINT w,UINT h,float scaleX,float scaleY){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.compositionDpi=std::max(.1f,scaleX);x.resize(w,h);if(x.swap){DXGI_MATRIX_3X2_F inverse{1/std::max(0.1f,scaleX),0,0,1/std::max(0.1f,scaleY),0,0};check(x.swap->SetMatrixTransform(&inverse));}x.draw();});}
+API HRESULT __cdecl LumaPrepareResize(void* r,UINT w,UINT h,float scaleX,float scaleY){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.compositionDpi=std::max(.1f,scaleX);x.resize(w,h);if(x.swap){DXGI_MATRIX_3X2_F inverse{1/std::max(.1f,scaleX),0,0,1/std::max(.1f,scaleY),0,0};check(x.swap->SetMatrixTransform(&inverse));}});}
 API HRESULT __cdecl LumaUseFrame(void* r,void* f){if(!r||!f)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.use(*static_cast<Frame*>(f));x.draw();});}
 API HRESULT __cdecl LumaPrepareFrame(void* r,void* f){if(!r||!f)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->use(*static_cast<Frame*>(f));});}
 API HRESULT __cdecl LumaView(void* r,float zoom,float x,float y,int rotation){if(!r)return E_POINTER;return safe([&]{auto& a=*static_cast<Renderer*>(r);a.zoom=std::clamp(zoom,0.05f,64.0f);a.panX=x;a.panY=y;a.rotation=(rotation%4+4)%4;a.draw();});}
+API HRESULT __cdecl LumaPrepareView(void* r,float zoom,float x,float y,int rotation){if(!r)return E_POINTER;return safe([&]{auto& a=*static_cast<Renderer*>(r);a.zoom=std::clamp(zoom,0.05f,64.0f);a.panX=x;a.panY=y;a.rotation=(rotation%4+4)%4;});}
 API HRESULT __cdecl LumaStatus(void* r,Status* result){if(!r||!result)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.probe();*result=x.status;});}
 API HRESULT __cdecl LumaPeekStatus(void* r,Status* result){if(!r||!result)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.probe(false);x.updateMemory();*result=x.status;});}
+API HRESULT __cdecl LumaProbeDisplay(void* r,Status* result){if(!r||!result)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.probe(false,false);x.updateMemory();*result=x.status;});}
 API HRESULT __cdecl LumaCopyStatus(void* r,Status* result){if(!r||!result)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.updateMemory();*result=x.status;});}
 API HRESULT __cdecl LumaWaitForGpu(void* r){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);D3D11_QUERY_DESC desc{D3D11_QUERY_EVENT,0};ComPtr<ID3D11Query> done;check(x.device->CreateQuery(&desc,&done));x.context->End(done.Get());x.context->Flush();HRESULT hr;while((hr=x.context->GetData(done.Get(),nullptr,0,D3D11_ASYNC_GETDATA_DONOTFLUSH))==S_FALSE){check(x.device->GetDeviceRemovedReason());Sleep(2);}check(hr);});}
 API HRESULT __cdecl LumaEffects(void* r,int hdr,int vsr,int original,UINT preset){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->effects(hdr!=0,vsr!=0,original!=0,std::min(preset,2u));});}
-API HRESULT __cdecl LumaPrepareEffects(void* r,int hdr,int vsr,int original,UINT preset){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->effects(hdr!=0,vsr!=0,original!=0,std::min(preset,2u),false);});}
+API HRESULT __cdecl LumaPrepareEffects(void* r,int hdr,int vsr,int original,UINT preset){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);bool held=x.holdOriginal;try{x.effects(hdr!=0,vsr!=0,original!=0,std::min(preset,2u),false);}catch(...){x.holdOriginal=held;x.selectImage();throw;}x.holdOriginal=held;x.selectImage();});}
 // Presentation-only comparison. Keep the requested mode and all cached outputs;
 // never initialize NGX, upload a frame, or evaluate an enhancement here.
 API HRESULT __cdecl LumaSetOriginal(void* r,int original){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.holdOriginal=original!=0;x.selectImage();});}
