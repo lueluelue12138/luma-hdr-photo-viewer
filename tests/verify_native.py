@@ -10,6 +10,7 @@ exif=Image.Exif();exif[274]=6;Image.new('RGB',(90,40),(255,255,255)).save(out/'o
 jpg=Image.new('RGB',(3840,2160),(80,100,140));ImageDraw.Draw(jpg).rectangle((1600,600,2400,1400),fill=(255,255,255));jpg.save(out/'highlights.jpg',quality=95)
 class Info(c.Structure):_fields_=[('width',c.c_uint),('height',c.c_uint),('ow',c.c_uint),('oh',c.c_uint),('hdr',c.c_int),('downsampled',c.c_int),('bytes',c.c_uint64)]
 class Status(c.Structure):_fields_=[('gpu',c.c_wchar*128),('display',c.c_wchar*128),('nvidia',c.c_int),('hdrActive',c.c_int),('fp16',c.c_int),('nativeHdr',c.c_int),('maxNits',c.c_float),('sdrWhite',c.c_float),('gpuBytes',c.c_uint64),('hdrEffective',c.c_int),('vsrEffective',c.c_int),('sdkAvailable',c.c_int),('hdrAvailable',c.c_int),('vsrAvailable',c.c_int),('ngxResult',c.c_uint),('hdrEvaluations',c.c_uint),('vsrEvaluations',c.c_uint),('hdrMessage',c.c_wchar*256),('vsrMessage',c.c_wchar*256)]
+class GlassRect(c.Structure):_fields_=[(n,c.c_float) for n in ('left','top','width','height','radius','opacity')]
 d=c.CDLL(os.environ.get('LUMA_NATIVE_TEST_DLL',str(root/'src'/'Luma.Native'/'bin'/'Luma.Native.dll')))
 d.LumaDecode.argtypes=[c.c_wchar_p,c.POINTER(Info),c.POINTER(c.c_void_p)];d.LumaCreate.argtypes=[c.c_void_p,c.c_void_p,c.POINTER(c.c_void_p)]
 d.LumaResize.argtypes=[c.c_void_p,c.c_uint,c.c_uint,c.c_float,c.c_float];d.LumaUseFrame.argtypes=[c.c_void_p,c.c_void_p];d.LumaStatus.argtypes=[c.c_void_p,c.POINTER(Status)]
@@ -17,6 +18,8 @@ d.LumaView.argtypes=[c.c_void_p,c.c_float,c.c_float,c.c_float,c.c_int];d.LumaRea
 d.LumaEffects.argtypes=[c.c_void_p,c.c_int,c.c_int,c.c_int,c.c_uint]
 d.LumaPrepareEffects.argtypes=d.LumaEffects.argtypes
 d.LumaWaitForGpu.argtypes=[c.c_void_p]
+d.LumaSetGlass.argtypes=[c.c_void_p,c.POINTER(GlassRect),c.c_uint,c.c_int];d.LumaRepaint.argtypes=[c.c_void_p]
+d.LumaReadGlass.argtypes=[c.c_void_p,GlassRect,c.c_int,c.c_uint,c.c_uint,c.POINTER(c.c_uint8),c.c_uint]
 def check(hr):
     if hr<0:raise RuntimeError(f'{hr & 0xffffffff:08x}: {d.LumaError()}')
 def decode(name):
@@ -32,7 +35,7 @@ try:
         check(d.LumaUseFrame(r,p));center=pixel(r,200,200);edge=pixel(r,200,20)
         expected=((128/255+0.055)/1.055)**2.4*s.sdrWhite
         assert abs(center[0]-expected)<0.004,(center,expected)
-        assert abs(edge[0]-.012)<.001,'Fit must letterbox, never crop'
+        assert edge==[0,0,0,0],'Fit must reveal desktop backdrop in letterbox, never crop or paint opaque black'
         check(d.LumaView(r,1,0,0,1));assert pixel(r,20,200)[0]<.02,'Rotation must preserve aspect ratio'
         check(d.LumaView(r,2,0,0,0));assert pixel(r,200,20)[0]>.1,'Zoom affects real render'
     finally:d.LumaFreeFrame(p)
@@ -85,6 +88,28 @@ try:
         check(d.LumaUseFrame(r,p));check(d.LumaStatus(r,c.byref(s)));hdr_count=s.hdrEvaluations;vsr_count=s.vsrEvaluations;memory=s.gpuBytes;check(d.LumaEffects(r,1,1,0,1));check(d.LumaStatus(r,c.byref(s)))
         assert not s.hdrEffective and not s.vsrEffective and s.hdrEvaluations==hdr_count and s.vsrEvaluations==vsr_count,'Transparent photos must not lose alpha through enhancement'
         assert s.gpuBytes==memory,'Unavailable enhancement must not allocate SDK input textures'
+        value=pixel(r,200,200);assert abs(value[3]-128/255)<.001 and abs(value[0]-s.sdrWhite*128/255)<.01,'Transparent photo must use premultiplied alpha'
+    finally:d.LumaFreeFrame(p)
+    # Actual GPU blur must inherit nearby photo colors, keep outside pixels intact,
+    # retain the linear HDR buffer, and fade in synchrony with XAML controls.
+    chart=Image.new('RGB',(400,400),(235,35,25));ImageDraw.Draw(chart).rectangle((200,0,400,400),fill=(20,40,235));chart.save(out/'glass-chart.png')
+    i,p=decode('glass-chart.png')
+    try:
+        check(d.LumaEffects(r,0,0,0,1));check(d.LumaUseFrame(r,p));check(d.LumaView(r,1,0,0,0));outside=pixel(r,15,200);red=pixel(r,90,200)
+        rect=(GlassRect*1)(GlassRect(40,40,320,320,18,1));check(d.LumaSetGlass(r,rect,1,0));check(d.LumaRepaint(r))
+        left=pixel(r,90,200);right=pixel(r,310,200)
+        assert left[0]>right[0]+.3 and right[2]>left[2]+.3,'Glass must sample actual red/blue photo, not a flat tint'
+        assert pixel(r,15,200)==outside,'Glass must never blur or alter the photo outside its panel'
+        assert left[1]>red[1] and left[0]>1,'FP16 glass tint must retain linear high-range values'
+        middle=pixel(r,200,200);assert middle[0]<left[0]-.3 and middle[2]>left[2]+.3,'Gaussian blur must mix the actual red/blue boundary'
+        popup=(c.c_uint8*(320*320*4))();check(d.LumaReadGlass(r,rect[0],0,320,320,popup,len(popup)))
+        assert popup[(160*320+30)*4+2]>popup[(160*320+280)*4+2]+40,'Popup brush must inherit actual photo colors'
+        assert all(popup[n]==255 for n in range(3,len(popup),4)),'Popup background must occlude underlying XAML chrome'
+        assert pixel(r,15,200)==outside,'Popup background readback must not change FP16 photo output'
+        check(d.LumaSetGlass(r,rect,1,1));check(d.LumaRepaint(r));dark=pixel(r,90,200);assert sum(dark[:3])<sum(left[:3]),'Dark theme glass'
+        rect[0].opacity=0;check(d.LumaSetGlass(r,rect,1,0));check(d.LumaRepaint(r));assert pixel(r,90,200)==red,'Hidden toolbar must reveal original pixels'
+        check(d.LumaSetGlass(r,None,0,0));check(d.LumaRepaint(r))
+        print(f'PASS: real photo-sampled FP16 glass, rounded panels, dark theme, untouched photo and fade; red {left}, blue {right}')
     finally:d.LumaFreeFrame(p)
     # Fine repeating texture should converge to its linear-light average when reduced.
     small=Image.frombytes('RGB',(256,256),bytes(v for y in range(256) for x in range(256) for v in ((255,255,255) if (x+y)%2 else (0,0,0))))

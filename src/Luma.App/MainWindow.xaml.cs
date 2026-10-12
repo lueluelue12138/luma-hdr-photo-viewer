@@ -17,18 +17,20 @@ public sealed partial class MainWindow : Window
     private string page="albums",sort="name";private long albumId;private int generation;private bool ready,closed,scanning;
     private CancellationTokenSource? searchCancellation;private readonly CancellationTokenSource lifetime=new();
     private readonly List<ViewerWindow> viewers=[];
+    internal TaskCompletionSource VerificationReady {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
     public MainWindow()
     {
         InitializeComponent();ExtendsContentIntoTitleBar=true;SetTitleBar(TitleDrag);SystemBackdrop=new MicaBackdrop();
         WindowLayout.Configure(this,Root);
         App.RegisterGallery(this);
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1160,800));AppWindow.TitleBar.PreferredHeightOption=TitleBarHeightOption.Standard;AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
+        WindowLayout.SizeForDpi(this,Root,1160,800);AppWindow.TitleBar.PreferredHeightOption=TitleBarHeightOption.Standard;AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
         Root.Loaded+=Loaded;Root.SizeChanged+=(_,_)=>{bool compact=Root.ActualWidth<950;Nav.PaneDisplayMode=compact?NavigationViewPaneDisplayMode.LeftCompact:NavigationViewPaneDisplayMode.Left;Nav.IsPaneToggleButtonVisible=compact;ImportLabel.Visibility=Root.ActualWidth<720?Visibility.Collapsed:Visibility.Visible;SortBox.Visibility=Root.ActualWidth<650||page is "albums" or "settings" or "recent"?Visibility.Collapsed:Visibility.Visible;Gallery.Padding=new Thickness(Root.ActualWidth<720?16:28,22,Root.ActualWidth<720?16:28,16);Search.Width=Math.Min(370,Math.Max(170,Root.ActualWidth-300));Search.HorizontalAlignment=Root.ActualWidth<800?HorizontalAlignment.Left:HorizontalAlignment.Center;Search.Margin=Root.ActualWidth<800?new Thickness(130,0,0,0):new Thickness(0);};Closed+=(_,_)=>{closed=true;lifetime.Cancel();searchCancellation?.Cancel();App.Indexer.FolderChanged-=FolderChanged;};
         App.Indexer.FolderChanged+=FolderChanged;
     }
     private async void Loaded(object sender,RoutedEventArgs e)
     {
-        Root.Loaded-=Loaded;WindowLayout.SizeForDpi(this,Root,1160,800);Root.RequestedTheme=await App.ThemeAsync();ThemeBox.SelectedIndex=Root.RequestedTheme switch{ElementTheme.Light=>1,ElementTheme.Dark=>2,_=>0};ready=true;Nav.SelectedItem=AlbumsItem;await ReloadAsync();
+        if(closed)return;
+        Root.Loaded-=Loaded;await WindowLayout.RevealAsync(this,Root);if(closed)return;ThemeBox.SelectedIndex=Root.RequestedTheme switch{ElementTheme.Light=>1,ElementTheme.Dark=>2,_=>0};ready=true;Nav.SelectedItem=AlbumsItem;await ReloadAsync();VerificationReady.TrySetResult();
         var cli=Environment.GetCommandLineArgs();int import=Array.IndexOf(cli,"--import");
         if(import>=0&&import+1<cli.Length&&Directory.Exists(cli[import+1]))await ImportAsync(cli[import+1]);
         else _=RefreshAllAsync();
@@ -113,7 +115,7 @@ public sealed partial class MainWindow : Window
     }
     private void Add(MenuFlyout menu,string text,Func<Task> action){var i=new MenuFlyoutItem{Text=text};i.Click+=async(_,_)=>{try{await action();}catch(Exception ex){await ErrorAsync("操作未完成",ex.Message);}};menu.Items.Add(i);}
     private static void OpenFolder(string folder)=>Process.Start(new ProcessStartInfo("explorer.exe",$"\"{folder}\""){UseShellExecute=true});
-    private async void ThemeChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;var theme=(ThemeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"system";await App.Store.SetSettingAsync("theme",theme);Root.RequestedTheme=await App.ThemeAsync();foreach(var v in viewers)v.ApplyTheme(Root.RequestedTheme);}
+    private async void ThemeChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;var theme=(ThemeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"system";await App.Store.SetSettingAsync("theme",theme);App.Theme=await App.ThemeAsync();Root.RequestedTheme=App.Theme;foreach(var v in viewers)v.ApplyTheme(Root.RequestedTheme);}
     private async void DefaultAppsClick(object sender,RoutedEventArgs e)
     {
         try

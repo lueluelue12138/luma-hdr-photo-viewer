@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Storage;
 using Windows.Storage.FileProperties;
+using Windows.Storage.Streams;
 
 namespace Luma.App;
 public sealed class Thumbnail : Grid
@@ -25,11 +26,21 @@ public sealed class Thumbnail : Grid
             try
             {
                 if(g!=generation||!active)return;
-                var file=await StorageFile.GetFileFromPathAsync(path);
-                using var thumb=await file.GetThumbnailAsync(ThumbnailMode.PicturesView,320,ThumbnailOptions.UseCurrentScale);
+                // Shell thumbnail RPC can synchronously pump window messages even when
+                // its API is named Async. Never invoke it from a XAML layout/Loaded callback.
+                var bytes=await Task.Run(async()=>
+                {
+                    var file=await StorageFile.GetFileFromPathAsync(path);
+                    using var thumb=await file.GetThumbnailAsync(ThumbnailMode.PicturesView,320,ThumbnailOptions.UseCurrentScale);
+                    using var stream=thumb is not null&&thumb.Type==ThumbnailType.Image?null:await file.OpenReadAsync();
+                    var source=stream??thumb;
+                    if(source is null||source.Size>64*1024*1024)throw new IOException("Thumbnail source exceeds its memory budget.");
+                    using var reader=new DataReader(source.GetInputStreamAt(0));await reader.LoadAsync((uint)source.Size);var data=new byte[(int)source.Size];reader.ReadBytes(data);return data;
+                });
+                if(g!=generation||!active)return;
+                using var memory=new InMemoryRandomAccessStream();using(var writer=new DataWriter(memory)){writer.WriteBytes(bytes);await writer.StoreAsync();writer.DetachStream();}memory.Seek(0);
                 var bitmap=new BitmapImage(){DecodePixelWidth=320};
-                if(thumb is not null&&thumb.Type==ThumbnailType.Image)await bitmap.SetSourceAsync(thumb);
-                else {using var stream=await file.OpenReadAsync();await bitmap.SetSourceAsync(stream);}
+                await bitmap.SetSourceAsync(memory);
                 if(g!=generation||!active)return;image.Source=bitmap;placeholder.Visibility=Visibility.Collapsed;
             }
             finally{Slots.Release();}

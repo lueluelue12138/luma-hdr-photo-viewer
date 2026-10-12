@@ -4,6 +4,8 @@ using Microsoft.UI.Xaml.Controls;
 namespace Luma.App;
 [StructLayout(LayoutKind.Sequential)]
 internal struct FrameInfo {public uint Width,Height,OriginalWidth,OriginalHeight;public int NativeHdr,Downsampled;public ulong Bytes;}
+[StructLayout(LayoutKind.Sequential)]
+internal record struct GlassRect(float Left,float Top,float Width,float Height,float Radius,float Opacity);
 [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)]
 internal struct RenderStatus
 {
@@ -22,6 +24,11 @@ internal static class Native
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern void LumaFreeFrame(IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCreate(IntPtr panel,IntPtr hwnd,out IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern void LumaDestroy(IntPtr renderer);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaAttach(IntPtr renderer,IntPtr panel);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaDetach(IntPtr renderer);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaSetGlass(IntPtr renderer,[In]GlassRect[] rects,uint count,int dark);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaRepaint(IntPtr renderer);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaReadGlass(IntPtr renderer,GlassRect rect,int dark,uint width,uint height,[Out]byte[] pixels,uint bytes);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaResize(IntPtr renderer,uint w,uint h,float scaleX,float scaleY);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaUseFrame(IntPtr renderer,IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaPrepareFrame(IntPtr renderer,IntPtr frame);
@@ -94,17 +101,25 @@ internal sealed class NativeRenderer : IDisposable
 {
     private IntPtr handle;
     private readonly SemaphoreSlim access=new(1);
-    private readonly Microsoft.UI.Dispatching.DispatcherQueue dispatcher;
     private bool disposed;
     private RenderStatus snapshot;
     private (double W,double H,double Dpi)? pendingSize;
     private (double Zoom,double X,double Y,int Rotation)? pendingView;
+    private (GlassRect[] Rects,bool Dark)? pendingGlass;
+    private (GlassRect[] Rects,bool Dark)? lastGlass;
     public bool Busy=>access.CurrentCount==0;
-    public NativeRenderer(SwapChainPanel panel,IntPtr hwnd)
+    public Task DisposedAsync {get;private set;}=Task.CompletedTask;
+    private NativeRenderer(SwapChainPanel panel)
     {
-        dispatcher=panel.DispatcherQueue;
+    }
+    public static async Task<NativeRenderer> CreateAsync(SwapChainPanel panel,IntPtr hwnd,CancellationToken token)
+    {
+        var value=new NativeRenderer(panel);
+        await Task.Run(()=>Native.Check(Native.LumaCreate(IntPtr.Zero,hwnd,out value.handle)));
+        if(token.IsCancellationRequested){await Task.Run(value.Destroy);token.ThrowIfCancellationRequested();}
         var pointer=WinRT.MarshalInspectable<SwapChainPanel>.FromManaged(panel);
-        try{Native.Check(Native.LumaCreate(pointer,hwnd,out handle));Native.Check(Native.LumaPeekStatus(handle,out snapshot));}
+        try{Native.Check(Native.LumaAttach(value.handle,pointer));Native.Check(Native.LumaPeekStatus(value.handle,out value.snapshot));return value;}
+        catch{value.Dispose();throw;}
         finally{WinRT.MarshalInspectable<SwapChainPanel>.DisposeAbi(pointer);}
     }
     // Serialize the immediate D3D context. Wait for GPU completion on the worker;
@@ -117,12 +132,22 @@ internal sealed class NativeRenderer : IDisposable
     }
     private void Flush()
     {
-        if(pendingSize is {} size){pendingSize=null;Native.Check(Native.LumaResize(handle,(uint)Math.Max(1,size.W*size.Dpi),(uint)Math.Max(1,size.H*size.Dpi),(float)size.Dpi,(float)size.Dpi));}
-        if(pendingView is {} view){pendingView=null;Native.Check(Native.LumaView(handle,(float)view.Zoom,(float)view.X,(float)view.Y,view.Rotation));}
+        bool repaint=false;
+        if(pendingGlass is {} glass){pendingGlass=null;Native.Check(Native.LumaSetGlass(handle,glass.Rects,(uint)glass.Rects.Length,glass.Dark?1:0));repaint=true;}
+        if(pendingSize is {} size){pendingSize=null;Native.Check(Native.LumaResize(handle,(uint)Math.Max(1,size.W*size.Dpi),(uint)Math.Max(1,size.H*size.Dpi),(float)size.Dpi,(float)size.Dpi));repaint=false;}
+        if(pendingView is {} view){pendingView=null;Native.Check(Native.LumaView(handle,(float)view.Zoom,(float)view.X,(float)view.Y,view.Rotation));repaint=false;}
+        if(repaint)Native.Check(Native.LumaRepaint(handle));
     }
     private void TryFlush(){if(disposed||!access.Wait(0))return;try{Flush();}finally{access.Release();}}
     public void Resize(double w,double h,double dpi){pendingSize=(w,h,dpi);TryFlush();}
     public void View(double zoom,double x,double y,int rotation){pendingView=(zoom,x,y,rotation);TryFlush();}
+    public void Glass(GlassRect[] rects,bool dark){if(lastGlass is {} previous&&previous.Dark==dark&&previous.Rects.SequenceEqual(rects))return;lastGlass=(rects,dark);pendingGlass=(rects,dark);TryFlush();}
+    public async Task<byte[]> ReadGlassAsync(GlassRect rect,bool dark,uint w,uint h,CancellationToken token)
+    {
+        var pixels=new byte[checked((int)(w*h*4))];await access.WaitAsync(token);
+        try{ObjectDisposedException.ThrowIf(disposed,this);await Task.Run(()=>Native.Check(Native.LumaReadGlass(handle,rect,dark?1:0,w,h,pixels,(uint)pixels.Length)),token);return pixels;}
+        finally{access.Release();}
+    }
     public async Task ShowAsync(DecodedFrame frame,CancellationToken token)
     {
         using var lease=new FrameLease(frame);
@@ -139,9 +164,10 @@ internal sealed class NativeRenderer : IDisposable
     public void Dispose()
     {
         if(disposed)return;disposed=true;
-        if(access.Wait(0)){try{Destroy();}finally{access.Release();}}
-        else _=DestroyWhenIdleAsync();
+        // Detach while the XAML owner is alive; worker jobs touch only D3D textures.
+        if(handle!=IntPtr.Zero)Native.LumaDetach(handle);
+        DisposedAsync=DestroyWhenIdleAsync();
     }
     private void Destroy(){if(handle!=IntPtr.Zero){Native.LumaDestroy(handle);handle=IntPtr.Zero;}}
-    private async Task DestroyWhenIdleAsync(){await access.WaitAsync();dispatcher.TryEnqueue(()=>{try{Destroy();}finally{access.Release();}});}
+    private async Task DestroyWhenIdleAsync(){await access.WaitAsync();try{await Task.Run(Destroy);}finally{access.Release();}}
 }

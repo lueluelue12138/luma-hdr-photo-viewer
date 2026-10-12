@@ -14,6 +14,7 @@
 #include <new>
 #include <cstdint>
 #include <filesystem>
+#include <mutex>
 #ifdef LUMA_NVIDIA
 #pragma warning(push)
 #pragma warning(disable:4100)
@@ -24,6 +25,10 @@
 #pragma comment(lib,"advapi32.lib")
 #endif
 using Microsoft::WRL::ComPtr;
+#ifdef LUMA_NVIDIA
+// NGX is process-wide and not thread safe, including devices in different windows.
+std::mutex ngxMutex;
+#endif
 #pragma comment(lib,"d3d11.lib")
 #pragma comment(lib,"dxgi.lib")
 #pragma comment(lib,"d3dcompiler.lib")
@@ -43,6 +48,7 @@ template<class F> HRESULT safe(F f) noexcept {try{ f(); lastError.clear(); retur
 struct FrameInfo {uint32_t width,height,originalWidth,originalHeight; int32_t nativeHdr,downsampled; uint64_t bytes;};
 struct Frame {FrameInfo info{}; std::vector<uint8_t> pixels;};
 struct Status { wchar_t gpu[128]; wchar_t display[128]; int32_t nvidia,hdrActive,fp16,nativeHdr; float maxNits,sdrWhite; uint64_t gpuBytes; int32_t hdrEffective,vsrEffective,sdkAvailable,hdrAvailable,vsrAvailable; uint32_t ngxResult,hdrEvaluations,vsrEvaluations; wchar_t hdrMessage[256],vsrMessage[256];};
+#include "Glass.h"
 
 std::unique_ptr<Frame> decode(const wchar_t* path) {
     HRESULT init=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
@@ -104,8 +110,8 @@ float4 PS(Vertex v):SV_TARGET {
  float4 c=photo.Sample(linearSampler,v.uv);float3 rgb=c.rgb;
  if(gammaInput>0.5)rgb=lerp(rgb/12.92,pow((rgb+0.055)/1.055,2.4),step(0.04045,rgb));
  if(nativeHDR<0.5)rgb*=white;
- // Alpha is composited against a neutral opaque canvas in linear light.
- return float4(lerp(float3(0.012,0.014,0.019),rgb,c.a),1);
+ // Premultiplied alpha exposes the native window backdrop outside the photo.
+ return float4(rgb*c.a,c.a);
 }
 float4 PSInput(Vertex v):SV_TARGET {
  float3 color=photo.Sample(linearSampler,v.uv).rgb;
@@ -118,6 +124,7 @@ struct Renderer {
     ComPtr<IDXGISwapChain3> swap;ComPtr<ID3D11RenderTargetView> target;ComPtr<ID3D11Texture2D> offscreen;
     ComPtr<ID3D11VertexShader> vs;ComPtr<ID3D11PixelShader> ps,inputPs;ComPtr<ID3D11Buffer> constants;ComPtr<ID3D11SamplerState> sampler;ComPtr<ID3D11ShaderResourceView> image,originalView,hdrView,vsrView;
     ComPtr<ID3D11Texture2D> originalTexture,sdkInput,hdrTexture,vsrTexture;bool requestedHdr=false,requestedVsr=false,holdOriginal=false,hdrCached=false,vsrCached=false;unsigned cachedPeak=0;int hdrCapability=0,vsrCapability=0;UINT vsrWidth=0,vsrHeight=0;
+    std::unique_ptr<GlassRenderer> glass;
 #ifdef LUMA_NVIDIA
     NVSDK_NGX_Parameter* hdrParams=nullptr;NVSDK_NGX_Parameter* vsrParams=nullptr;NVSDK_NGX_Handle* hdrFeature=nullptr;NVSDK_NGX_Handle* vsrFeature=nullptr;bool ngxInitialized=false;
 #endif
@@ -136,14 +143,22 @@ struct Renderer {
         ComPtr<ID3DBlob> input;check(D3DCompile(shader,strlen(shader),nullptr,nullptr,nullptr,"PSInput","ps_5_0",D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&input,&err));check(device->CreatePixelShader(input->GetBufferPointer(),input->GetBufferSize(),nullptr,&inputPs));
         D3D11_BUFFER_DESC cb{};cb.ByteWidth=32;cb.Usage=D3D11_USAGE_DEFAULT;cb.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(device->CreateBuffer(&cb,nullptr,&constants));
         D3D11_SAMPLER_DESC sd{};sd.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sd.AddressU=sd.AddressV=sd.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sd.MaxLOD=D3D11_FLOAT32_MAX;check(device->CreateSamplerState(&sd,&sampler));
-        if(panel){DXGI_SWAP_CHAIN_DESC1 sc{};sc.Width=1;sc.Height=1;sc.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;sc.SampleDesc.Count=1;sc.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;sc.BufferCount=2;sc.SwapEffect=DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;sc.Scaling=DXGI_SCALING_STRETCH;sc.AlphaMode=DXGI_ALPHA_MODE_IGNORE;
-            ComPtr<IDXGISwapChain1> created;check(factory->CreateSwapChainForComposition(device.Get(),&sc,nullptr,&created));check(created.As(&swap));
-            UINT support=0;check(swap->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709,&support));if(!(support&DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT))throw Failure{DXGI_ERROR_UNSUPPORTED};
-            check(swap->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709));check(panel->SetSwapChain(swap.Get()));}
+        glass=std::make_unique<GlassRenderer>(device.Get());
+        if(panel)attach(p);
         status.fp16=1; resize(1,1);probe();initEffects();
     }
+    void attach(IUnknown* p){
+        check(p->QueryInterface(IID_PPV_ARGS(&panel)));
+        DXGI_SWAP_CHAIN_DESC1 sc{};sc.Width=1;sc.Height=1;sc.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;sc.SampleDesc.Count=1;sc.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;sc.BufferCount=2;sc.SwapEffect=DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;sc.Scaling=DXGI_SCALING_STRETCH;sc.AlphaMode=DXGI_ALPHA_MODE_PREMULTIPLIED;
+            ComPtr<IDXGISwapChain1> created;check(factory->CreateSwapChainForComposition(device.Get(),&sc,nullptr,&created));check(created.As(&swap));
+            UINT support=0;check(swap->CheckColorSpaceSupport(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709,&support));if(!(support&DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT))throw Failure{DXGI_ERROR_UNSUPPORTED};
+            check(swap->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709));check(panel->SetSwapChain(swap.Get()));
+        target.Reset();offscreen.Reset();resize(1,1);
+    }
+    void detach(){if(panel){panel->SetSwapChain(nullptr);panel.Reset();}}
     void shutdownEffects(){
 #ifdef LUMA_NVIDIA
+        std::lock_guard lock(ngxMutex);
         if(hdrFeature){NVSDK_NGX_D3D11_ReleaseFeature(hdrFeature);hdrFeature=nullptr;}if(vsrFeature){NVSDK_NGX_D3D11_ReleaseFeature(vsrFeature);vsrFeature=nullptr;}
         if(hdrParams){NVSDK_NGX_D3D11_DestroyParameters(hdrParams);hdrParams=nullptr;}if(vsrParams){NVSDK_NGX_D3D11_DestroyParameters(vsrParams);vsrParams=nullptr;}
         if(ngxInitialized){NVSDK_NGX_D3D11_Shutdown1(device.Get());ngxInitialized=false;}
@@ -153,6 +168,7 @@ struct Renderer {
     void initEffects(){
         wcscpy_s(status.hdrMessage,L"缺少 NVIDIA RTX Video SDK 1.1");wcscpy_s(status.vsrMessage,L"缺少 NVIDIA RTX Video SDK 1.1");
 #ifdef LUMA_NVIDIA
+        std::lock_guard lock(ngxMutex);
         if(!status.nvidia){wcscpy_s(status.hdrMessage,L"需要兼容的 NVIDIA RTX GPU");wcscpy_s(status.vsrMessage,status.hdrMessage);return;}
         HMODULE module=nullptr;GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&LumaDecodeAddress),&module);
         wchar_t path[32768]{};GetModuleFileNameW(module,path,32768);auto directory=std::filesystem::path(path).parent_path().wstring();
@@ -201,7 +217,7 @@ struct Renderer {
     void updateMemory(){
         uint64_t bytes=uint64_t(width)*height*(swap?16:8);
         for(auto texture:{originalTexture.Get(),sdkInput.Get(),hdrTexture.Get(),vsrTexture.Get()}){if(!texture)continue;D3D11_TEXTURE2D_DESC d{};texture->GetDesc(&d);UINT w=d.Width,h=d.Height;unsigned bpp=d.Format==DXGI_FORMAT_R32G32B32A32_FLOAT?16:d.Format==DXGI_FORMAT_R16G16B16A16_FLOAT?8:4;for(UINT i=0;i<d.MipLevels;i++){bytes+=uint64_t(w)*h*bpp;w=std::max(1u,w/2);h=std::max(1u,h/2);}}
-        status.gpuBytes=bytes;
+        if(glass)bytes+=glass->bytes();status.gpuBytes=bytes;
     }
     void use(Frame& f){context->ClearState();zoom=1;panX=panY=0;rotation=0;D3D11_TEXTURE2D_DESC d{};d.Width=f.info.width;d.Height=f.info.height;d.MipLevels=0;d.ArraySize=1;d.Format=f.info.nativeHdr?DXGI_FORMAT_R32G32B32A32_FLOAT:DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;d.MiscFlags=D3D11_RESOURCE_MISC_GENERATE_MIPS;
         ComPtr<ID3D11Texture2D> tex;check(device->CreateTexture2D(&d,nullptr,&tex));context->UpdateSubresource(tex.Get(),0,nullptr,f.pixels.data(),f.info.width*(f.info.nativeHdr?16:4),0);ComPtr<ID3D11ShaderResourceView> view;check(device->CreateShaderResourceView(tex.Get(),nullptr,&view));context->GenerateMips(view.Get());originalTexture=tex;originalView=view;image=view;iw=f.info.width;ih=f.info.height;status.nativeHdr=f.info.nativeHdr;
@@ -231,6 +247,7 @@ struct Renderer {
         if(status.nativeHdr||original||(!hdr&&!vsr)){selectImage();if(present)draw();return;}
         if((!hdr||!status.hdrAvailable||!status.hdrActive)&&(!vsr||!status.vsrAvailable)){selectImage();if(present)draw();return;}
 #ifdef LUMA_NVIDIA
+        std::lock_guard lock(ngxMutex);
         if(!status.sdkAvailable||!originalTexture){selectImage();if(present)draw();return;}
         // Ordinary GPU resampling prepares large photos for the SDK; it never invokes VSR.
         if(!sdkInput){D3D11_TEXTURE2D_DESC d{};d.Width=processWidth;d.Height=processHeight;d.ArraySize=d.MipLevels=1;d.Format=DXGI_FORMAT_R8G8B8A8_UNORM;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;check(device->CreateTexture2D(&d,nullptr,&sdkInput));
@@ -257,10 +274,11 @@ struct Renderer {
 #endif
         selectImage();updateMemory();if(present)draw();
     }
-    void draw(){context->ClearState();const float clear[]={0.012f,0.014f,0.019f,1};context->ClearRenderTargetView(target.Get(),clear);auto t=target.Get();context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT vp{0,0,float(width),float(height),0,1};context->RSSetViewports(1,&vp);
+    void draw(){context->ClearState();bool frosted=glass&&glass->enabled();if(frosted)glass->ensure(width,height);const float clear[]={0,0,0,0};auto t=frosted?glass->sceneTarget.Get():target.Get();context->ClearRenderTargetView(t,clear);context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT vp{0,0,float(width),float(height),0,1};context->RSSetViewports(1,&vp);
         if(image){float w=float(rotation%2?ih:iw),h=float(rotation%2?iw:ih);float fit=std::min(width/w,height/h);
             float values[]={w*fit*zoom/width,h*fit*zoom/height,2*panX/width,-2*panY/height,status.sdrWhite,float(status.nativeHdr||status.hdrEffective),float(rotation),float(status.vsrEffective&&!status.hdrEffective)};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
             context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(ps.Get(),nullptr,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->PSSetConstantBuffers(0,1,&c);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);auto i=image.Get();context->PSSetShaderResources(0,1,&i);context->Draw(6,0);}
+        if(frosted)glass->composite(context.Get(),target.Get(),sampler.Get(),status.sdrWhite);
         if(swap)check(swap->Present(1,0));else context->Flush();
     }
 };
@@ -270,6 +288,11 @@ API HRESULT __cdecl LumaDecode(const wchar_t* path,FrameInfo* info,void** result
 API void __cdecl LumaFreeFrame(void* f){delete static_cast<Frame*>(f);}
 API HRESULT __cdecl LumaCreate(IUnknown* panel,HWND hwnd,void** result){if(!result)return E_POINTER;*result=nullptr;return safe([&]{*result=new Renderer(panel,hwnd);});}
 API void __cdecl LumaDestroy(void* r){if(r){auto p=static_cast<Renderer*>(r);p->shutdownEffects();delete p;}}
+API HRESULT __cdecl LumaAttach(void* r,IUnknown* panel){if(!r||!panel)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->attach(panel);});}
+API HRESULT __cdecl LumaDetach(void* r){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->detach();});}
+API HRESULT __cdecl LumaSetGlass(void* r,const GlassRect* rects,UINT count,int dark){if(!r||count>8||(count&&!rects))return E_INVALIDARG;return safe([&]{auto& g=*static_cast<Renderer*>(r)->glass;g.rects.clear();if(count)g.rects.assign(rects,rects+count);g.dark=dark!=0;});}
+API HRESULT __cdecl LumaRepaint(void* r){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->draw();});}
+API HRESULT __cdecl LumaReadGlass(void* r,GlassRect rect,int dark,UINT w,UINT h,uint8_t* bgra,UINT bytes){if(!r||!bgra||uint64_t(bytes)<uint64_t(w)*h*4)return E_INVALIDARG;return safe([&]{auto& a=*static_cast<Renderer*>(r);a.glass->readPanel(a.context.Get(),a.sampler.Get(),rect,dark!=0,a.status.sdrWhite,w,h,bgra);});}
 API HRESULT __cdecl LumaResize(void* r,UINT w,UINT h,float scaleX,float scaleY){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.resize(w,h);if(x.swap){DXGI_MATRIX_3X2_F inverse{1/std::max(0.1f,scaleX),0,0,1/std::max(0.1f,scaleY),0,0};check(x.swap->SetMatrixTransform(&inverse));}x.draw();});}
 API HRESULT __cdecl LumaUseFrame(void* r,void* f){if(!r||!f)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.use(*static_cast<Frame*>(f));x.draw();});}
 API HRESULT __cdecl LumaPrepareFrame(void* r,void* f){if(!r||!f)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->use(*static_cast<Frame*>(f));});}

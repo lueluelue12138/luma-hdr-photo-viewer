@@ -14,9 +14,13 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 
 ## 已实现
 
-浅色、深色及跟随系统；Mica 外壳、原生标题栏、Acrylic 悬浮工具栏；图库虚拟化、异步缩略图；递归导入、多文件夹相册、汇总图库、搜索、收藏、最近打开；相册重命名、封面、排序、刷新、变更监听及离线索引保留。从图库移除相册保留原文件。
+浅色、深色及跟随系统；图库 Mica 外壳、预览 Desktop Acrylic 透光留边、原生标题栏、实际采样照片的模糊悬浮面板；图库虚拟化、后台缩略图；递归导入、多文件夹相册、汇总图库、搜索、收藏、最近打开；相册重命名、封面、排序、刷新、变更监听及离线索引保留。从图库移除相册保留原文件。
 
-预览默认按比例完整适配，不裁切；缩放、平移、旋转、100%、全屏、邻图预读、过时解码取消、原图对照；浮层闲置淡出，鼠标移动及键盘操作时恢复。增强在后台准备，GPU 完成后由界面线程呈现。页面、卡片、缩放和浮层使用原生 Composition 动画，并遵循 Windows 关闭动画的设置。底部缩略图栏保持居中且有宽度上限。
+预览默认按比例完整适配，不裁切；缩放、平移、旋转、100%、全屏、邻图预读、过时解码取消、原图对照；浮层闲置淡出，鼠标移动及键盘操作时恢复。增强在后台准备，GPU 完成后由界面线程呈现。页面、卡片、缩放和加载指示使用 Composition 动画，浮层与 GPU 玻璃同步渐变，并遵循 Windows 关闭动画的设置。底部缩略图栏保持居中且有宽度上限。
+
+0.1.1 修复反复打开照片导致的 WinUI 重入崩溃：Windows 文件与缩略图服务全部移至后台，返回内存数据后才更新界面。窗口在最终 DPI 布局与两次合成帧完成后显示；D3D / NVIDIA 初始化及释放在后台，SwapChainPanel 的绑定和解绑留在界面线程，多个窗口的 NGX 调用串行执行。
+
+玻璃通过 GPU 对实际线性 FP16 照片场景进行高斯模糊，仅用于控件背景，照片本身不透明且不会变模糊。弹窗使用独立的照片材质背景以正确遮挡下层控件；其控件背景转换为 SDR 位图，照片的 HDR 呈现始终保留 FP16。关闭 Windows 透明效果或启用高对比度时使用可读的不透明背景。系统材质与应用内材质的区别见 [Microsoft 材质说明](https://learn.microsoft.com/en-us/windows/apps/develop/ui/materials)。
 
 NVIDIA RTX™ Video SDK 1.1 的 TrueHDR 与 VSR 独立控制，VSR 默认关闭。仅 HDR 不创建或执行 VSR。成功调用并在当前 HDR 屏幕上呈现后才显示“已生效”。结果缓存于当前照片的 GPU 纹理；原图对照不重复执行 AI。SDK 缺失或不兼容时可正常查看 SDR / 原生 HDR 图片。
 
@@ -39,6 +43,7 @@ JPEG、PNG、BMP、GIF、TIFF、JPEG XR（JXR/WDP/HDP）、ICO。GIF 与多页 T
 .\scripts\Build.ps1 -Publish        # 自包含便携版 artifacts/Luma
 .\scripts\Verify.ps1                # 15 项图库检查 + WIC / D3D11 / RTX 检查
 .\scripts\Verify.ps1 -Photo "D:\Photos\large.jpg"
+python .\tests\verify_viewer_lifecycle.py "D:\Photos\large.jpg" --runs 3
 .\scripts\Package.ps1 -SkipBuild    # 生成并验证未签名 MSIX
 ```
 
@@ -46,7 +51,7 @@ JPEG、PNG、BMP、GIF、TIFF、JPEG XR（JXR/WDP/HDP）、ICO。GIF 与多页 T
 
 实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。解锁后已补完全屏恢复、小窗口布局、收藏快捷键及系统注册检查；完整系统选择器交互、跨屏和休眠恢复仍需扩展验收。
 
-MSIX 为 `artifacts/Luma_0.1.0.0_x64.msix`，包含实际支持格式的文件关联和开始菜单入口。本地包未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
+MSIX 为 `artifacts/Luma_0.1.1.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.1_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
 
 ## 许可与发行
 

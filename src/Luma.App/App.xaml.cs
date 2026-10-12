@@ -13,6 +13,7 @@ public partial class App : Application
     private static MainWindow? gallery;
     public static void RegisterGallery(MainWindow value){gallery=value;value.Closed+=(_,_)=>{if(gallery==value)gallery=null;};}
     public static void ShowGallery(){if(gallery is null)gallery=new MainWindow();gallery.Activate();}
+    public static ElementTheme Theme { get; internal set; } = ElementTheme.Light;
     public App() { InitializeComponent(); UnhandledException+=(_,e)=>Log(e.Exception.ToString()); }
     public static void Log(string message)
     {
@@ -25,8 +26,13 @@ public partial class App : Application
         DataDirectory=test>=0&&test+1<cli.Length?Path.GetFullPath(cli[test+1]):Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Luma");
         try
         {
-            Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);
+            Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();
+            Log($"Launch {Environment.ProcessId}");
             string? file=cli.FirstOrDefault(p=>File.Exists(p)&&SupportedFormats.IsSupported(p));
+            if(test>=0&&cli.Contains("--verify-viewer-lifecycle"))
+            {
+                window=new MainWindow();window.Activate();await ViewerVerification.RunAsync((MainWindow)window,file??throw new ArgumentException("Verification requires a photo"));return;
+            }
             try {var activation=AppInstance.GetCurrent().GetActivatedEventArgs();if(activation.Kind==ExtendedActivationKind.File&&activation.Data is FileActivatedEventArgs f)file=f.Files.FirstOrDefault()?.Path;}catch(Exception e){Log("Activation: "+e.Message);}
             if(file is not null) window=new ViewerWindow(file);
             else window=new MainWindow();
