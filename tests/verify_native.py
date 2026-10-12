@@ -17,6 +17,7 @@ d.LumaResize.argtypes=[c.c_void_p,c.c_uint,c.c_uint,c.c_float,c.c_float];d.LumaU
 d.LumaView.argtypes=[c.c_void_p,c.c_float,c.c_float,c.c_float,c.c_int];d.LumaReadPixel.argtypes=[c.c_void_p,c.c_uint,c.c_uint,c.POINTER(c.c_uint16)];d.LumaFreeFrame.argtypes=[c.c_void_p];d.LumaDestroy.argtypes=[c.c_void_p];d.LumaError.restype=c.c_wchar_p
 d.LumaEffects.argtypes=[c.c_void_p,c.c_int,c.c_int,c.c_int,c.c_uint]
 d.LumaPrepareEffects.argtypes=d.LumaEffects.argtypes
+d.LumaSetOriginal.argtypes=[c.c_void_p,c.c_int]
 d.LumaDecodeSized.argtypes=[c.c_wchar_p,c.c_uint,c.POINTER(Info),c.POINTER(c.c_void_p)]
 d.LumaCreateFast.argtypes=d.LumaCreate.argtypes;d.LumaInitEffects.argtypes=[c.c_void_p]
 d.LumaWaitForGpu.argtypes=[c.c_void_p]
@@ -55,6 +56,13 @@ try:
         if s.hdrAvailable and s.hdrActive:
             assert s.hdrEffective,'SDK did not evaluate TrueHDR'
             count=s.hdrEvaluations;check(d.LumaEffects(r,1,0,0,1));check(d.LumaStatus(r,c.byref(s)));assert s.hdrEvaluations==count,'Static HDR should be cached'
+            enhanced=pixel(r,200,200)
+            for repeat in range(20):
+                check(d.LumaSetOriginal(r,1));check(d.LumaRepaint(r));check(d.LumaStatus(r,c.byref(s)))
+                assert not s.hdrEffective and pixel(r,200,200)==before,'Comparison must present actual original FP16 pixels'
+                check(d.LumaSetOriginal(r,0));check(d.LumaRepaint(r));check(d.LumaStatus(r,c.byref(s)))
+                assert s.hdrEffective and s.hdrEvaluations==count and not s.vsrEvaluations and pixel(r,200,200)==enhanced,'Comparison must restore exact cached HDR without AI'
+            print('PASS: 40 original/HDR texture switches preserve exact FP16 pixels and SDK call counts')
             check(d.LumaEffects(r,1,0,1,1));check(d.LumaStatus(r,c.byref(s)));assert not s.hdrEffective,'Hold original disables enhancement'
         check(d.LumaEffects(r,0,0,0,1));check(d.LumaStatus(r,c.byref(s)));assert not s.hdrEffective and not s.vsrEffective
     finally:d.LumaFreeFrame(p)
@@ -81,6 +89,10 @@ try:
             check(d.LumaEffects(r,0,1,0,1));check(d.LumaStatus(r,c.byref(s)));assert s.vsrEvaluations==vsr_count+1,'VSR still must be cached'
             check(d.LumaEffects(r,1,1,0,1));check(d.LumaStatus(r,c.byref(s)))
             if s.hdrAvailable and s.hdrActive:assert s.hdrEffective and s.vsrEffective and s.hdrEvaluations==hdr_count+1
+            counts=(s.hdrEvaluations,s.vsrEvaluations);enhanced=pixel(r,200,200)
+            check(d.LumaSetOriginal(r,1));check(d.LumaRepaint(r));check(d.LumaStatus(r,c.byref(s)));assert not s.hdrEffective and not s.vsrEffective
+            check(d.LumaSetOriginal(r,0));check(d.LumaRepaint(r));check(d.LumaStatus(r,c.byref(s)))
+            assert s.vsrEffective and (s.hdrEvaluations,s.vsrEvaluations)==counts and pixel(r,200,200)==enhanced,'Combined output must restore without HDR or VSR evaluation'
             check(d.LumaEffects(r,1,0,0,1));check(d.LumaStatus(r,c.byref(s)))
             if s.hdrAvailable and s.hdrActive:assert s.hdrEffective and not s.vsrEffective and s.hdrEvaluations==hdr_count+2,'Changing HDR input from VSR to original must invalidate HDR cache'
             print('PASS: independent VSR-only, combined mode, cached stills, return to HDR-only')

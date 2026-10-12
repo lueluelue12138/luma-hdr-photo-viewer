@@ -19,3 +19,6 @@ for scenario in ('random-SDR', 'prefetched-SDR'):
     samples = [r['firstFrame'] for r in data['results'] if r['scenario']==scenario]
     print(f'PASS: {scenario}: n={len(samples)}, median={statistics.median(samples)}ms, max={max(samples)}ms', flush=True)
 print(f'PASS: centered windows, no NGX during SDR, zoom/pan/fit, full detail, latest request, lazy HDR; report {folder}', flush=True)
+comparison = next(r for r in data['results'] if r['scenario']=='cached-original-comparison')
+assert comparison['additionalWorkerJobs']==comparison['additionalHdrCalls']==0
+print(f'PASS: {comparison["switches"]} cached original/HDR switches: median={statistics.median(comparison["milliseconds"]):.2f}ms, max={max(comparison["milliseconds"]):.2f}ms; no extra worker jobs or AI calls; hold during processing.', flush=True)

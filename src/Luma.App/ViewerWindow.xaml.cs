@@ -68,6 +68,9 @@ public sealed partial class ViewerWindow : Window
     private uint PreviewEdge=>(uint)Math.Clamp(Math.Ceiling(Math.Max(Surface.ActualWidth*Surface.CompositionScaleX,Surface.ActualHeight*Surface.CompositionScaleY)/256)*256,1024,4096);
     internal async Task VerificationDisposeAsync(){try{await rendererInitialization;}catch(OperationCanceledException){}if(renderer is not null)await renderer.DisposedAsync;}
     internal RenderStatus VerificationStatus=>renderer?.Status()??default;
+    internal int VerificationWorkerJobs=>renderer?.WorkerJobs??0;
+    internal string VerificationStatusText=>StatusText.Text;
+    internal void VerificationOriginal(bool value)=>SetOriginalHeld(value);
     internal async Task VerificationEffectsAsync(bool hdr,bool vsr){hdrRequested=hdr;vsrRequested=vsr;await ApplyEffectsAsync();}
     internal Task VerificationSelectAsync(int selected)=>DisplayAsync(selected);
     internal ViewerPreferences VerificationPreferences=>CapturePreferences();
@@ -110,7 +113,7 @@ public sealed partial class ViewerWindow : Window
         viewTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-viewStarted).TotalMilliseconds/180,0,1);double ease=1-Math.Pow(1-t,3);renderedZoom=viewStartZoom+(zoom-viewStartZoom)*ease;renderedPanX=viewStartX+(panX-viewStartX)*ease;renderedPanY=viewStartY+(panY-viewStartY)*ease;try{renderer?.View(renderedZoom,renderedPanX,renderedPanY,rotation);}catch(COMException ex){viewTimer.Stop();Recover(ex);}if(t>=1)viewTimer.Stop();};
         WindowLayout.SizeForDpi(this,Root,1240,850,owner);AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
         idleTimer.Tick+=IdleTick;Closed+=(_,_)=>{closed=true;request++;lifetime.Cancel();loadingCancellation?.Cancel();VerificationReady.TrySetCanceled();idleTimer.Stop();viewTimer.Stop();chromeTimer.Stop();renderer?.Dispose();currentLease?.Dispose();cache.Dispose();};
-        AppWindow.Changed+=(_,args)=>{if(args.DidPositionChange)RefreshStatus();};Activated+=(_,args)=>{if(closed)return;if(args.WindowActivationState==WindowActivationState.Deactivated){dragging=false;InputLayer.ReleasePointerCaptures();if(originalHeld){originalHeld=false;ApplyEffects();}}if(renderer is not null)RefreshStatus();};
+        AppWindow.Changed+=(_,args)=>{if(args.DidPositionChange)RefreshStatus();};Activated+=(_,args)=>{if(closed)return;if(args.WindowActivationState==WindowActivationState.Deactivated){dragging=false;InputLayer.ReleasePointerCaptures();SetOriginalHeld(false);}if(renderer is not null)RefreshStatus();};
     }
     public void ApplyTheme(ElementTheme theme){if(!closed)Root.RequestedTheme=theme;}
     private async void SurfaceLoaded(object sender,RoutedEventArgs e)
@@ -130,7 +133,7 @@ public sealed partial class ViewerWindow : Window
         try{var siblings=await siblingEnumeration!;if(closed)return;var path=current?.Path??initial;if(siblings.Count>0)sequence=siblings;index=Math.Max(0,sequence.FindIndex(p=>string.Equals(p.Path,path,StringComparison.OrdinalIgnoreCase)));selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=index;selecting=false;UpdatePosition();BottomPanel.Visibility=Visibility.Visible;if(currentFrame is not null)Prefetch();}
         catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException){App.Log(ex.Message);if(!closed)BottomPanel.Visibility=Visibility.Visible;}
     }
-    private async Task CreateRendererAsync(){renderer?.Dispose();renderer=null;var next=await NativeRenderer.CreateAsync(Surface,WinRT.Interop.WindowNative.GetWindowHandle(this),lifetime.Token);if(closed){next.Dispose();return;}renderer=next;renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);App.Log("Viewer renderer attached");}
+    private async Task CreateRendererAsync(){renderer?.Dispose();renderer=null;var next=await NativeRenderer.CreateAsync(Surface,WinRT.Interop.WindowNative.GetWindowHandle(this),lifetime.Token);if(closed){next.Dispose();return;}renderer=next;renderer.HoldOriginal(originalHeld);renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);App.Log("Viewer renderer attached");}
     private async Task DisplayAsync(int selected)
     {
         if(closed||sequence.Count==0||selected<0||selected>=sequence.Count)return;
@@ -302,12 +305,12 @@ public sealed partial class ViewerWindow : Window
         if(recovering||closed)return;recovering=true;App.Log("Recovering renderer: "+reason.Message);
         try{enhancementCancellation?.Cancel();await CreateRendererAsync();if(closed)return;if(currentFrame is not null){await renderer!.ShowAsync(currentFrame,lifetime.Token);await ApplyEffectsAsync();}else if(current is not null)await DisplayAsync(index);if(!closed){renderer!.View(zoom,panX,panY,rotation);UpdateGlass();RefreshStatus();}}catch(OperationCanceledException){}catch(Exception ex){if(!closed)Fail(ex);}finally{recovering=false;}
     }
-    private void RefreshStatus()
+    private void RefreshStatus(bool probe=true)
     {
         if(renderer is null||closed)return;
         try
         {
-            var s=renderer.Status();bool photoReady=currentFrame is not null;bool busy=renderer.Busy||(!photoReady&&Loading.IsActive);updatingEnhancements=true;
+            var s=probe?renderer.Status():renderer.CachedStatus;bool photoReady=currentFrame is not null;bool busy=renderer.Busy||(!photoReady&&Loading.IsActive);updatingEnhancements=true;
             HdrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):hdrRequested?s.HdrReason:s.HdrAvailable!=0?"TrueHDR 可用，未开启":s.HdrReason;
             VsrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):vsrRequested?s.VsrMessage:s.VsrAvailable!=0?"VSR 可用，默认关闭":s.VsrMessage;
             HdrSwitch.IsOn=hdrRequested;VsrSwitch.IsOn=vsrRequested;
@@ -336,13 +339,13 @@ public sealed partial class ViewerWindow : Window
         try
         {
             StatusText.Text=hdrRequested||vsrRequested?"正在处理显示增强…":"SDR · 原图";
-            if((hdrRequested||vsrRequested)&&currentFrame.Info.NativeHdr==0&&!originalHeld)
+            if((hdrRequested||vsrRequested)&&currentFrame.Info.NativeHdr==0)
             {
                 await active.InitializeEffectsAsync(token);var support=active.Status();
                 if((hdrRequested&&support.HdrAvailable!=0&&support.HdrActive!=0)||(vsrRequested&&support.VsrAvailable!=0))await EnsureFullResolutionAsync().WaitAsync(token);
                 if(closed||generation!=request||active!=renderer)return;
             }
-            await active.EffectsAsync(hdrRequested,vsrRequested,originalHeld,preset,gray,peak,token);if(closed||generation!=request||active!=renderer||token.IsCancellationRequested)return;UpdateView();RefreshStatus();
+            await active.EffectsAsync(hdrRequested,vsrRequested,preset,gray,peak,token);if(closed||generation!=request||active!=renderer||token.IsCancellationRequested)return;UpdateView();RefreshStatus();
         }
         catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(COMException ex){if(!closed&&generation==request)Recover(ex);}catch(Exception ex){App.Log(ex.ToString());if(!closed&&generation==request)RefreshStatus();}
     }
@@ -419,8 +422,13 @@ public sealed partial class ViewerWindow : Window
     private void PanelEntered(object sender,PointerRoutedEventArgs e){hover=true;ShowControls();}private void PanelExited(object sender,PointerRoutedEventArgs e){hover=false;lastActivity=DateTime.UtcNow;}
     private void MenuOpened(object sender,object e){menuDepth++;ShowControls();DispatcherQueue.TryEnqueue(UpdateGlass);}private void MenuClosed(object sender,object e){menuDepth=Math.Max(0,menuDepth-1);ShowControls();DispatcherQueue.TryEnqueue(UpdateGlass);}
     private async void EnhancementOpened(object sender,object e){MenuOpened(sender,e);RefreshStatus();try{if(renderer is not null){await renderer.InitializeEffectsAsync(lifetime.Token);if(!closed)RefreshStatus();}}catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(Exception ex){App.Log("Enhancement detection: "+ex.Message);}}
-    private void OriginalPressed(object sender,PointerRoutedEventArgs e){originalHeld=true;OriginalButton.CapturePointer(e.Pointer);ApplyEffects();ShowControls();}
-    private void OriginalReleased(object sender,PointerRoutedEventArgs e){originalHeld=false;OriginalButton.ReleasePointerCapture(e.Pointer);ApplyEffects();ShowControls();}
+    private void SetOriginalHeld(bool value)
+    {
+        if(closed||originalHeld==value)return;originalHeld=value;
+        try{renderer?.HoldOriginal(value);RefreshStatus(false);}catch(COMException ex){Recover(ex);}
+    }
+    private void OriginalPressed(object sender,PointerRoutedEventArgs e){SetOriginalHeld(true);OriginalButton.CapturePointer(e.Pointer);ShowControls();}
+    private void OriginalReleased(object sender,PointerRoutedEventArgs e){SetOriginalHeld(false);OriginalButton.ReleasePointerCapture(e.Pointer);ShowControls();}
     private void ViewerKeyDown(object sender,KeyRoutedEventArgs e)
     {
         keyboardUntil=DateTime.UtcNow.AddSeconds(10);ShowControls();if(menuDepth>0)return;
@@ -433,11 +441,11 @@ public sealed partial class ViewerWindow : Window
             case VirtualKey.R:RotateClick(sender,e);break;case VirtualKey.F:case VirtualKey.F11:ToggleFullScreen();break;
             case VirtualKey.D:if(ctrl)FavoriteClick(sender,e);else return;break;
             case VirtualKey.I:InfoClick(sender,e);break;case VirtualKey.O:if(ctrl)OpenClick(sender,e);else return;break;
-            case VirtualKey.Space:originalHeld=true;ApplyEffects();break;
+            case VirtualKey.Space:SetOriginalHeld(true);break;
             case VirtualKey.Escape:if(fullScreen)ToggleFullScreen();else if(InfoPanel.Visibility==Visibility.Visible)InfoPanel.Visibility=Visibility.Collapsed;else Close();break;
             default:return;
         }
         e.Handled=true;
     }
-    private void ViewerKeyUp(object sender,KeyRoutedEventArgs e){if(e.Key==VirtualKey.Space){originalHeld=false;ApplyEffects();e.Handled=true;}}
+    private void ViewerKeyUp(object sender,KeyRoutedEventArgs e){if(e.Key==VirtualKey.Space){SetOriginalHeld(false);e.Handled=true;}}
 }
