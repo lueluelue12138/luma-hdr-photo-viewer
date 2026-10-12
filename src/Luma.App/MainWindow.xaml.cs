@@ -70,6 +70,7 @@ public sealed partial class MainWindow : Window
         Nav.IsPaneToggleButtonVisible=compact;ImportLabel.Visibility=band<2?Visibility.Collapsed:Visibility.Visible;OpenPhotoLabel.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
         SortBox.Visibility=band==0||page is "albums" or "settings" or "recent"?Visibility.Collapsed:Visibility.Visible;
         Gallery.Padding=new Thickness(band<2?16:28,22,band<2?16:28,16);
+        GalleryScroll.Margin=new Thickness(0,0,band<2?-8:-18,0);
         Search.HorizontalAlignment=band<3?HorizontalAlignment.Left:HorizontalAlignment.Center;Search.Margin=band<3?new Thickness(130,0,0,0):new Thickness(0);
     }
     private async void Loaded(object sender,RoutedEventArgs e)
@@ -91,13 +92,15 @@ public sealed partial class MainWindow : Window
         if(page=="settings")return;
         if(page=="albums")
         {
+            FolderText.Text="照片保留在原文件夹";
             var filtered=albums.Where(a=>a.Name.Contains(Search.Text,StringComparison.CurrentCultureIgnoreCase)).ToList();AlbumsRepeat.ItemsSource=filtered;AlbumsRepeat.Visibility=Visibility.Visible;PhotosRepeat.Visibility=Visibility.Collapsed;PageTitle.Text="相册";CountText.Text=$"{filtered.Count} 个相册";EmptyState.Visibility=filtered.Count==0?Visibility.Visible:Visibility.Collapsed;SortBox.Visibility=Visibility.Collapsed;
         }
         else
         {
             var a=albums.FirstOrDefault(a=>a.Id==albumId);var scope=page switch{"favorites"=>PhotoScope.Favorites,"recent"=>PhotoScope.Recent,"album"=>PhotoScope.Album,_=>PhotoScope.All};
-            var result=await App.Store.PhotosAsync(scope,albumId,Search.Text,sort);if(closed||g!=generation)return;if(!photos.SequenceEqual(result)||PhotosRepeat.ItemsSource is null){photos=result;PhotosRepeat.ItemsSource=photos;}PhotosRepeat.Visibility=Visibility.Visible;AlbumsRepeat.Visibility=Visibility.Collapsed;EmptyState.Visibility=photos.Count==0?Visibility.Visible:Visibility.Collapsed;CountText.Text=$"{photos.Count} 张照片";PageTitle.Text=page switch{"favorites"=>"收藏","recent"=>"最近打开","album"=>a?.Name??"相册",_=>"所有照片"};SortBox.Visibility=page=="recent"||Root.ActualWidth<650?Visibility.Collapsed:Visibility.Visible;FooterText.Text=a?.Offline==true?"文件夹暂时离线，重新连接后刷新即可恢复":a?.Folder??"照片保留在原文件夹";
+            var result=await App.Store.PhotosAsync(scope,albumId,Search.Text,sort);if(closed||g!=generation)return;if(!photos.SequenceEqual(result)||PhotosRepeat.ItemsSource is null){photos=result;PhotosRepeat.ItemsSource=photos;}PhotosRepeat.Visibility=Visibility.Visible;AlbumsRepeat.Visibility=Visibility.Collapsed;EmptyState.Visibility=photos.Count==0?Visibility.Visible:Visibility.Collapsed;CountText.Text=$"{photos.Count} 张照片";PageTitle.Text=page switch{"favorites"=>"收藏","recent"=>"最近打开","album"=>a?.Name??"相册",_=>"所有照片"};SortBox.Visibility=page=="recent"||Root.ActualWidth<650?Visibility.Collapsed:Visibility.Visible;FolderText.Text=a?.Offline==true?"文件夹暂时离线，重新连接后刷新即可恢复":a?.Folder??"照片保留在原文件夹";
         }
+        ToolTipService.SetToolTip(FolderText,FolderText.Text);
         EmptyTitle.Text=albums.Count==0?"让照片的光影，有个家":"这里还没有照片";EmptyDescription.Text=albums.Count==0?"导入一个文件夹，开始整理你的照片。\n照片始终保留在原位置。":"试试其他搜索词，或导入新的文件夹。";
     }
     private async void NavigationChanged(NavigationView sender,NavigationViewSelectionChangedEventArgs args)
@@ -138,8 +141,14 @@ public sealed partial class MainWindow : Window
     private void RefreshClick(object sender,RoutedEventArgs e)=>_=RefreshAllAsync(page=="album"?albumId:0);
     private async void SortChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;sort=(SortBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"name";if(page=="album")await App.Store.SetAlbumAsync(albumId,sort:sort);await ReloadAsync();}
     private void AlbumClick(object sender,RoutedEventArgs e){if(((Button)sender).Tag is Album a){var nav=Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(n=>n.Tag is long id&&id==a.Id);Nav.SelectedItem=nav;}}
-    private void CardEntered(object sender,PointerRoutedEventArgs e)=>Motion.Hover((FrameworkElement)sender,true);
-    private void CardExited(object sender,PointerRoutedEventArgs e)=>Motion.Hover((FrameworkElement)sender,false);
+    private static void HoverCard(object sender,bool over)
+    {
+        // Scale inside the card's breathing room, rather than scaling a native
+        // button background or its layout boundary into the scroll viewport.
+        if(sender is Button button&&VisualTreeHelper.GetChildrenCount(button)>0&&VisualTreeHelper.GetChild(button,0) is Grid template&&template.FindName("CardContent") is FrameworkElement content)Motion.Hover(content,over);
+    }
+    private void CardEntered(object sender,PointerRoutedEventArgs e)=>HoverCard(sender,true);
+    private void CardExited(object sender,PointerRoutedEventArgs e)=>HoverCard(sender,false);
     private void PhotoClick(object sender,RoutedEventArgs e)
     {
         if(((Button)sender).Tag is not Photo p)return;var v=new ViewerWindow(p.Path,photos,this);viewers.Add(v);v.Closed+=async(_,_)=>{viewers.Remove(v);await ReloadAsync();};v.Activate();
