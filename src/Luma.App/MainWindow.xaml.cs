@@ -116,7 +116,13 @@ public sealed partial class MainWindow : Window
     private async void ThemeChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;var theme=(ThemeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"system";await App.Store.SetSettingAsync("theme",theme);Root.RequestedTheme=await App.ThemeAsync();foreach(var v in viewers)v.ApplyTheme(Root.RequestedTheme);}
     private async void DefaultAppsClick(object sender,RoutedEventArgs e)
     {
-        try{await Launcher.LaunchUriAsync(AssociationRegistration.SettingsUri());}catch(Exception ex){await ErrorAsync("无法打开默认应用设置",ex.Message);}
+        try
+        {
+            var uri=AssociationRegistration.SettingsUri();
+            await Task.Delay(1000);
+            if(!await Launcher.LaunchUriAsync(uri))await ErrorAsync("无法打开默认应用设置","请在 Windows 设置的“应用 → 默认应用”中搜索 Luma。");
+        }
+        catch(Exception ex){await ErrorAsync("无法打开默认应用设置",ex.Message);}
     }
     private async void OpenPhotoClick(object sender,RoutedEventArgs e)
     {

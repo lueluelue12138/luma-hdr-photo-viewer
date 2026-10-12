@@ -8,7 +8,7 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 
 - 直接启动进入图库；导入文件夹建立相册，照片保留在原位置。
 - 将照片或文件夹拖入图库，或点击顶部的“打开照片”按钮。
-- 在“设置 → 在 Windows 中选择 Luma”中将便携版注册为可选图片查看器，由用户在 Windows 设置中选择默认格式。移动便携版后需再次注册。
+- 在“设置 → 在 Windows 中选择 Luma”中将便携版添加到开始菜单并注册为可选图片查看器，由用户在 Windows 设置中选择默认格式。移动便携版后需再次注册。本机应用专属跳转仍打开通用默认应用页；若应用列表未显示 Luma，可按 `.jpg`、`.png` 等扩展名选择。系统查看器枚举已识别 Luma，完整默认应用选择流程尚未验收。
 - `Luma.App.exe "D:\Photos\photo.jpg"` 直接打开照片，先解码当前照片，再列举同文件夹图片，不等待全图库扫描。
 - 本地数据位于 `%LOCALAPPDATA%\Luma`；数据库为 `library.db`，异常日志为 `luma.log`，NVIDIA 日志为 `ngx`。
 
@@ -44,7 +44,7 @@ JPEG、PNG、BMP、GIF、TIFF、JPEG XR（JXR/WDP/HDP）、ICO。GIF 与多页 T
 
 测试需要 Python 与 Pillow。`Generate-Assets.py` 可重新生成原创几何图标。NVIDIA SDK 按 [external/nvidia/README.md](external/nvidia/README.md) 放置；不放置也可构建，增强按钮会准确报告不可用。
 
-实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。界面检查后来被 Windows 锁屏中断，全屏等剩余项未声称已验证。
+实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。解锁后已补完全屏恢复、小窗口布局、收藏快捷键及系统注册检查；完整系统选择器交互、跨屏和休眠恢复仍需扩展验收。
 
 MSIX 为 `artifacts/Luma_0.1.0.0_x64.msix`，包含实际支持格式的文件关联和开始菜单入口。本地包未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
 

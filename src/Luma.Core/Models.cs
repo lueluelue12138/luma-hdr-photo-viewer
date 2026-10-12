@@ -3,10 +3,12 @@ namespace Luma.Core;
 public sealed record Photo(string Path, string Name, long Size, long Modified, bool Favorite = false, long Opened = 0, bool Missing = false)
 {
     public string Detail => Missing ? "文件暂不可用" : $"{Size / 1048576.0:0.0} MB";
+    public override string ToString() => Name;
 }
 public sealed record Album(long Id, string Name, string Folder, string? Cover, int Count, bool Offline, string Sort)
 {
     public string CountLabel => Offline ? $"{Count} 张 · 文件夹离线" : $"{Count} 张";
+    public override string ToString() => Name;
 }
 public sealed record ScanResult(long AlbumId, int Added, int Updated, int Missing, bool Offline, string? Error = null);
 public enum PhotoScope { All, Album, Favorites, Recent }

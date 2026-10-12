@@ -19,6 +19,7 @@ public sealed partial class ViewerWindow : Window
     private readonly FrameCache cache=new();private NativeRenderer? renderer;private FrameLease? currentLease;private int displayedRequest;private DecodedFrame? currentFrame=>current is not null&&displayedRequest==request?currentLease?.Frame:null;
     private List<Photo> sequence=[];private Photo? current;private int index,request,rotation;private bool closed,selecting,fullScreen,dragging,hover,originalHeld;
     private double zoom=1,panX,panY,startX,startY;private int menuDepth;private DateTime lastActivity=DateTime.UtcNow,keyboardUntil=DateTime.MinValue;
+    private AppWindowPresenter? windowedPresenter;private Windows.Graphics.RectInt32 windowedBounds;private bool windowedMaximized;
     private CancellationTokenSource? loadingCancellation;private readonly CancellationTokenSource lifetime=new();
     private readonly DispatcherTimer idleTimer=new(){Interval=TimeSpan.FromMilliseconds(500)};
     private readonly string initial;private readonly IReadOnlyList<Photo>? initialSequence;private bool recovering;
@@ -53,6 +54,7 @@ public sealed partial class ViewerWindow : Window
             try{var siblings=await Task.Run(()=>FolderIndexer.Siblings(initial),lifetime.Token);if(closed)return;var path=current?.Path??initial;sequence=siblings;index=Math.Max(0,sequence.FindIndex(p=>string.Equals(p.Path,path,StringComparison.OrdinalIgnoreCase)));selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=index;selecting=false;UpdatePosition();Prefetch();}
             catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException){App.Log(ex.Message);}
         }
+        if(!closed)InputLayer.Focus(FocusState.Programmatic);
     }
     private void CreateRenderer(){renderer?.Dispose();renderer=new(Surface,WinRT.Interop.WindowNative.GetWindowHandle(this));renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);}
     private async Task DisplayAsync(int selected)
@@ -108,7 +110,27 @@ public sealed partial class ViewerWindow : Window
     private async void FavoriteClick(object sender,RoutedEventArgs e){if(current is null)return;var photo=current;int generation=request;try{bool favorite=await App.Store.ToggleFavoriteAsync(photo);if(closed||generation!=request)return;current=photo with{Favorite=favorite};UpdateFavorite();ShowControls();}catch(Exception ex){if(!closed&&generation==request)Fail(ex);}}
     private void UpdateFavorite(){FavoriteIcon.Glyph=current?.Favorite==true?"\uEB52":"\uEB51";FavoriteButton.SetValue(AutomationProperties.NameProperty,current?.Favorite==true?"取消收藏":"收藏");}
     private void FullScreenClick(object sender,RoutedEventArgs e)=>ToggleFullScreen();
-    private void ToggleFullScreen(){fullScreen=!fullScreen;AppWindow.SetPresenter(fullScreen?AppWindowPresenterKind.FullScreen:AppWindowPresenterKind.Overlapped);TitleRow.Height=new GridLength(fullScreen?0:44);ShowControls();}
+    private void ToggleFullScreen()
+    {
+        if(!fullScreen)
+        {
+            windowedPresenter=AppWindow.Presenter;
+            windowedMaximized=windowedPresenter is OverlappedPresenter {State:OverlappedPresenterState.Maximized};
+            var p=AppWindow.Position;var s=AppWindow.Size;windowedBounds=new(p.X,p.Y,s.Width,s.Height);
+            AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);fullScreen=true;
+        }
+        else
+        {
+            if(windowedPresenter is not null)AppWindow.SetPresenter(windowedPresenter);else AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
+            fullScreen=false;
+            if(AppWindow.Presenter is OverlappedPresenter presenter)
+            {
+                if(windowedMaximized)presenter.Maximize();else{presenter.Restore();AppWindow.MoveAndResize(windowedBounds);}
+            }
+            windowedPresenter=null;
+        }
+        TitleRow.Height=new GridLength(fullScreen?0:44);ShowControls();InputLayer.Focus(FocusState.Programmatic);
+    }
     private void BackClick(object sender,RoutedEventArgs e){App.ShowGallery();Close();}
     private void SurfaceSizeChanged(object sender,SizeChangedEventArgs e){EnhancementScroll.MaxHeight=Math.Max(160,Canvas.ActualHeight-116);ZoomOutButton.Visibility=ZoomInButton.Visibility=Canvas.ActualWidth<570?Visibility.Collapsed:Visibility.Visible;BottomPanel.MaxWidth=Math.Min(920,Math.Max(240,Canvas.ActualWidth-72));Filmstrip.MaxWidth=Math.Min(740,Math.Max(80,Canvas.ActualWidth-246));if(renderer is null)return;try{renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
     private void ScaleChanged(SwapChainPanel sender,object args){if(renderer is null)return;try{renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
