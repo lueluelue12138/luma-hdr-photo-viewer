@@ -14,6 +14,8 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 
 ## 已实现
 
+0.1.14 将直接 WIC 缩略图扩展到常见 SDR 格式，复用有独立预算的像素暂存缓冲，减少大块临时数组及每次缓存插入的排序分配。浮点原生 HDR 和解码失败仍使用 Windows 缩略图提供程序；照片的 FP16/NVIDIA 路径不变。新增完整只读相册压力验证，测试数据库与实际图库分离。3043 张、约 54.8 GiB 相机 JPG 的滚动与随机开图通过：两轮滚动 UI 回调 P95 约 9 ms，40 次跨位置开图首图中位约 369 ms，邻图预读命中 5–7 ms。缩略图未缓存时首屏仍需约 0.8 秒全部完成，历史约 120 ms 调度峰值尚未确定原因；这些继续列为性能待办，未声称所有操作已达到瞬时响应。资源、GC 对照与测量边界见验证记录。
+
 0.1.13 继续优化大 JPG 的图库及预览缩略图：后台使用已有 WIC 缩小解码、ICC 色彩转换和 EXIF 方向处理，直接交给 WinUI 位图，减少 Windows 缩略图服务与重复解码的等待。保留四个加载槽、32 MiB / 96 项缓存、过时请求检查及其他格式的系统缩略图路径；不调用 GPU 或 NVIDIA 增强。缩略图按 DPI 选择像素尺寸，并修正竖图的居中裁切。扫描期间收到的刷新不再被丢弃，会合并到下一轮；无变化的刷新保留现有卡片。96 个大 JPG 路径的同版本对照中，快速滚动后回到首屏的缩略图等待约 2.79 秒 → 268 ms；样本为同一张 7008×4672 照片的副本，不代表所有相册或冷磁盘表现。更多样本及界面调度峰值见验证记录。
 
 0.1.12 在刚关闭的预览之间短暂复用 D3D 设备和 NVIDIA 初始化会话，减少重新开图的等待。最多保留一个完整的闲置渲染器，10 秒后释放；关闭时清空照片、窗口和毛玻璃缓冲，不共享活动窗口的上下文。SDK 功能实例在图片缓冲变化或窗口关闭时释放，避免不同尺寸照片造成实际显存持续增长。同尺寸纹理和当前照片的原图对照继续复用。统一 SDK 会话生命周期，避免关闭一个设备后让其他窗口的功能创建失效；停止工作的已注册设备在最后一个 SDK 使用者退出前可重新移交。普通 SDR 不触发新的 SDK 初始化或 AI 调用。首次新进程/缓存过期后的初始化成本仍存在，SDK/驱动内部缓存与更多显示拓扑继续验证。
@@ -65,7 +67,7 @@ JPEG、PNG、BMP、GIF、TIFF、JPEG XR（JXR/WDP/HDP）、ICO。GIF 与多页 T
 ```powershell
 .\scripts\Build.ps1                 # 原生核心 + WinUI Release
 .\scripts\Build.ps1 -Publish        # 自包含便携版 artifacts/Luma
-.\scripts\Verify.ps1                # 24 项图库/激活检查 + WIC / D3D11 / RTX 检查
+.\scripts\Verify.ps1                # 25 项图库/激活检查 + WIC / D3D11 / RTX 检查
 .\scripts\Verify.ps1 -Photo "D:\Photos\large.jpg"
 python .\tests\benchmark_photos.py "D:\Photos\large.jpg"
 python .\tests\benchmark_textures.py "D:\Photos\large.jpg" --output artifacts\texture-run --expect-reuse
@@ -75,6 +77,8 @@ python .\tests\verify_viewer_lifecycle.py "D:\Photos\large.jpg" --runs 3
 python .\tests\verify_viewer_interaction.py "D:\Photos\large.jpg"
 python .\tests\benchmark_decode.py "D:\Photos\large.jpg"
 python .\tests\verify_gallery_performance.py --large-photo "D:\Photos\large.jpg"
+python .\tests\verify_gallery_performance.py --read-only-folder "D:\Photos\album"
+python .\tests\verify_gallery_performance.py --read-only-folder "D:\Photos\album" --viewer-stress
 python .\tests\verify_thumbnail_pixels.py
 .\scripts\Package.ps1 -SkipBuild    # 生成并验证未签名 MSIX
 ```
@@ -83,7 +87,7 @@ python .\tests\verify_thumbnail_pixels.py
 
 实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。解锁后已补完全屏恢复、小窗口布局、收藏快捷键及系统注册检查；完整系统选择器交互、跨屏和休眠恢复仍需扩展验收。
 
-MSIX 为 `artifacts/Luma_0.1.13.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.13_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
+MSIX 为 `artifacts/Luma_0.1.14.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.14_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
 
 用户反馈、性能/体积优化和发行准备持续记录在 [待办清单](docs/TODO.md)，新增事项也统一写入此文档。
 

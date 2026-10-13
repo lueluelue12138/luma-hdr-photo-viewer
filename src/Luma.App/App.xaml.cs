@@ -37,10 +37,15 @@ public partial class App : Application
             {
                 window=new MainWindow();window.Activate();await PhotoPerformanceVerification.RunAsync((MainWindow)window,file??throw new ArgumentException("Verification requires a photo"));return;
             }
-            if(test>=0&&cli.Contains("--verify-gallery-performance"))
+            if(test>=0&&(cli.Contains("--verify-gallery-performance")||cli.Contains("--verify-album-viewer")))
             {
                 Thumbnail.PreferWic=!cli.Contains("--shell-control");
-                window=new MainWindow();window.Activate();await ((MainWindow)window).VerificationLargeGalleryAsync(Path.Combine(DataDirectory,"source"));return;
+                int source=Array.IndexOf(cli,"--gallery-source");
+                string folder=source>=0&&source+1<cli.Length?Path.GetFullPath(cli[source+1]):Path.Combine(DataDirectory,"source");
+                window=new MainWindow();window.Activate();
+                if(cli.Contains("--verify-album-viewer"))await ((MainWindow)window).VerificationAlbumViewerAsync(folder);
+                else await ((MainWindow)window).VerificationLargeGalleryAsync(folder);
+                return;
             }
             if(test>=0&&cli.Contains("--verify-startup"))
             {

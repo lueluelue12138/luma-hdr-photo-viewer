@@ -7,6 +7,7 @@ void Assert(bool condition,string name){if(!condition)throw new Exception("FAILE
 Assert(new DirectoryInfo(SupportedFormats.Normalize(Path.GetPathRoot(root)!)).FullName==Path.GetPathRoot(root),"drive root stays absolute");
 Assert(LaunchArguments.PhotoPath(["--test-library","test.jpg","--import","album.png","--verify-startup","missing.jpg"])=="missing.jpg","activation skips folder arguments without checking disk");
 Assert(LaunchArguments.PhotoPath(["--import","album.jpg"]) is null,"image-like import folder still launches gallery");
+Assert(LaunchArguments.PhotoPath(["--test-library","test.jpg","--gallery-source","album.png"]) is null,"read-only gallery source cannot become photo activation");
 Assert(LaunchArguments.PhotoPath(["--verify-startup","._one.JPG","photo.PNG"])=="photo.PNG","activation respects supported formats and metadata exclusion");
 long id=await store.AddFolderAsync(source);Assert(await store.AddFolderAsync(source)==id,"repeat import is idempotent");
 var album=(await store.AlbumsAsync()).Single();var scan=await indexer.RefreshAsync(album);Assert(scan.Added==2,"recursive supported format index");

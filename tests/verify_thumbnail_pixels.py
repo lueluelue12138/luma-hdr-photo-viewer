@@ -20,6 +20,19 @@ try:
     assert copy(info,frame)==bytes([25,50,100,128,0,0,0,0,0,128,255,255,40,20,6,64]),'BGRA/premultiplied alpha mismatch'
     guard=(c.c_uint8*info.bytes)(*([204]*info.bytes));assert d.LumaCopySdrBgra(frame,guard,info.bytes-1)<0 and bytes(guard)==bytes([204]*info.bytes),'Short destination was modified'
 finally:d.LumaFreeFrame(frame)
+format_checks=[]
+for extension,format in [('bmp','BMP'),('gif','GIF'),('tif','TIFF'),('ico','ICO'),('png','PNG')]:
+    image=Image.new('RGBA' if extension=='ico' else 'RGB',(32,32),(48,96,160));path=out/('format.'+extension);image.save(path,format=format,**({'sizes':[(32,32)]} if extension=='ico' else {}))
+    info,frame=decode(path)
+    try:
+        assert (info.w,info.h,info.hdr)==(32,32,0),(extension,info.w,info.h)
+        pixels=copy(info,frame);assert pixels[:4]==bytes([160,96,48,255]),(extension,pixels[:4])
+        format_checks.append(extension)
+    finally:d.LumaFreeFrame(frame)
+first=Image.new('RGB',(32,32),(255,0,0));first.save(out/'animated.gif',save_all=True,append_images=[Image.new('RGB',(32,32),(0,0,255))],duration=100,loop=0)
+info,frame=decode(out/'animated.gif')
+try:assert copy(info,frame)[:4]==bytes([0,0,255,255]),'GIF thumbnail did not use the supported first frame'
+finally:d.LumaFreeFrame(frame)
 profile=ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
 Image.new('RGB',(2048,1024),(48,96,160)).save(out/'profile.jpg',quality=100,subsampling=0,icc_profile=profile)
 info,frame=decode(out/'profile.jpg')
@@ -38,5 +51,5 @@ info,frame=decode(hdr,64)
 try:
     assert info.hdr;guard=(c.c_uint8*info.bytes)(*([204]*info.bytes));assert d.LumaCopySdrBgra(frame,guard,info.bytes)<0 and bytes(guard)==bytes([204]*info.bytes),'Native HDR was silently converted to 8-bit SDR'
 finally:d.LumaFreeFrame(frame)
-out.joinpath('thumbnail-pixels.json').write_text(json.dumps({'complete':True,'checks':['premultiplied-BGRA','short-buffer-guard','scaled-JPEG-ICC','EXIF-rotation','native-HDR-rejection']},indent=2),encoding='utf-8')
+out.joinpath('thumbnail-pixels.json').write_text(json.dumps({'complete':True,'checks':['premultiplied-BGRA','short-buffer-guard','scaled-JPEG-ICC','EXIF-rotation','native-HDR-rejection','GIF-first-frame'],'sdrFormats':format_checks},indent=2),encoding='utf-8')
 print('PASS: WIC thumbnail BGRA/alpha, short buffer, JPEG ICC/EXIF, native HDR rejection.',out)

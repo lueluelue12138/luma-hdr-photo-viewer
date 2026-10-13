@@ -2,20 +2,29 @@ using System.Diagnostics;
 using System.Text.Json;
 using Luma.Core;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace Luma.App;
 
 public sealed partial class MainWindow
 {
     private Func<Task>? verificationBeforeScan;
+    private IEnumerable<Button> VerificationRealizedCards()
+    {
+        // Inspect only realized children. Querying every index in a long album
+        // would add O(album length) UI work to the diagnostic itself.
+        for(int i=0;i<VisualTreeHelper.GetChildrenCount(PhotosRepeat);i++)
+            if(VisualTreeHelper.GetChild(PhotosRepeat,i) is Button card&&PhotosRepeat.GetElementIndex(card)>=0)yield return card;
+    }
     internal async Task VerificationLargeGalleryAsync(string folder)
     {
         string report=Path.Combine(App.DataDirectory,"gallery-performance.json");using var stop=new CancellationTokenSource();
-        var delays=new List<double>();Task heartbeat=Task.CompletedTask;
+        var delays=new List<double>();var samples=new List<object>();var operations=new List<object>();var resources=new List<object>();Task heartbeat=Task.CompletedTask;string phase="scan";
         try
         {
-            await VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));await RefreshAllAsync();var watch=Stopwatch.StartNew();
-            heartbeat=Task.Run(async()=>{while(!stop.IsCancellationRequested){long posted=Stopwatch.GetTimestamp();DispatcherQueue.TryEnqueue(()=>delays.Add(Stopwatch.GetElapsedTime(posted).TotalMilliseconds));try{await Task.Delay(8,stop.Token);}catch(OperationCanceledException){break;}}});
+            await VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));await RefreshAllAsync();var probeStartUtc=DateTime.UtcNow;var watch=Stopwatch.StartNew();
+            long allocatedStart=GC.GetTotalAllocatedBytes();int[] gcStart=[GC.CollectionCount(0),GC.CollectionCount(1),GC.CollectionCount(2)];
+            heartbeat=Task.Run(async()=>{using var process=Process.GetCurrentProcess();long lastResource=-250;while(!stop.IsCancellationRequested){long posted=Stopwatch.GetTimestamp();string postedPhase=Volatile.Read(ref phase);long elapsed=watch.ElapsedMilliseconds;if(elapsed-lastResource>=250){process.Refresh();resources.Add(new{elapsed,phase=postedPhase,workingSetBytes=process.WorkingSet64,privateBytes=process.PrivateMemorySize64,cpuMilliseconds=process.TotalProcessorTime.TotalMilliseconds});lastResource=elapsed;}int gc0=GC.CollectionCount(0),gc1=GC.CollectionCount(1),gc2=GC.CollectionCount(2);DispatcherQueue.TryEnqueue(()=>{double ms=Stopwatch.GetElapsedTime(posted).TotalMilliseconds;delays.Add(ms);samples.Add(new{elapsed,postedPhase,handledPhase=phase,milliseconds=ms,gc0=GC.CollectionCount(0)-gc0,gc1=GC.CollectionCount(1)-gc1,gc2=GC.CollectionCount(2)-gc2,wic=Thumbnail.WicLoads,shell=Thumbnail.ShellLoads,cache=Thumbnail.CachedImages});});try{await Task.Delay(8,stop.Token);}catch(OperationCanceledException){break;}}});
             var snapshotReady=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var resumeScan=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             verificationBeforeScan=()=>{snapshotReady.TrySetResult();return resumeScan.Task;};
@@ -28,30 +37,34 @@ public sealed partial class MainWindow
                 resumeScan.TrySetResult();await Task.WhenAll(firstScan,requested);
             }
             finally{resumeScan.TrySetResult();verificationBeforeScan=null;}
-            page="album";albumId=id;await ReloadAsync();await Task.Delay(300);
+            phase="initial-layout";page="album";albumId=id;await ReloadAsync();await Task.Delay(300);
             long firstMilliseconds=watch.ElapsedMilliseconds;int count=photos.Count;
             if(count<64)throw new InvalidOperationException($"Gallery performance fixture requires 64+ indexed photographs; got {count}");
             long before=Thumbnail.ShellLoads,wicBefore=Thumbnail.WicLoads,skipped=Thumbnail.SkippedLoads;int maxRealized=0;
             for(int n=0;n<48;n++)
             {
+                phase=$"scroll-{n}";var operation=Stopwatch.StartNew();
                 GalleryScroll.ChangeView(null,GalleryScroll.ScrollableHeight*((n*13)%47)/46,null,true);
+                operations.Add(new{phase,operation="change-view",milliseconds=operation.Elapsed.TotalMilliseconds});
                 await Task.Delay(24);
+                operation.Restart();
                 int realized=0;
-                for(int i=0;i<count;i++)if(PhotosRepeat.TryGetElement(i) is Button card)
+                foreach(var card in VerificationRealizedCards())
                 {
                     realized++;var thumbnail=FindThumbnail(card);
                     if(thumbnail?.DisplayedPath is {} path&&card.Tag is Photo photo&&!string.Equals(path,photo.Path,StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("A recycled card displayed a previous photo");
                 }
                 maxRealized=Math.Max(maxRealized,realized);
+                operations.Add(new{phase,operation="inspect-realized",milliseconds=operation.Elapsed.TotalMilliseconds});
             }
-            await Task.Delay(500);
+            phase="settle";await Task.Delay(500);
             // End at the start and require real decoded pixels in every visible
             // card, rather than declaring an all-placeholder list a success.
-            GalleryScroll.ChangeView(null,0,null,true);var visibleWait=Stopwatch.StartNew();int visibleThumbnails=0;
+            phase="visible-ready";GalleryScroll.ChangeView(null,0,null,true);var visibleWait=Stopwatch.StartNew();int visibleThumbnails=0;
             while(true)
             {
                 await Task.Delay(25);int realized=0;visibleThumbnails=0;
-                for(int i=0;i<count;i++)if(PhotosRepeat.TryGetElement(i) is Button card)
+                foreach(var card in VerificationRealizedCards())
                 {
                     realized++;var thumbnail=FindThumbnail(card);
                     if(thumbnail?.DisplayedPath is {} path&&card.Tag is Photo photo)
@@ -67,7 +80,7 @@ public sealed partial class MainWindow
             if(maxRealized>=count/2)throw new InvalidOperationException("The large gallery is not virtualizing its photo cards");
             var items=PhotosRepeat.ItemsSource;long unchangedLoads=Thumbnail.ShellLoads+Thumbnail.WicLoads;await RefreshAllAsync();
             if(!ReferenceEquals(items,PhotosRepeat.ItemsSource)||unchangedLoads!=Thumbnail.ShellLoads+Thumbnail.WicLoads)throw new InvalidOperationException("Unchanged large-album refresh discarded its photo/thumbnail cache");
-            File.WriteAllText(report,JsonSerializer.Serialize(new{complete=true,refreshCoalescingVerified=true,count,firstMilliseconds,maxRealized,visibleThumbnails,visibleReadyMilliseconds=visibleWait.ElapsedMilliseconds,dispatcherLatency=delays,shellLoads=Thumbnail.ShellLoads-before,wicLoads=Thumbnail.WicLoads-wicBefore,skippedLoads=Thumbnail.SkippedLoads-skipped,unchangedRefreshLoads=Thumbnail.ShellLoads+Thumbnail.WicLoads-unchangedLoads,cachedThumbnails=Thumbnail.CachedImages,cachedThumbnailBytes=Thumbnail.CachedBytes},new JsonSerializerOptions{WriteIndented=true}));
+            File.WriteAllText(report,JsonSerializer.Serialize(new{complete=true,probeStartUtc,refreshCoalescingVerified=true,count,firstMilliseconds,maxRealized,visibleThumbnails,visibleReadyMilliseconds=visibleWait.ElapsedMilliseconds,dispatcherLatency=delays,dispatcherSamples=samples,operations,resources,allocatedBytes=GC.GetTotalAllocatedBytes()-allocatedStart,gcCollections=Enumerable.Range(0,3).Select(i=>GC.CollectionCount(i)-gcStart[i]).ToArray(),shellLoads=Thumbnail.ShellLoads-before,wicLoads=Thumbnail.WicLoads-wicBefore,totalShellLoads=Thumbnail.ShellLoads,totalWicLoads=Thumbnail.WicLoads,skippedLoads=Thumbnail.SkippedLoads-skipped,unchangedRefreshLoads=Thumbnail.ShellLoads+Thumbnail.WicLoads-unchangedLoads,cachedThumbnails=Thumbnail.CachedImages,cachedThumbnailBytes=Thumbnail.CachedBytes},new JsonSerializerOptions{WriteIndented=true}));
         }
         catch(Exception ex){File.WriteAllText(report,JsonSerializer.Serialize(new{complete=false,failure=ex.ToString()}));Environment.ExitCode=1;}
         finally{stop.Cancel();await heartbeat;Close();}

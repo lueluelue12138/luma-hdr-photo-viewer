@@ -8,7 +8,7 @@ public static class LaunchArguments
     {
         for(int i=0;i<arguments.Count;i++)
         {
-            if(arguments[i] is "--test-library" or "--import"){i++;continue;}
+            if(arguments[i] is "--test-library" or "--import" or "--gallery-source"){i++;continue;}
             if(!arguments[i].StartsWith("--",StringComparison.Ordinal)&&SupportedFormats.IsSupported(arguments[i]))return arguments[i];
         }
         return null;

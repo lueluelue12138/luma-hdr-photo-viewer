@@ -6,6 +6,7 @@ using Windows.Storage;
 using Windows.Storage.FileProperties;
 using Windows.Storage.Streams;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Buffers;
 
 namespace Luma.App;
 public sealed class Thumbnail : Grid
@@ -17,6 +18,10 @@ public sealed class Thumbnail : Grid
     private readonly Image image=new(){Stretch=Stretch.UniformToFill,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
     private readonly FontIcon placeholder=new(){Glyph="\uEB9F",FontSize=24,Opacity=0.25};
     private static readonly SemaphoreSlim Slots=new(4);
+    // Four workers, at most 1024 x 1024 x 4 bytes per staging buffer.
+    // A dedicated pool also bounds retained buckets instead of growing the
+    // process-wide pool through unrelated image sizes (under 32 MiB retained).
+    private static readonly ArrayPool<byte> Pixels=ArrayPool<byte>.Create(4*1024*1024,4);
     private static readonly Dictionary<string,(ImageSource Image,long Bytes,long Used)> Images=new(StringComparer.OrdinalIgnoreCase);
     private sealed class ImageRequest
     {
@@ -88,11 +93,10 @@ public sealed class Thumbnail : Grid
             // This check runs on XAML, before dispatching any filesystem work.
             if(!request.Consumers.Any(needed=>needed())){SkippedLoads++;throw new OperationCanceledException();}
             ImageSource bitmap;long size;(FrameInfo info,byte[] pixels)? decoded=null;
-            string extension=Path.GetExtension(path);
-            if(PreferWic&&(extension.Equals(".jpg",StringComparison.OrdinalIgnoreCase)||extension.Equals(".jpeg",StringComparison.OrdinalIgnoreCase)))
+            if(PreferWic)
             {
                 WicLoads++;
-                // JPEG uses the existing scaled WIC/ICC/EXIF decoder directly,
+                // Supported SDR formats use scaled WIC/ICC/EXIF directly,
                 // avoiding Shell RPC and a second encoded bitmap decode.
                 decoded=await Task.Run<(FrameInfo info,byte[] pixels)?>(()=>
                 {
@@ -101,17 +105,24 @@ public sealed class Thumbnail : Grid
                         Native.Check(Native.LumaDecodeSized(path,edge,out var info,out var pointer));
                         using var frame=new DecodedFrame(pointer,info);
                         if(info.NativeHdr!=0)return null; // preserve Windows' HDR thumbnail provider
-                        var pixels=new byte[checked((int)info.Bytes)];Native.Check(Native.LumaCopySdrBgra(pointer,pixels,info.Bytes));
-                        return(info,pixels);
+                        var pixels=Pixels.Rent(checked((int)info.Bytes));
+                        try{Native.Check(Native.LumaCopySdrBgra(pointer,pixels,info.Bytes));return(info,pixels);}
+                        catch{Pixels.Return(pixels);throw;}
                     }
                     catch(System.Runtime.InteropServices.COMException){return null;}
                 });
             }
             if(decoded is {} sdr)
             {
-                var writable=new WriteableBitmap((int)sdr.info.Width,(int)sdr.info.Height);
-                using(var stream=writable.PixelBuffer.AsStream())stream.Write(sdr.pixels,0,sdr.pixels.Length);
-                writable.Invalidate();bitmap=writable;size=sdr.info.Width*(long)sdr.info.Height*4;
+                try
+                {
+                    var writable=new WriteableBitmap((int)sdr.info.Width,(int)sdr.info.Height);
+                    // Pool buckets can be larger than the decoded frame.
+                    // Copy only valid pixels, then return the staging buffer.
+                    using(var stream=writable.PixelBuffer.AsStream())stream.Write(sdr.pixels,0,checked((int)sdr.info.Bytes));
+                    writable.Invalidate();bitmap=writable;size=sdr.info.Width*(long)sdr.info.Height*4;
+                }
+                finally{Pixels.Return(sdr.pixels);}
             }
             else
             {
@@ -133,7 +144,8 @@ public sealed class Thumbnail : Grid
             {
                 if(Images.Remove(key,out var old))cacheBytes-=old.Bytes;
                 Images[key]=(bitmap,size,++used);cacheBytes+=size;
-                foreach(var item in Images.OrderBy(p=>p.Value.Used).ToArray()){if(cacheBytes<=32*1024*1024&&Images.Count<=96)break;Images.Remove(item.Key);cacheBytes-=item.Value.Bytes;}
+                while(cacheBytes>32*1024*1024||Images.Count>96)
+                {var item=Images.MinBy(p=>p.Value.Used);Images.Remove(item.Key);cacheBytes-=item.Value.Bytes;}
             }
             return bitmap;
         }

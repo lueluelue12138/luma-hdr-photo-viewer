@@ -4,6 +4,8 @@
 artifacts/
 .vs/
 *.user
+__pycache__/
+*.py[cod]
 external/nvidia/**
 !external/nvidia/README.md
 Luma.Native.lib
