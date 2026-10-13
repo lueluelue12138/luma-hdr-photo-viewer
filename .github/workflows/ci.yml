@@ -1,0 +1,91 @@
+name: Windows build and installer checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out complete source history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Check public source boundaries
+        run: python tests/check_public_source.py
+
+      - name: Set up tested .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Install image fixture dependency
+        run: python -m pip install 'Pillow>=11.3,<13'
+
+      - name: Verify library behavior
+        run: |
+          dotnet run --project tests/Luma.Tests/Luma.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Core checks failed.' }
+
+      - name: Build and verify SDK-free native rendering
+        run: |
+          ./scripts/Build-Native.ps1 -WithoutNvidia -TestFixtures -OutputDirectory "$PWD/artifacts/ci-native"
+          $env:LUMA_NATIVE_TEST_DLL = "$PWD/artifacts/ci-native/Luma.Native.dll"
+          python tests/verify_native.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native checks failed.' }
+          # Hosted CI verifies WIC/D3D11/FP16 fallback. It has no RTX GPU and
+          # must never claim that it has verified NVIDIA AI enhancement.
+
+      - name: Build standard EXE installer and portable ZIP
+        run: ./scripts/Build-Release.ps1 -Variant standard -TestInstaller
+
+      - name: Verify package and isolated installation lifecycle
+        run: |
+          python tests/verify_release.py --variant standard
+          if ($LASTEXITCODE -ne 0) { throw 'Package checks failed.' }
+          python tests/verify_installer.py
+          if ($LASTEXITCODE -ne 0) { throw 'Installer checks failed.' }
+
+      - name: Preserve standard development candidates
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Luma-standard-no-RTX-${{ github.run_number }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            artifacts/release-standard/*-setup.exe
+            artifacts/release-standard/*-portable.zip
+            artifacts/release-standard/SHA256SUMS.txt
+            artifacts/release-standard/build-info.json
+
+      - name: Preserve failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-diagnostics-${{ github.run_number }}
+          retention-days: 7
+          path: |
+            artifacts/installer-verification/**/*.log
+            artifacts/installer-verification/**/verification.json
+            .tools/downloads/innosetup-install.log

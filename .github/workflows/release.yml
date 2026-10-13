@@ -1,0 +1,142 @@
+name: Build RTX release draft from tag
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      RTX_DISTRIBUTION_READY: ${{ vars.RTX_DISTRIBUTION_READY }}
+    steps:
+      - name: Check out exact tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Require completed RTX distribution prerequisites
+        run: |
+          if ($env:RTX_DISTRIBUTION_READY -ne 'true') { throw 'Complete docs/RELEASING.md before enabling RTX distribution.' }
+          if (!(Test-Path packaging/RTX-EULA.rtf)) { throw 'A reviewed downstream NVIDIA license is required.' }
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$') { throw 'Invalid release tag.' }
+          $project = [xml](Get-Content src/Luma.App/Luma.App.csproj -Raw)
+          $version = [string]($project.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1)
+          if (($env:RELEASE_TAG.Substring(1) -split '-', 2)[0] -ne $version) { throw 'Tag and source version differ.' }
+
+      - name: Set up tested .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Check source and library behavior
+        run: |
+          python tests/check_public_source.py
+          if ($LASTEXITCODE -ne 0) { throw 'Public source check failed.' }
+          dotnet run --project tests/Luma.Tests/Luma.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Core checks failed.' }
+
+      - name: Retrieve verified private SDK
+        env:
+          NVIDIA_SDK_URL: ${{ secrets.NVIDIA_SDK_URL }}
+          NVIDIA_SDK_SHA256: ${{ vars.NVIDIA_SDK_SHA256 }}
+        run: ./scripts/Install-NvidiaSdk.ps1
+
+      - name: Build full RTX installer and portable ZIP
+        run: ./scripts/Build-Release.ps1 -Variant rtx -Tag $env:RELEASE_TAG -Distribution -TestInstaller
+
+      - name: Verify release bytes and isolated installation
+        run: |
+          python tests/verify_release.py --variant rtx
+          if ($LASTEXITCODE -ne 0) { throw 'RTX package checks failed.' }
+          python tests/verify_installer.py
+          if ($LASTEXITCODE -ne 0) { throw 'Installer checks failed.' }
+
+      - name: Preserve verified release files only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: RTX-release-${{ github.ref_name }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            artifacts/release-rtx/*-setup.exe
+            artifacts/release-rtx/*-portable.zip
+            artifacts/release-rtx/SHA256SUMS.txt
+            artifacts/release-rtx/build-info.json
+
+  draft:
+    needs: package
+    runs-on: windows-2025
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_COMMIT: ${{ github.sha }}
+    steps:
+      - name: Download verified package files
+        # Use the matching v7 artifact implementation; the release job does not
+        # retrieve or expose the private SDK archive or build dependencies.
+        shell: pwsh
+        run: |
+          $run = '${{ github.run_id }}'
+          gh run download $run --name "RTX-release-$env:RELEASE_TAG" --dir release-files
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to retrieve verified release files.' }
+          foreach ($line in Get-Content release-files/SHA256SUMS.txt) {
+            $parts = $line -split '  ', 2
+            if ($parts.Count -ne 2 -or [IO.Path]::GetFileName($parts[1]) -ne $parts[1]) { throw 'Invalid checksum entry.' }
+            if ((Get-FileHash (Join-Path release-files $parts[1]) -Algorithm SHA256).Hash -ne $parts[0]) { throw 'Downloaded artifact checksum mismatch.' }
+          }
+          $metadata = Get-Content release-files/build-info.json -Raw | ConvertFrom-Json
+          if ($metadata.commit -ne $env:RELEASE_COMMIT -or $metadata.sourceDirty) { throw 'Release provenance differs from the committed source.' }
+          $tagCommit = gh api "repos/$env:GH_REPO/commits/$env:RELEASE_TAG" --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $env:RELEASE_COMMIT) { throw 'Remote tag changed during the build.' }
+
+      - name: Create or update draft only
+        shell: pwsh
+        run: |
+          @'
+          重新看看你喜欢的照片。Luma 将 RTX Video HDR 带到普通 SDR 照片，并保留独立的 HDR / VSR 控制。
+
+          Rediscover your photos with RTX Video HDR. HDR and VSR remain independent; VSR starts off by default.
+
+          - Windows 11 x64：下载 setup.exe 安装，或下载 portable.zip 完整解压。
+          - Windows 11 x64: install setup.exe, or extract the complete portable ZIP.
+          - 当前包未签名；原生 HDR 格式范围和已知限制见项目 README。
+          - This candidate is unsigned. See the README for supported HDR formats and known limitations.
+          - SHA256SUMS.txt 可校验下载；NVIDIA 组件适用随包提供的独立许可。
+
+          此版本保持草稿，待人工核对后再决定是否公开。
+          '@ | Set-Content release-notes.md -Encoding utf8
+          $existing = gh release view $env:RELEASE_TAG --json isDraft --jq .isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if ($existing -ne 'true') { throw 'Refusing to overwrite an already published release.' }
+            gh release upload $env:RELEASE_TAG (Get-ChildItem release-files -File).FullName --clobber
+          } else {
+            $arguments = @('release','create',$env:RELEASE_TAG,'--verify-tag','--draft','--title',"Luma $env:RELEASE_TAG",'--notes-file','release-notes.md')
+            if ($env:RELEASE_TAG.Contains('-')) { $arguments += '--prerelease' }
+            $arguments += (Get-ChildItem release-files -File).FullName
+            gh @arguments
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Draft release creation/upload failed.' }

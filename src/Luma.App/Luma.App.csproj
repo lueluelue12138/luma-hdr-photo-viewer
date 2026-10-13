@@ -7,6 +7,7 @@
     <Platforms>x64</Platforms><PlatformTarget>x64</PlatformTarget><RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained><SelfContained>true</SelfContained><WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
     <EnableMsixTooling>true</EnableMsixTooling><PublishReadyToRun>false</PublishReadyToRun>
+    <LumaNativeDirectory Condition="'$(LumaNativeDirectory)' == ''">$(MSBuildProjectDirectory)\..\Luma.Native\bin</LumaNativeDirectory>
   </PropertyGroup>
   <ItemGroup>
     <!-- Keep the same WinUI/Foundation binaries from the tested SDK 2.5.1,
@@ -16,9 +17,9 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="2.1.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
     <ProjectReference Include="..\Luma.Core\Luma.Core.csproj" />
-    <Content Include="..\Luma.Native\bin\Luma.Native.dll" Link="Luma.Native.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="..\Luma.Native\bin\nvngx*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="..\Luma.Native\bin\NVIDIA_RTX_Video_SDK_License.pdf" Condition="Exists('..\Luma.Native\bin\NVIDIA_RTX_Video_SDK_License.pdf')" Link="NVIDIA_RTX_Video_SDK_License.pdf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(LumaNativeDirectory)\Luma.Native.dll" Link="Luma.Native.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(LumaNativeDirectory)\nvngx*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(LumaNativeDirectory)\NVIDIA_RTX_Video_SDK_License.pdf" Condition="Exists('$(LumaNativeDirectory)\NVIDIA_RTX_Video_SDK_License.pdf')" Link="NVIDIA_RTX_Video_SDK_License.pdf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

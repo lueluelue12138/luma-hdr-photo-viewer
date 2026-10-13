@@ -1,6 +1,6 @@
 # Third-party components
 
-Luma's MIT license applies to its original source and original geometric icon only. It does not replace any license below. Dependency notices are copied from locally resolved packages into `licenses` in the published output.
+Luma's MIT license applies to its original source and project artwork only, including the application logo supplied by the project maintainer in `branding/Luma.png`. It does not replace any license below. Dependency notices are copied from locally resolved packages into `licenses` in the published output.
 
 | Component | Version | License / source |
 | --- | --- | --- |

@@ -10,3 +10,9 @@ external/nvidia/**
 !external/nvidia/README.md
 Luma.Native.lib
 Luma.Native.exp
+.env
+.env.*
+*.pfx
+*.p12
+*.pem
+*.key

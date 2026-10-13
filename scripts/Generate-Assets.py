@@ -1,17 +1,27 @@
-"""Generate Luma's original geometric app mark; no stock artwork."""
+"""Generate Windows icon sizes from the maintainer-provided transparent logo."""
 from pathlib import Path
-from PIL import Image, ImageDraw
-target=Path(__file__).resolve().parents[1]/'src'/'Luma.App'/'Assets'
+from PIL import Image
+import argparse
+
+root=Path(__file__).resolve().parents[1]
+parser=argparse.ArgumentParser()
+parser.add_argument('--source',type=Path,default=root/'branding/Luma.png')
+args=parser.parse_args()
+target=root/'src/Luma.App/Assets'
+canvas=Image.open(args.source)
+canvas.load()
+if canvas.mode!='RGBA' or canvas.width!=canvas.height:
+    raise ValueError('Use the square transparent RGBA master logo.')
 target.mkdir(parents=True,exist_ok=True)
-canvas=Image.new('RGBA',(1024,1024));mask=Image.new('L',(1024,1024));ImageDraw.Draw(mask).rounded_rectangle((24,24,1000,1000),radius=240,fill=255)
-gradient=Image.new('RGBA',(1024,1024));pixels=gradient.load()
-for y in range(1024):
-    for x in range(1024):
-        t=(x+y)/2048;pixels[x,y]=(int(15+8*t),int(164-55*t),int(253-12*t),255)
-canvas.paste(gradient,(0,0),mask);d=ImageDraw.Draw(canvas)
-d.rounded_rectangle((232,258,792,766),radius=90,outline='white',width=42)
-d.ellipse((566,360,656,450),fill='white')
-d.line([(242,664),(388,495),(513,636),(608,546),(780,716)],fill='white',width=43,joint='curve')
+save_options={'optimize':True,'compress_level':9}
+if 'icc_profile' in canvas.info:save_options['icc_profile']=canvas.info['icc_profile']
 for filename,size in [('Square44x44Logo.png',44),('Square150x150Logo.png',150),('StoreLogo.png',50),('Logo256.png',256)]:
-    canvas.resize((size,size),Image.Resampling.LANCZOS).save(target/filename)
-canvas.resize((256,256),Image.Resampling.LANCZOS).save(target/'Luma.ico',sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+    derived=canvas.resize((size,size),Image.Resampling.LANCZOS)
+    derived.save(target/filename,**save_options)
+    check=Image.open(target/filename)
+    assert check.mode=='RGBA' and check.size==(size,size) and check.tobytes()==derived.tobytes()
+    assert check.getchannel('A').getextrema()==(0,255)
+canvas.resize((256,256),Image.Resampling.LANCZOS).save(target/'Luma.ico',sizes=[(16,16),(20,20),(24,24),(32,32),(40,40),(48,48),(64,64),(96,96),(128,128),(256,256)])
+icon=Image.open(target/'Luma.ico')
+assert icon.ico.sizes()=={(n,n) for n in [16,20,24,32,40,48,64,96,128,256]}
+print('Generated 4 losslessly encoded transparent PNG sizes and 10 Windows ICO sizes from branding/Luma.png.')

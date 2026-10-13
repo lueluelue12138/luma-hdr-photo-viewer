@@ -1,20 +1,22 @@
-param([string]$Configuration='Release',[switch]$Publish)
+param([string]$Configuration='Release',[switch]$Publish,[switch]$WithoutNvidia,[switch]$RequireNvidia,[string]$OutputDirectory)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $dotnet=Join-Path $root '.tools\dotnet\dotnet.exe'
 if(!(Test-Path $dotnet)){$dotnet=(Get-Command dotnet -ErrorAction Stop).Source}
 $env:DOTNET_CLI_TELEMETRY_OPTOUT='1';$env:DOTNET_NOLOGO='1'
-& "$PSScriptRoot\Build-Native.ps1" -Configuration $Configuration
+if($WithoutNvidia -and $RequireNvidia){throw 'WithoutNvidia and RequireNvidia cannot be combined.'}
+$native=if($Publish){Join-Path $root ('artifacts\native-'+[guid]::NewGuid().ToString('N'))}else{Join-Path $root 'src\Luma.Native\bin'}
+& "$PSScriptRoot\Build-Native.ps1" -Configuration $Configuration -WithoutNvidia:$WithoutNvidia -RequireNvidia:$RequireNvidia -OutputDirectory $native
 if($Publish){
     # A new directory prevents removed NuGet dependencies from surviving a
     # publish as stale DLLs. Swap only after the complete build/license succeeds.
     $staging=[System.IO.Path]::GetFullPath((Join-Path $root ('artifacts\publish-'+[guid]::NewGuid().ToString('N'))))
-    & $dotnet publish "$root\src\Luma.App\Luma.App.csproj" -c $Configuration -p:Platform=x64 "-p:BaseOutputPath=$root\artifacts\build\" -o $staging
+    & $dotnet publish "$root\src\Luma.App\Luma.App.csproj" -c $Configuration -p:Platform=x64 "-p:LumaNativeDirectory=$native" "-p:BaseOutputPath=$root\artifacts\build\" -o $staging
 }else{& $dotnet build "$root\src\Luma.App\Luma.App.csproj" -c $Configuration -p:Platform=x64}
 if($LASTEXITCODE -ne 0){throw 'Luma build failed.'}
 if($Publish){
     & "$PSScriptRoot\Collect-Licenses.ps1" -Output $staging
-    $payload=[System.IO.Path]::GetFullPath((Join-Path $root 'artifacts\Luma'))
+    $payload=[System.IO.Path]::GetFullPath($(if($OutputDirectory){$OutputDirectory}else{Join-Path $root 'artifacts\Luma'}))
     $artifactRoot=[System.IO.Path]::GetFullPath((Join-Path $root 'artifacts'))+[System.IO.Path]::DirectorySeparatorChar
     $backup=[System.IO.Path]::GetFullPath((Join-Path $root ('artifacts\backup-'+[guid]::NewGuid().ToString('N'))))
     if(!$payload.StartsWith($artifactRoot,[StringComparison]::OrdinalIgnoreCase)-or !$backup.StartsWith($artifactRoot,[StringComparison]::OrdinalIgnoreCase)-or !$staging.StartsWith($artifactRoot,[StringComparison]::OrdinalIgnoreCase)){throw 'Publish targets must remain within workspace artifacts.'}

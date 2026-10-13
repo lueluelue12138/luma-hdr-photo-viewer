@@ -2,7 +2,7 @@
  <Grid x:Name="Root" Language="zh-CN" AllowDrop="True" DragOver="DragOver" Drop="DropItems">
   <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/></Grid.RowDefinitions>
   <Grid x:Name="TitleDrag" Margin="16,0,148,0"><Grid.ColumnDefinitions><ColumnDefinition Width="210"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-   <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center"><Border Background="#0785F7" Width="22" Height="22" CornerRadius="6"><FontIcon Glyph="&#xEB9F;" Foreground="White" FontSize="14"/></Border><TextBlock Text="Luma" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/></StackPanel>
+   <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center"><Image Source="Assets/Square44x44Logo.png" Width="28" Height="28" Stretch="Uniform"/><TextBlock Text="Luma" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/></StackPanel>
   </Grid>
   <AutoSuggestBox x:Name="Search" PlaceholderText="搜索照片或相册" Width="370" HorizontalAlignment="Center" VerticalAlignment="Center" QueryIcon="Find" TextChanged="SearchChanged" AutomationProperties.Name="搜索照片或相册"/>
   <NavigationView x:Name="Nav" Grid.Row="1" IsBackButtonVisible="Collapsed" IsPaneToggleButtonVisible="False" PaneDisplayMode="Left" OpenPaneLength="218" CompactPaneLength="48" SelectionChanged="NavigationChanged" IsSettingsVisible="True">

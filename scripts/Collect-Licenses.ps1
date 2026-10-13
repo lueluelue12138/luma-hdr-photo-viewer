@@ -15,6 +15,9 @@ foreach($library in $assets.libraries.PSObject.Properties){
     Get-ChildItem $source -File | Where-Object {$_.Name -match '(?i)license|notice|\.nuspec$'} | Copy-Item -Destination $destination -Force
 }
 $runtimeLicense=Join-Path $root '.tools\dotnet'
+if(!(Test-Path -LiteralPath "$runtimeLicense\LICENSE.txt")){
+    $runtimeLicense=Split-Path (Get-Command dotnet -ErrorAction Stop).Source -Parent
+}
 if(Test-Path "$runtimeLicense\LICENSE.txt"){Copy-Item "$runtimeLicense\LICENSE.txt" "$licenseOutput\dotnet-LICENSE.txt" -Force;Copy-Item "$runtimeLicense\ThirdPartyNotices.txt" "$licenseOutput\dotnet-ThirdPartyNotices.txt" -Force}
 Copy-Item "$root\LICENSE","$root\THIRD-PARTY-NOTICES.md","$root\README.md" $Output -Force
 Copy-Item "$root\docs\VERIFICATION.md" $Output -Force -ErrorAction SilentlyContinue
