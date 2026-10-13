@@ -76,6 +76,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [Files]
+#ifdef RtxLicenseFile
+; Make the unmodified upstream PDF readable before the license is accepted.
+; A distinct embedded name avoids collisions with its installed copy.
+Source: "{#PayloadDir}\NVIDIA_RTX_Video_SDK_License.pdf"; DestName: "Luma-NVIDIA-License.pdf"; Flags: dontcopy
+#endif
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Excludes: "*.pdb,AppxManifest.xml"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -108,6 +113,33 @@ Type: files; Name: "{app}\NVIDIA_RTX_Video_SDK_License.pdf"
 ; No UninstallDelete entry: originals and %LOCALAPPDATA%\Luma remain intact.
 
 [Code]
+#ifdef RtxLicenseFile
+procedure ReadNvidiaLicense(Sender: TObject);
+var
+  ResultCode: Integer;
+begin
+  ExtractTemporaryFile('Luma-NVIDIA-License.pdf');
+  if not ShellExec('open', ExpandConstant('{tmp}\Luma-NVIDIA-License.pdf'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode) then
+    MsgBox('The original NVIDIA license could not be opened. It is also included in the application package.', mbError, MB_OK);
+end;
+
+procedure InitializeWizard;
+var
+  LicenseButton: TNewButton;
+begin
+  LicenseButton := TNewButton.Create(WizardForm);
+  LicenseButton.Parent := WizardForm.LicensePage;
+  LicenseButton.Width := ScaleX(200);
+  LicenseButton.Height := ScaleY(23);
+  LicenseButton.Left := WizardForm.LicenseMemo.Left + WizardForm.LicenseMemo.Width - LicenseButton.Width;
+  LicenseButton.Top := WizardForm.LicenseAcceptedRadio.Top;
+  LicenseButton.Caption := 'Read original NVIDIA license';
+  LicenseButton.OnClick := @ReadNvidiaLicense;
+  WizardForm.LicenseAcceptedRadio.Width := LicenseButton.Left - WizardForm.LicenseAcceptedRadio.Left - ScaleX(12);
+  WizardForm.LicenseNotAcceptedRadio.Width := WizardForm.LicenseAcceptedRadio.Width;
+end;
+#endif
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   CurrentCommand, Registration: String;

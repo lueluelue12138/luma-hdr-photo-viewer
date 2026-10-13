@@ -5,6 +5,7 @@ from PIL import Image
 root = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('photo', type=pathlib.Path)
+parser.add_argument('--app',type=pathlib.Path,default=root/'artifacts/Luma/Luma.App.exe',help='Consumer package executable to verify')
 args = parser.parse_args()
 folder = root/'artifacts'/('viewer-interaction-'+time.strftime('%Y%m%d-%H%M%S'))
 folder.mkdir(parents=True)
@@ -13,7 +14,7 @@ for n in range(32):
     Image.new('RGB',(640,360),(60+n*4,110,150)).save(fixture/f'photo-{n:02}.jpg',quality=90)
 (fixture/'000-corrupt.jpg').write_bytes(b'Not a JPEG')
 (fixture/'._photo-00.jpg').write_bytes(b'AppleDouble metadata, not a JPEG')
-process = subprocess.Popen([str(root/'artifacts/Luma/Luma.App.exe'), '--test-library', str(folder), '--verify-viewer-interaction', str(args.photo.resolve())])
+process = subprocess.Popen([str(args.app.resolve()), '--test-library', str(folder), '--verify-viewer-interaction', str(args.photo.resolve())])
 try:
     code = process.wait(timeout=120)
 except subprocess.TimeoutExpired:

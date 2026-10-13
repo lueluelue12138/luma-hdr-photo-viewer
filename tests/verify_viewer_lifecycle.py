@@ -6,9 +6,10 @@ root=pathlib.Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser()
 parser.add_argument('photo',type=pathlib.Path)
 parser.add_argument('--runs',type=int,default=3)
+parser.add_argument('--app',type=pathlib.Path,default=root/'artifacts/Luma/Luma.App.exe',help='Consumer package executable to verify')
 args=parser.parse_args()
 assert args.photo.is_file()
-exe=root/'artifacts/Luma/Luma.App.exe'
+exe=args.app.resolve()
 assert exe.is_file(),'Publish Luma before verification'
 suite=root/'artifacts'/('viewer-lifecycle-'+time.strftime('%Y%m%d-%H%M%S'))
 suite.mkdir(parents=True)

@@ -32,6 +32,17 @@ for name in ['nvngx_truehdr.dll', 'nvngx_vsr.dll', 'NVIDIA_RTX_Video_SDK_License
     if args.variant == 'rtx':
         source = root/'external/nvidia/sdk'/('bin/Windows/x64/rel' if name.endswith('.dll') else '')/name
         assert (payload/name).read_bytes() == source.read_bytes()
+        assert metadata['nvidia']['runtimeSha256'][name] == hashlib.sha256((payload/name).read_bytes()).hexdigest()
+terms = payload/'licenses/NVIDIA-runtime-terms.rtf'
+assert terms.exists() == (args.variant == 'rtx')
+if args.variant == 'rtx':
+    assert terms.read_bytes() == (root/'packaging/RTX-EULA.rtf').read_bytes()
+    assert terms.read_bytes().startswith(b'{\\rtf1')
+    assert b'NVIDIA_RTX_Video_SDK_License.pdf' in terms.read_bytes()
+    assert metadata['nvidia']['termsSha256'] == hashlib.sha256(terms.read_bytes()).hexdigest()
+    # An SDK input archive, developer header/library or fixture must never be
+    # included in the consumer bundle, even though CI has a private SDK checkout.
+    assert not any(f.suffix.lower() in {'.lib','.h','.hpp','.obj','.exp'} or f.name=='HdrFixture.exe' for f in files)
 for line in (output/'SHA256SUMS.txt').read_text().splitlines():
     digest, name = line.split('  ', 1)
     assert hashlib.sha256((output/name).read_bytes()).hexdigest() == digest

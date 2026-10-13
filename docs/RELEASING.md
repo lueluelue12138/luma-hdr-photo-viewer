@@ -1,52 +1,69 @@
 # 构建与发布流程
 
-公开项目为 **Luma HDR Photo Viewer**：https://github.com/lueluelue12138/luma-hdr-photo-viewer 。应用界面、数据目录和 EXE 继续使用 Luma，避免迁移已有图库。
+公开项目为 **Luma HDR Photo Viewer**：https://github.com/lueluelue12138/luma-hdr-photo-viewer 。应用界面、数据目录和 EXE 继续使用 Luma。
 
-## 当前已准备的流程
+## 自动流程
 
 | 触发 | 行为 | 输出 |
 | --- | --- | --- |
-| 推送 `main` / Pull Request / 手动运行 CI | 检查完整源码历史、图库逻辑、SDK-free WIC/D3D11/FP16 路径，构建并验证安装包 | standard EXE、便携 ZIP、SHA256、构建信息；Actions 开发产物保留 14 天，不生成 Release |
-| 推送与源码版本一致的 `v*` 标签 | 检查 RTX 分发前置条件，取得私有 SDK，构建 RTX 包并检查安装生命周期 | **Release 草稿**，默认不公开；EXE、ZIP、SHA256、构建信息 |
+| 推送 `main` / Pull Request / 手动运行 CI | 源码边界、图库逻辑、SDK-free WIC/D3D11/FP16、安装生命周期检查 | standard EXE、便携 ZIP、SHA256、构建信息；Actions 产物保留 14 天 |
+| 推送与源码版本一致的 `v*` 标签 | 精确检出源码和私有 SDK、校验 SDK、编译完整 RTX 应用、核对包及隔离安装 | 完整 **RTX EXE、便携 ZIP、SHA256、构建信息**，自动上传到 **Release 草稿** |
 
-`standard` 不带 NVIDIA SDK 或运行库，不能执行 RTX HDR / VSR；仍能查看 SDR 和已支持的原生 HDR。`rtx` 必须完整带入合法取得的 SDK 和原始运行库，不会在缺少 SDK 时自动回退成 standard 发布。
+`standard` 不包含 NVIDIA 运行库，不能执行 RTX HDR/VSR。`rtx` 必须真正以官方 SDK 编译，并包含原始 TrueHDR/VSR release DLL、独立运行库条款和原始许可 PDF；SDK 缺失或验证失败时直接失败，不降级发布 standard。
 
-维护者已于 2026-10-13 要求试跑当前版本标签，`v0.1.16` 已推送，指向通过 CI 的源码 `d07199c`。[实际标签工作流](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38411915122) 检出成功，随后在 RTX 分发前置检查处失败；远程私有 SDK 配置、校验值与分发就绪变量尚为空，仓库也没有审阅后的下游许可。此次没有生成 Release 或上传完整 RTX 下载包。仓库源码标签与可下载的完整版本是两个步骤。
+首次 `v0.1.16` 标签检出成功，但旧流程在人工分发就绪变量处停止。0.1.17 将完整包的构建和私有草稿上传接通，不再用公开发行审批作为编译前置条件。原 `v0.1.16` 标签保持指向；新流程使用新版本标签验证。
 
-仅补外部配置时可以重跑原工作流的失败任务。但本次缺少的下游许可文件需要加入源码，原标签精确检出的内容不会因此改变，所以完整修复应提交后使用新的版本标签。原标签无需删除或移动，不能把已公开的 `v0.1.16` 静默改指到新提交。
+## SDK 构建输入与权限
 
-## EXE 安装包
+维护者已取得的 RTX Video SDK 1.1.0 原包保存在其**私有构建依赖仓库**，不放进公开 Luma 仓库。发布 CI 使用专用的 **只读 deploy key**，仅能读取该私有仓库，不能写入仓库，也不使用维护者的个人访问令牌。SDK 输入同时固定 Git 提交和 ZIP SHA256；编译机只进行内部构建，不对外提供 SDK 云服务。
 
-使用固定版本、SHA256 与发布者签名校验的 Inno Setup 7.1.0，在项目 `.tools` 目录准备编译器。支持 Windows 11 x64、当前用户安装，不需要管理员权限；建立开始菜单入口，注册实际支持格式为可选应用，不修改 `UserChoice` 或扩展名默认程序。
+仓库一次性配置如下：
 
-卸载移除安装文件和本次注册，保留 `%LOCALAPPDATA%\Luma` 图库、设置与缓存，也不删除原照片。测试使用另外编译的 Installer Test 身份、隔离安装目录与注册表命名，不替换真实 Luma 的注册。
+| 类型 | 名称 | 含义 |
+| --- | --- | --- |
+| Secret | `NVIDIA_SDK_DEPLOY_KEY` | 专用只读 SSH 私钥 |
+| Variable | `NVIDIA_SDK_REPOSITORY` | 私有构建输入仓库的 `owner/name` |
+| Variable | `NVIDIA_SDK_REVISION` | 输入仓库的精确 40 位提交 SHA |
+| Variable | `NVIDIA_SDK_SHA256` | 原始 SDK ZIP 的 SHA256 |
+
+当前官方 1.1.0 ZIP 的 SHA256 为 `abf4f34e2b5a618e355b0d5a0365d8ecc3db4396e756e4c850a867e1ae2ed69e`。`Install-NvidiaSdk.ps1` 检查大小、SHA256、解压路径、符号链接和展开预算。公开上传白名单只有安装包、便携 ZIP、SHA256 和构建信息；SDK ZIP、头文件、库、样例、开发工具、密钥和原照片均不上传。
+
+更换 SDK 时更新私有输入提交与 SHA256，再验证对应版本。轮换 deploy key 时先添加新的只读公钥、更新 secret，成功后移除旧公钥。保持依赖仓库私有，不把私钥写入源码或日志。
+
+## EXE 与便携包
+
+使用固定版本、SHA256 与发布者签名核对的 Inno Setup 7.1.0；Windows 11 x64、当前用户安装、不需要管理员权限。建立开始菜单入口、注册实际支持格式为可选查看器，不修改 `UserChoice` 或扩展名默认程序。卸载保留本地图库、设置、缓存和原照片；另一个便携副本重新注册后的归属也保留。
+
+RTX 安装器显示 `packaging/RTX-EULA.rtf`，并提供按钮在接受前打开**原始 NVIDIA 许可 PDF**。相同运行库条款位于便携包的 `licenses/NVIDIA-runtime-terms.rtf`；MIT 仅覆盖 Luma 原创代码和图标。原始 PDF 与 DLL 保持字节不变。
 
 ```powershell
+# 普通基础版
 ./scripts/Build-Release.ps1 -Variant standard -TestInstaller
 python tests/verify_release.py --variant standard
 python tests/verify_installer.py
 
-# 仅本地开发候选；未完成许可发布检查时不要分发 RTX 包
-./scripts/Build-Release.ps1 -Variant rtx
+# 已按 external/nvidia/README.md 放置官方 SDK 的完整本地候选
+./scripts/Build-Release.ps1 -Variant rtx -Tag v0.1.17 -TestInstaller
 python tests/verify_release.py --variant rtx
+python tests/verify_installer.py
 ```
 
-输出文件示例：`Luma-0.1.16-windows-x64-standard-setup.exe`、`Luma-0.1.16-windows-x64-standard-portable.zip`。构建信息明确标识标准/RTX 能力、源码版本和提交。EXE 当前未做应用代码签名；编译器本身的签名校验不等于 Luma 安装包签名。
+输出为 `Luma-0.1.17-windows-x64-rtx-setup.exe`、`Luma-0.1.17-windows-x64-rtx-portable.zip`、`SHA256SUMS.txt` 和 `build-info.json`。构建信息记录版本、源码提交、是否干净、RTX 能力、SDK 输入版本/哈希及原始运行库/许可哈希。`-Distribution` 要求已提交且干净的源码，不代表代替 NVIDIA 的许可或完成正式公开发行审批。
 
-## 完整 RTX 发布之前
+目前安装包与应用未做代码签名；编译器签名核对不等于应用已签名。完整包为离线自包含，用户不需下载开发 SDK、.NET SDK 或额外配置私有仓库；实际 RTX 功能仍需要兼容 GPU、驱动和开启 HDR 的屏幕。
 
-1. 核对本次实际下载的 `NVIDIA_RTX_Video_SDK_License.pdf` 与补充条款，包括 object-code 分发、至少同等保护的下游条款、通知及商标使用要求；确认受控 CI 使用 SDK 的方式。源码 MIT 不替代 NVIDIA 的许可。
-2. 将审阅后的用户许可写入 `packaging/RTX-EULA.rtf`，随安装向用户展示。当前没有用未经审阅的占位条款冒充这份文件。
-3. 使用获准的私有 SDK 存储，配置仓库 **secret** `NVIDIA_SDK_URL`，和 **variable** `NVIDIA_SDK_SHA256`。URL 应为有效的 HTTPS 私有下载地址；脚本校验 SHA256、解压路径和体积。SDK 的头文件、库、样例、文档和 ZIP 均不上传为公开产物。
-4. 以上事项完成后，维护者明确设置 **variable** `RTX_DISTRIBUTION_READY=true`。默认未设置；缺失或未完成时工作流会拒绝 RTX 分发，不能绕过后静默发布基础版。
-5. 在真实 RTX / HDR 设备完成与本次标签对应的 HDR-only、VSR-only、组合、原图对照与生命周期检查。托管 CI 检查构建、文件和安装，不证明 AI 效果。
-6. 更新项目版本和 MSIX 版本，完成合适的测试、提交及共同作者核对，再推送标签。例：项目 `0.1.17`、MSIX `0.1.17.0` 对应 `v0.1.17` 或 `v0.1.17-beta.1`。不一致会失败。
-7. 核对生成的 Release 草稿、能力说明、签名状态、SHA256、安装/升级/卸载、公开样例截图与说明，再决定是否公开。工作流拒绝覆盖已有公开 Release。
+## 标签与 Release
 
-NVIDIA 通知、商标使用提交、购买签名证书和公开草稿均需按实际发布决定进行；本轮不会代发外部邮件或提交未授权的发布资料。
+1. 完成合适验证，提交代码与文档，并核对工具作者及人类共同署名。
+2. 项目版本、MSIX 版本和标签基础版本一致。例如 `0.1.17` / `0.1.17.0` 对应 `v0.1.17` 或 `v0.1.17-beta.1`。
+3. 推送附注标签；工作流构建并上传完整 RTX 包到 Release 草稿。包名、能力和源码提交不匹配会失败，已公开的 Release 不会被覆盖。
+4. 在真实 RTX/HDR 设备使用该云端包验证 HDR-only、VSR-only、组合、原图对照、安装与窗口生命周期。托管编译机没有 RTX 显卡，它的绿色检查不证明 AI 效果。
+5. 公开下载和宣传之前，核对原始 NVIDIA 许可及补充条款适用于本项目的分发、商业发布通知、商标使用等要求；完成必要事项后再决定公开草稿。构建出可用私有候选不等于 NVIDIA 已批准商标或商业发行。没有代发 NVIDIA 通知或提交未经授权的宣传材料。
 
-## 后续 Store 路线
+原标签不静默移动。若要修复标签中的源码/许可，提交后使用新版本标签；仅外部配置或临时网络失败可重跑原任务。
 
-保留现有 `scripts/Package.ps1` 的 MSIX 构建路径；Store 身份、签名、共享运行库、认证和完整默认应用验收稍后实施。GitHub EXE 下载版和 Microsoft Store 的 MSIX 是独立发行方式，不要求在本轮同时完成。
+## Store 路线
 
-参考：[GitHub 标签触发](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)、[GitHub Release 草稿](https://docs.github.com/en/rest/releases/releases#create-a-release)、[Inno Setup 当前用户安装](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm)。NVIDIA 条款以自行下载的实际原始许可为准。
+保留 `scripts/Package.ps1` 的 MSIX 构建。Store 身份、签名、共享运行库、认证与正式默认应用验收继续待办；本轮不上传 Microsoft Store。
+
+参考：[GitHub deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)、[标签触发](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)、[Release 草稿](https://docs.github.com/en/rest/releases/releases#create-a-release)、[Inno Setup 当前用户安装](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm)。NVIDIA 条款以维护者实际下载、随包保留的原始许可为准。

@@ -1,4 +1,4 @@
-name: Build RTX release draft from tag
+name: Build full RTX installer and release draft from tag
 
 on:
   push:
@@ -24,7 +24,9 @@ jobs:
         shell: pwsh
     env:
       RELEASE_TAG: ${{ github.ref_name }}
-      RTX_DISTRIBUTION_READY: ${{ vars.RTX_DISTRIBUTION_READY }}
+      NVIDIA_SDK_REPOSITORY: ${{ vars.NVIDIA_SDK_REPOSITORY }}
+      NVIDIA_SDK_REVISION: ${{ vars.NVIDIA_SDK_REVISION }}
+      NVIDIA_SDK_SHA256: ${{ vars.NVIDIA_SDK_SHA256 }}
     steps:
       - name: Check out exact tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -33,10 +35,14 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
 
-      - name: Require completed RTX distribution prerequisites
+      - name: Check complete RTX build inputs
+        env:
+          SDK_ACCESS_CONFIGURED: ${{ secrets.NVIDIA_SDK_DEPLOY_KEY != '' }}
         run: |
-          if ($env:RTX_DISTRIBUTION_READY -ne 'true') { throw 'Complete docs/RELEASING.md before enabling RTX distribution.' }
-          if (!(Test-Path packaging/RTX-EULA.rtf)) { throw 'A reviewed downstream NVIDIA license is required.' }
+          if ($env:SDK_ACCESS_CONFIGURED -ne 'true') { throw 'Configure the read-only NVIDIA_SDK_DEPLOY_KEY secret.' }
+          if ($env:NVIDIA_SDK_REPOSITORY -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Configure the private SDK repository.' }
+          if ($env:NVIDIA_SDK_REVISION -notmatch '^[a-fA-F0-9]{40}$' -or $env:NVIDIA_SDK_SHA256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Pin the private SDK commit and archive SHA256.' }
+          if (!(Test-Path packaging/RTX-EULA.rtf)) { throw 'NVIDIA runtime terms must accompany the application.' }
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$') { throw 'Invalid release tag.' }
           $project = [xml](Get-Content src/Luma.App/Luma.App.csproj -Raw)
           $version = [string]($project.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1)
@@ -59,11 +65,29 @@ jobs:
           dotnet run --project tests/Luma.Tests/Luma.Tests.csproj -c Release
           if ($LASTEXITCODE -ne 0) { throw 'Core checks failed.' }
 
-      - name: Retrieve verified private SDK
-        env:
-          NVIDIA_SDK_URL: ${{ secrets.NVIDIA_SDK_URL }}
-          NVIDIA_SDK_SHA256: ${{ vars.NVIDIA_SDK_SHA256 }}
-        run: ./scripts/Install-NvidiaSdk.ps1
+      - name: Check out pinned private SDK input with read-only access
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ vars.NVIDIA_SDK_REPOSITORY }}
+          ref: ${{ vars.NVIDIA_SDK_REVISION }}
+          ssh-key: ${{ secrets.NVIDIA_SDK_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: artifacts/private-sdk
+
+      - name: Verify and unpack licensed SDK
+        run: ./scripts/Install-NvidiaSdk.ps1 -ArchivePath "$PWD/artifacts/private-sdk/RTX_Video_SDK_v1.1.0.zip"
+
+      - name: Verify SDK-linked native rendering on the build machine
+        run: |
+          python -m pip install 'Pillow>=11.3,<13'
+          if ($LASTEXITCODE -ne 0) { throw 'Image test dependency failed.' }
+          ./scripts/Build-Native.ps1 -RequireNvidia -TestFixtures -OutputDirectory "$PWD/artifacts/ci-native-rtx"
+          $env:LUMA_NATIVE_TEST_DLL = "$PWD/artifacts/ci-native-rtx/Luma.Native.dll"
+          python tests/verify_native.py
+          if ($LASTEXITCODE -ne 0) { throw 'SDK-linked native rendering checks failed.' }
+          # Hosted CI has no RTX GPU. Actual NVIDIA evaluation is checked on
+          # compatible hardware using the downloaded consumer package.
 
       - name: Build full RTX installer and portable ZIP
         run: ./scripts/Build-Release.ps1 -Variant rtx -Tag $env:RELEASE_TAG -Distribution -TestInstaller
@@ -114,6 +138,10 @@ jobs:
           }
           $metadata = Get-Content release-files/build-info.json -Raw | ConvertFrom-Json
           if ($metadata.commit -ne $env:RELEASE_COMMIT -or $metadata.sourceDirty) { throw 'Release provenance differs from the committed source.' }
+          if ($metadata.variant -ne 'rtx' -or !$metadata.rtxHdr -or !$metadata.rtxVsr) { throw 'Refusing to publish an incomplete RTX package.' }
+          $expected = @("Luma-$($env:RELEASE_TAG.Substring(1))-windows-x64-rtx-setup.exe", "Luma-$($env:RELEASE_TAG.Substring(1))-windows-x64-rtx-portable.zip", 'SHA256SUMS.txt', 'build-info.json')
+          $actual = @(Get-ChildItem release-files -File | ForEach-Object Name)
+          if ($actual.Count -ne 4 -or @($actual | Where-Object { $_ -notin $expected }).Count -ne 0) { throw 'Unexpected release files; never upload SDK build inputs.' }
           $tagCommit = gh api "repos/$env:GH_REPO/commits/$env:RELEASE_TAG" --jq .sha
           if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $env:RELEASE_COMMIT) { throw 'Remote tag changed during the build.' }
 

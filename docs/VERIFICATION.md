@@ -1,5 +1,17 @@
 # Luma 本机验证记录
 
+## 0.1.17 完整 RTX 自动出包修复
+
+用户要求实际解决标签无法生成完整 RTX 安装包的问题。采用维护者已取得的官方 SDK 原包，保存在独立私有构建仓库；一次性配置只读 deploy key、精确提交与 SDK SHA256，私钥在内存生成并直接通过 GitHub 公钥加密到 Actions secret，没有保存到本机文件或公开仓库。实际 API 返回私有仓库和 read-only 公钥，三个变量及 secret 已存在。
+
+将源码/SDK 编译、完整安装包与私有 Release 草稿的生成从正式公开发行决定中分开。编译仍要求真实 SDK 和校验值，RTX 包必须包含独立运行库条款与原始许可 PDF；公开上传白名单限定为 EXE、ZIP、校验值和构建信息。安装器提供接受前读取原始 PDF 的按钮，MIT 不扩展至 NVIDIA 组件。此工作未代发 NVIDIA 通知或取得商标批准，也不代表 Microsoft Store 认证。
+
+本地候选编译成功，500 个便携文件、完整 RTX 能力、原始 DLL/PDF、独立条款和 SHA256 核对通过。使用该候选包的原生 DLL 实际运行于 RTX 5070 Ti Laptop / HDR 开启屏幕：TrueHDR 成功结果 `0x00000001`，3840×2160 JPG 高光 12.656 scRGB，HDR-only 的 VSR 调用为 0；独立 VSR、组合、缓存与 40 次原图对照、浮点 JPEG XR、FP16 毛玻璃、色彩/方向检查通过。云端标签与消费者包下载验证随后按实际结果补充，不把本地结果当作云端完成。
+
+首次消费者窗口检查把 `native-tests/highlights.jpg` 作为相册入口，目录同时包含浮点 `linear-hdr.jxr` 等混合夹具；快速翻页最终落到原生 HDR 图片，既有 SDR 增强生命周期测试却要求 `HdrEffective=1` 而失败。保留 `viewer-lifecycle-20261013-232106` 的失败报告，未修改产品或削弱 HDR 断言；改用独立的 16 张自有 SDR JPG 夹具验证该场景，原生 HDR 的正确旁路仍由独立 FP16 检查覆盖。
+
+正确 SDR 夹具的 `viewer-lifecycle-20261013-233242` 完整通过：48 个真实预览窗口、HDR-only/VSR-only/组合、多个窗口、忙时关闭与快速翻页，再启动一个窗口确认保存 HDR-only，合计 49 个窗口。完整 RTX 安装、重复安装、卸载、另一副本注册保留及真实图库/默认关联未改动检查通过；两个非法 SDK SHA256 输入均在解压前拒绝，原始运行库字节未改变。actionlint 与公共源码边界校验通过。
+
 ## v0.1.16 标签发布试跑（2026-10-13）
 
 用户明确要求发布当前版本标签进行验证。附注标签 `v0.1.16` 已推送，标签对象 `3e434bee863479abcd91cddc7099ff631004181a`，剥离后指向 `d07199c1ba9c6ad42fba081da1cbfe945eb3f219`；本地与远程一致，Tagger 为 OpenAI Codex，附注保留已确认的人类共同作者。标签对应版本为项目 `0.1.16` / MSIX `0.1.16.0`，对应源码的 [standard CI](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38408480614) 已完整通过。
