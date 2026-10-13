@@ -4,6 +4,7 @@
 
 ## 协作与版本记录
 
+- [x] 为 GitHub 首页制作横屏产品展示图：参考当前深色 WinUI 布局、真实 logo 与浮层结构，内置 imagegen 生成全新虚构风景，再校准 logo 和可滚动缩略图栏。人工检查两次生成结果、PNG 解码/尺寸和 README 引用通过；图像为 1672×941（约 16:9）产品示意，不使用本地相册、不作为实际 HDR 观感或性能证据，来源和提示词保留在 `docs/images/README.md`。
 - [x] 按用户确认的 GitHub 身份，为现有 21 次未推送提交补齐共同作者署名（2026-10-13）。两个本地分支同步指向改写后的历史；逐提交核对代码树、原作者/提交者、时间、原提交说明和父子关系，仅新增一次 `Co-authored-by`。完整历史备份、旧新提交映射和验证报告保存在 `artifacts/git-attribution-20261013/`，Git bundle 与对象完整性检查通过。旧最新提交 `fd990ad` 对应新提交 `8e07b04`，应用内容和版本没有改变。
 - [x] 在 `AGENTS.md` 固定后续共同署名流程；确认的人类身份仅写入本地 Git 配置 `luma.coAuthorName` / `luma.coAuthorEmail`，不在通用仓库规则中写死维护者，也不修改全局 Git 身份。工具作者按实际提交工具临时指定。
 - [x] 公开定位确定为 **Luma HDR Photo Viewer**，仓库名 `luma-hdr-photo-viewer`；保留应用内 Luma 品牌、已有数据路径和 EXE 名称。首页突出普通 SDR 照片的 RTX HDR 体验，同时明确原生 HDR 当前格式范围，避免把计划中的格式写成已支持。

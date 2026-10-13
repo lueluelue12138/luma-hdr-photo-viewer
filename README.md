@@ -1,8 +1,10 @@
-<p align="center"><img src="src/Luma.App/Assets/Logo256.png" width="88" alt="Luma icon"></p>
-
 # Luma HDR Photo Viewer
 
 **重新看看你喜欢的照片，让普通照片也有 HDR 的光影。**
+
+![Luma 产品展示：深色相册与照片预览、悬浮毛玻璃、独立 RTX HDR 与 VSR 控制](docs/images/luma-product-showcase.png)
+
+<sub>AI 生成的产品展示示意，示例风景为虚构，界面细节以实际版本为准。</sub>
 
 Luma 是一个免费、开源的 Windows 原生图库与照片查看器。它把 NVIDIA RTX Video HDR 带到静态照片：打开一张熟悉的 JPG，在兼容的 RTX 显卡与 HDR 屏幕上，重新感受日落、灯光和明暗层次。
 
