@@ -37,7 +37,14 @@ public sealed partial class MainWindow
                 resumeScan.TrySetResult();await Task.WhenAll(firstScan,requested);
             }
             finally{resumeScan.TrySetResult();verificationBeforeScan=null;}
-            phase="initial-layout";page="album";albumId=id;await ReloadAsync();await Task.Delay(300);
+            phase="initial-layout";page="album";albumId=id;await ReloadAsync();var firstVisibleWait=Stopwatch.StartNew();int firstVisibleCount=0;
+            while(true)
+            {
+                await Task.Delay(25);var cards=VerificationRealizedCards().ToArray();firstVisibleCount=cards.Length;
+                if(cards.Length>0&&cards.All(c=>c.Tag is Photo photo&&FindThumbnail(c)?.DisplayedPath==photo.Path))break;
+                if(firstVisibleWait.Elapsed>TimeSpan.FromSeconds(20))throw new InvalidOperationException("Initial thumbnails did not finish decoding");
+            }
+            firstVisibleWait.Stop();
             long firstMilliseconds=watch.ElapsedMilliseconds;int count=photos.Count;
             if(count<64)throw new InvalidOperationException($"Gallery performance fixture requires 64+ indexed photographs; got {count}");
             long before=Thumbnail.ShellLoads,wicBefore=Thumbnail.WicLoads,skipped=Thumbnail.SkippedLoads;int maxRealized=0;
@@ -76,11 +83,13 @@ public sealed partial class MainWindow
                 if(realized>0&&realized==visibleThumbnails)break;
                 if(visibleWait.Elapsed>TimeSpan.FromSeconds(20))throw new InvalidOperationException("Visible thumbnails did not finish decoding");
             }
+            visibleWait.Stop();
             stop.Cancel();await heartbeat;
             if(maxRealized>=count/2)throw new InvalidOperationException("The large gallery is not virtualizing its photo cards");
             var items=PhotosRepeat.ItemsSource;long unchangedLoads=Thumbnail.ShellLoads+Thumbnail.WicLoads;await RefreshAllAsync();
             if(!ReferenceEquals(items,PhotosRepeat.ItemsSource)||unchangedLoads!=Thumbnail.ShellLoads+Thumbnail.WicLoads)throw new InvalidOperationException("Unchanged large-album refresh discarded its photo/thumbnail cache");
-            File.WriteAllText(report,JsonSerializer.Serialize(new{complete=true,probeStartUtc,refreshCoalescingVerified=true,count,firstMilliseconds,maxRealized,visibleThumbnails,visibleReadyMilliseconds=visibleWait.ElapsedMilliseconds,dispatcherLatency=delays,dispatcherSamples=samples,operations,resources,allocatedBytes=GC.GetTotalAllocatedBytes()-allocatedStart,gcCollections=Enumerable.Range(0,3).Select(i=>GC.CollectionCount(i)-gcStart[i]).ToArray(),shellLoads=Thumbnail.ShellLoads-before,wicLoads=Thumbnail.WicLoads-wicBefore,totalShellLoads=Thumbnail.ShellLoads,totalWicLoads=Thumbnail.WicLoads,skippedLoads=Thumbnail.SkippedLoads-skipped,unchangedRefreshLoads=Thumbnail.ShellLoads+Thumbnail.WicLoads-unchangedLoads,cachedThumbnails=Thumbnail.CachedImages,cachedThumbnailBytes=Thumbnail.CachedBytes},new JsonSerializerOptions{WriteIndented=true}));
+            long diskCacheBytes=await Task.Run(()=>{string cache=Path.Combine(App.DataDirectory,"thumbnail-cache-v1");return Directory.Exists(cache)?Directory.EnumerateFiles(cache,"*.lth").Sum(p=>new FileInfo(p).Length):0;});
+            File.WriteAllText(report,JsonSerializer.Serialize(new{complete=true,probeStartUtc,refreshCoalescingVerified=true,count,firstMilliseconds,firstVisibleCount,firstVisibleMilliseconds=firstVisibleWait.ElapsedMilliseconds,maxRealized,visibleThumbnails,visibleReadyMilliseconds=visibleWait.ElapsedMilliseconds,dispatcherLatency=delays,dispatcherSamples=samples,operations,resources,allocatedBytes=GC.GetTotalAllocatedBytes()-allocatedStart,gcCollections=Enumerable.Range(0,3).Select(i=>GC.CollectionCount(i)-gcStart[i]).ToArray(),shellLoads=Thumbnail.ShellLoads-before,wicLoads=Thumbnail.WicLoads-wicBefore,totalShellLoads=Thumbnail.ShellLoads,totalWicLoads=Thumbnail.WicLoads,diskCacheHits=ThumbnailDiskCache.Hits,diskCacheWrites=ThumbnailDiskCache.Writes,diskCacheBytes,skippedLoads=Thumbnail.SkippedLoads-skipped,unchangedRefreshLoads=Thumbnail.ShellLoads+Thumbnail.WicLoads-unchangedLoads,cachedThumbnails=Thumbnail.CachedImages,cachedThumbnailBytes=Thumbnail.CachedBytes},new JsonSerializerOptions{WriteIndented=true}));
         }
         catch(Exception ex){File.WriteAllText(report,JsonSerializer.Serialize(new{complete=false,failure=ex.ToString()}));Environment.ExitCode=1;}
         finally{stop.Cancel();await heartbeat;Close();}

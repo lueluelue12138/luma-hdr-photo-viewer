@@ -14,6 +14,8 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 
 ## 已实现
 
+0.1.16 缓存已完成的高质量 SDR 缩略图，采用无损压缩、像素/尺寸校验、源文件大小/修改时间与 DPI/尺寸键，跨进程复用；损坏或不可写时退回 WIC。磁盘缓存位于本地数据目录的 `thumbnail-cache-v1`，上限 256 MiB / 4096 项，与 32 MiB 内存图片缓存独立；原生 HDR 不写入 SDR 缓存。3043 张相册重开后的首屏实现卡片完整等待实测约 56–87 ms，首次未缓存仍约 1.0–1.2 秒，不含进程启动。旧版“快滚后约 0.85 秒”的计时还包含刷新，已修正并在验证记录保留说明，不能把测量修正算作优化收益。
+
 0.1.15 按预览缩略图栏的实际尺寸选择解码像素，保留 DPI 余量；图库卡片继续使用原有较高分辨率。较大的缓存或正在处理的缩略图可被小控件复用，不重新读取同一文件；小尺寸结果不能替代图库所需的大尺寸。3043 张相册的缩略图缓存实测从约 31.6 MiB 降到 6.9 MiB。多次随机开图仍约 0.34–0.37 秒，没有稳定速度下降的证据，因此主要收益是像素处理和内存开销；完整数据与功能回归见验证记录。
 
 0.1.14 将直接 WIC 缩略图扩展到常见 SDR 格式，复用有独立预算的像素暂存缓冲，减少大块临时数组及每次缓存插入的排序分配。浮点原生 HDR 和解码失败仍使用 Windows 缩略图提供程序；照片的 FP16/NVIDIA 路径不变。新增完整只读相册压力验证，测试数据库与实际图库分离。3043 张、约 54.8 GiB 相机 JPG 的滚动与随机开图通过：两轮滚动 UI 回调 P95 约 9 ms，40 次跨位置开图首图中位约 369 ms，邻图预读命中 5–7 ms。缩略图未缓存时首屏仍需约 0.8 秒全部完成，历史约 120 ms 调度峰值尚未确定原因；这些继续列为性能待办，未声称所有操作已达到瞬时响应。资源、GC 对照与测量边界见验证记录。
@@ -81,6 +83,7 @@ python .\tests\benchmark_decode.py "D:\Photos\large.jpg"
 python .\tests\verify_gallery_performance.py --large-photo "D:\Photos\large.jpg"
 python .\tests\verify_gallery_performance.py --read-only-folder "D:\Photos\album"
 python .\tests\verify_gallery_performance.py --read-only-folder "D:\Photos\album" --viewer-stress
+python .\tests\benchmark_thumbnail_cache.py "D:\Photos\album"
 python .\tests\verify_thumbnail_pixels.py
 .\scripts\Package.ps1 -SkipBuild    # 生成并验证未签名 MSIX
 ```
@@ -89,7 +92,7 @@ python .\tests\verify_thumbnail_pixels.py
 
 实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。解锁后已补完全屏恢复、小窗口布局、收藏快捷键及系统注册检查；完整系统选择器交互、跨屏和休眠恢复仍需扩展验收。
 
-MSIX 为 `artifacts/Luma_0.1.15.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.15_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
+MSIX 为 `artifacts/Luma_0.1.16.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.16_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
 
 用户反馈、性能/体积优化和发行准备持续记录在 [待办清单](docs/TODO.md)，新增事项也统一写入此文档。
 

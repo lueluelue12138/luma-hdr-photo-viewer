@@ -34,11 +34,13 @@ public sealed class Thumbnail : Grid
     private static readonly Dictionary<string,Dictionary<uint,ImageRequest>> Pending=new(StringComparer.OrdinalIgnoreCase);
     private static long used,cacheBytes,cacheVersion;
     internal static long ShellLoads {get;private set;}
-    internal static long WicLoads {get;private set;}
+    private static long wicLoads;
+    internal static long WicLoads=>Interlocked.Read(ref wicLoads);
     internal static long LargerCacheHits {get;private set;}
     internal static Func<string,Task>? VerificationBeforeDecode;
     internal ImageSource? VerificationImageSource=>image.Source;
     internal static bool PreferWic {get;set;}=true; // controlled only by the isolated gallery verifier
+    internal static bool UseDiskCache {get;set;}=true;
     internal static long SkippedLoads {get;private set;}
     private static event Action<string>? Invalidated;
     internal static void InvalidateFolder(string folder)
@@ -116,7 +118,6 @@ public sealed class Thumbnail : Grid
             ImageSource bitmap;long size;(FrameInfo info,byte[] pixels)? decoded=null;
             if(PreferWic)
             {
-                WicLoads++;
                 if(VerificationBeforeDecode is {} verification)await verification(path);
                 // Supported SDR formats use scaled WIC/ICC/EXIF directly,
                 // avoiding Shell RPC and a second encoded bitmap decode.
@@ -124,11 +125,14 @@ public sealed class Thumbnail : Grid
                 {
                     try
                     {
+                        var stamp=ThumbnailDiskCache.SourceStamp(path);
+                        if(UseDiskCache&&ThumbnailDiskCache.Read(path,edge,stamp,Pixels) is {} cached)return cached;
+                        Interlocked.Increment(ref wicLoads);
                         Native.Check(Native.LumaDecodeSized(path,edge,out var info,out var pointer));
                         using var frame=new DecodedFrame(pointer,info);
                         if(info.NativeHdr!=0)return null; // preserve Windows' HDR thumbnail provider
                         var pixels=Pixels.Rent(checked((int)info.Bytes));
-                        try{Native.Check(Native.LumaCopySdrBgra(pointer,pixels,info.Bytes));return(info,pixels);}
+                        try{Native.Check(Native.LumaCopySdrBgra(pointer,pixels,info.Bytes));if(UseDiskCache)ThumbnailDiskCache.Store(path,edge,stamp,info,pixels);return(info,pixels);}
                         catch{Pixels.Return(pixels);throw;}
                     }
                     catch(System.Runtime.InteropServices.COMException){return null;}

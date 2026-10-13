@@ -29,6 +29,10 @@ public partial class App : Application
             Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();await ViewerPreferences.LoadAsync();
             Log($"Launch {Environment.ProcessId}");
             string? file=LaunchArguments.PhotoPath(cli);
+            if(test>=0&&cli.Contains("--verify-thumbnail-disk-cache"))
+            {
+                window=new MainWindow();window.Activate();await ThumbnailDiskCacheVerification.RunAsync((MainWindow)window);return;
+            }
             if(test>=0&&cli.Contains("--verify-device-cache"))
             {
                 window=new MainWindow();window.Activate();await RenderDeviceCacheVerification.RunAsync((MainWindow)window,file??throw new ArgumentException("Verification requires a photo"));return;
@@ -40,6 +44,7 @@ public partial class App : Application
             if(test>=0&&(cli.Contains("--verify-gallery-performance")||cli.Contains("--verify-album-viewer")))
             {
                 Thumbnail.PreferWic=!cli.Contains("--shell-control");
+                Thumbnail.UseDiskCache=!cli.Contains("--no-thumbnail-disk-cache");
                 int source=Array.IndexOf(cli,"--gallery-source");
                 string folder=source>=0&&source+1<cli.Length?Path.GetFullPath(cli[source+1]):Path.Combine(DataDirectory,"source");
                 window=new MainWindow();window.Activate();
