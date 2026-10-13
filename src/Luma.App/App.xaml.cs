@@ -29,6 +29,10 @@ public partial class App : Application
             Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();await ViewerPreferences.LoadAsync();
             Log($"Launch {Environment.ProcessId}");
             string? file=LaunchArguments.PhotoPath(cli);
+            if(test>=0&&cli.Contains("--verify-device-cache"))
+            {
+                window=new MainWindow();window.Activate();await RenderDeviceCacheVerification.RunAsync((MainWindow)window,file??throw new ArgumentException("Verification requires a photo"));return;
+            }
             if(test>=0&&cli.Contains("--verify-photo-performance"))
             {
                 window=new MainWindow();window.Activate();await PhotoPerformanceVerification.RunAsync((MainWindow)window,file??throw new ArgumentException("Verification requires a photo"));return;

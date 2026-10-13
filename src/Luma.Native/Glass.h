@@ -56,6 +56,12 @@ struct GlassRenderer {
         D3D11_RASTERIZER_DESC rs{};rs.FillMode=D3D11_FILL_SOLID;rs.CullMode=D3D11_CULL_NONE;rs.DepthClipEnable=TRUE;rs.ScissorEnable=TRUE;check(device->CreateRasterizerState(&rs,&scissor));
     }
     bool enabled()const{return !rects.empty();}
+    void releaseSurfaces(){
+        d2d->SetTarget(nullptr);gaussian->SetInput(0,nullptr);sceneBitmap.Reset();blurBitmap.Reset();
+        sceneTexture.Reset();sceneTarget.Reset();sceneView.Reset();
+        for(int i=0;i<2;i++){blurTextures[i].Reset();blurTargets[i].Reset();blurViews[i].Reset();}
+        rects.clear();dark=blurReady=false;width=height=bw=bh=0;blurBuilds=0;
+    }
     void ensure(UINT w,UINT h){
         if(width==w&&height==h)return;d2d->SetTarget(nullptr);gaussian->SetInput(0,nullptr);sceneBitmap.Reset();blurBitmap.Reset();sceneTexture.Reset();sceneTarget.Reset();sceneView.Reset();for(int i=0;i<2;i++){blurTextures[i].Reset();blurTargets[i].Reset();blurViews[i].Reset();}
         auto create=[&](UINT tw,UINT th,ComPtr<ID3D11Texture2D>& tex,ComPtr<ID3D11RenderTargetView>& target,ComPtr<ID3D11ShaderResourceView>& view){D3D11_TEXTURE2D_DESC d{};d.Width=tw;d.Height=th;d.ArraySize=d.MipLevels=1;d.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;d.SampleDesc.Count=1;d.BindFlags=D3D11_BIND_RENDER_TARGET|D3D11_BIND_SHADER_RESOURCE;check(device->CreateTexture2D(&d,nullptr,&tex));check(device->CreateRenderTargetView(tex.Get(),nullptr,&target));check(device->CreateShaderResourceView(tex.Get(),nullptr,&view));};

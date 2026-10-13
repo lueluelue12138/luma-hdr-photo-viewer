@@ -76,6 +76,7 @@ public sealed partial class ViewerWindow : Window
     internal async Task VerificationDisposeAsync(){try{await rendererInitialization;}catch(OperationCanceledException){}if(renderer is not null)await renderer.DisposedAsync;}
     internal RenderStatus VerificationStatus=>renderer?.Status()??default;
     internal int VerificationWorkerJobs=>renderer?.WorkerJobs??0;
+    internal bool VerificationDeviceReused=>renderer?.DeviceReused??false;
     internal string VerificationStatusText=>StatusText.Text;
     internal void VerificationOriginal(bool value)=>SetOriginalHeld(value);
     internal async Task VerificationEffectsAsync(bool hdr,bool vsr){hdrRequested=hdr;vsrRequested=vsr;await ApplyEffectsAsync();}
@@ -175,7 +176,7 @@ public sealed partial class ViewerWindow : Window
         try{var siblings=await siblingEnumeration!;if(closed)return;var path=current?.Path??initial;if(siblings.Count>0){if(!siblings.Any(p=>string.Equals(p.Path,path,StringComparison.OrdinalIgnoreCase)))siblings.Insert(0,current??sequence[index]);sequence=siblings;}index=Math.Max(0,sequence.FindIndex(p=>string.Equals(p.Path,path,StringComparison.OrdinalIgnoreCase)));selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=index;selecting=false;UpdatePosition();BottomPanel.Visibility=Visibility.Visible;if(currentFrame is not null)Prefetch();}
         catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or OperationCanceledException){App.Log(ex.Message);if(!closed)BottomPanel.Visibility=Visibility.Visible;}
     }
-    private async Task CreateRendererAsync(){renderer?.Dispose();renderer=null;glassMaterial=null;var next=await NativeRenderer.CreateAsync(Surface,WinRT.Interop.WindowNative.GetWindowHandle(this),lifetime.Token);if(closed){next.Dispose();return;}renderer=next;renderer.Faulted+=ex=>{if(renderer==next&&!closed)Recover(ex);};renderer.Presented+=()=>{if(renderer==next&&!closed){UpdateGlass();RefreshStatus(false);}};renderer.HoldOriginal(originalHeld);renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateGlass();App.Log("Viewer renderer attached");}
+    private async Task CreateRendererAsync(){renderer?.Dispose(false);renderer=null;glassMaterial=null;var next=await NativeRenderer.CreateAsync(Surface,WinRT.Interop.WindowNative.GetWindowHandle(this),lifetime.Token,hdrRequested||vsrRequested);if(closed){next.Dispose();return;}renderer=next;renderer.Faulted+=ex=>{if(renderer==next&&!closed)Recover(ex);};renderer.Presented+=()=>{if(renderer==next&&!closed){UpdateGlass();RefreshStatus(false);}};renderer.HoldOriginal(originalHeld);renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateGlass();App.Log($"Viewer renderer attached; reused={next.DeviceReused}");}
     private async Task DisplayAsync(int selected)
     {
         if(closed||sequence.Count==0||selected<0||selected>=sequence.Count)return;

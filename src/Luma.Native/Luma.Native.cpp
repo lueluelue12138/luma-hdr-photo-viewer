@@ -33,6 +33,22 @@ using Microsoft::WRL::ComPtr;
 #ifdef LUMA_NVIDIA
 // NGX is process-wide and not thread safe, including devices in different windows.
 std::mutex ngxMutex;
+unsigned ngxUsers=0;
+struct NgxDeviceRecord {ComPtr<ID3D11Device> device;NgxDeviceRecord* next=nullptr;};
+NgxDeviceRecord* retiredNgxDevices=nullptr;NgxDeviceRecord* unusableNgxDevices=nullptr;
+void clearNgxRecords(NgxDeviceRecord*& head){while(head){auto old=head;head=head->next;delete old;}}
+// This runtime's per-device Shutdown1 invalidates feature creation on other
+// registered devices (verified with two actual contexts). Shutdown globally
+// only after the final user, and reuse quiescent registered devices meanwhile.
+struct NgxDeviceLease {
+    std::unique_ptr<NgxDeviceRecord> record=std::make_unique<NgxDeviceRecord>();bool registered=false;
+    ~NgxDeviceLease(){
+        if(!registered)return;std::lock_guard lock(ngxMutex);
+        if(--ngxUsers==0){NVSDK_NGX_D3D11_Shutdown1(nullptr);clearNgxRecords(retiredNgxDevices);clearNgxRecords(unusableNgxDevices);}
+        else{record->next=retiredNgxDevices;retiredNgxDevices=record.release();} // no allocation in destruction
+    }
+    void registerDevice(ID3D11Device* value){record->device=value;registered=true;ngxUsers++;} // mutex held
+};
 #endif
 #pragma comment(lib,"d3d11.lib")
 #pragma comment(lib,"dxgi.lib")
@@ -154,6 +170,11 @@ float4 PSInput(Vertex v):SV_TARGET {
 }
 )";
 struct Renderer {
+#ifdef LUMA_NVIDIA
+    // Declared first, destroyed last: the context/resources are quiescent before
+    // the device enters the registered-device reuse queue, including unwind.
+    NgxDeviceLease ngxLease;
+#endif
     HWND hwnd{};ComPtr<PanelNative> panel;ComPtr<ID3D11Device> device;ComPtr<ID3D11DeviceContext> context;ComPtr<IDXGIFactory6> factory;ComPtr<IDXGIAdapter1> adapter;
     ComPtr<IDXGISwapChain3> swap;ComPtr<ID3D11RenderTargetView> target;ComPtr<ID3D11Texture2D> offscreen;
     ComPtr<ID3D11VertexShader> vs;ComPtr<ID3D11PixelShader> ps,inputPs;ComPtr<ID3D11Buffer> constants;ComPtr<ID3D11SamplerState> sampler;ComPtr<ID3D11ShaderResourceView> image,originalView,hdrView,vsrView;
@@ -173,8 +194,18 @@ struct Renderer {
         if(p)check(p->QueryInterface(IID_PPV_ARGS(&panel)));
         check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
         for(UINT i=0;;i++){ComPtr<IDXGIAdapter1> a;if(factory->EnumAdapterByGpuPreference(i,DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,IID_PPV_ARGS(&a))==DXGI_ERROR_NOT_FOUND)break;DXGI_ADAPTER_DESC1 desc{};a->GetDesc1(&desc);if(!(desc.Flags&DXGI_ADAPTER_FLAG_SOFTWARE)&&desc.VendorId==0x10de){adapter=a;break;}}
-        HRESULT hr=D3D11CreateDevice(adapter.Get(),adapter?D3D_DRIVER_TYPE_UNKNOWN:D3D_DRIVER_TYPE_HARDWARE,nullptr,D3D11_CREATE_DEVICE_BGRA_SUPPORT,nullptr,0,D3D11_SDK_VERSION,&device,nullptr,&context);
-        if(FAILED(hr)){adapter.Reset();check(D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,D3D11_CREATE_DEVICE_BGRA_SUPPORT,nullptr,0,D3D11_SDK_VERSION,&device,nullptr,&context));}
+#ifdef LUMA_NVIDIA
+        {
+            std::lock_guard lock(ngxMutex);
+            while(retiredNgxDevices){
+                std::unique_ptr<NgxDeviceRecord> candidate(retiredNgxDevices);retiredNgxDevices=candidate->next;candidate->next=nullptr;
+                if(FAILED(candidate->device->GetDeviceRemovedReason())){candidate->next=unusableNgxDevices;unusableNgxDevices=candidate.release();continue;}
+                device=candidate->device;device->GetImmediateContext(&context);ngxLease.record=std::move(candidate);ngxLease.registerDevice(device.Get());ngxInitialized=true;adapter.Reset();break;
+            }
+        }
+#endif
+        if(!device){HRESULT hr=D3D11CreateDevice(adapter.Get(),adapter?D3D_DRIVER_TYPE_UNKNOWN:D3D_DRIVER_TYPE_HARDWARE,nullptr,D3D11_CREATE_DEVICE_BGRA_SUPPORT,nullptr,0,D3D11_SDK_VERSION,&device,nullptr,&context);
+        if(FAILED(hr)){adapter.Reset();check(D3D11CreateDevice(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,D3D11_CREATE_DEVICE_BGRA_SUPPORT,nullptr,0,D3D11_SDK_VERSION,&device,nullptr,&context));}}
         if(!adapter){ComPtr<IDXGIDevice> d;device.As(&d);ComPtr<IDXGIAdapter> a;d->GetAdapter(&a);a.As(&adapter);}
         DXGI_ADAPTER_DESC1 desc{};adapter->GetDesc1(&desc);wcsncpy_s(status.gpu,desc.Description,_TRUNCATE);status.nvidia=desc.VendorId==0x10de;
         textureBudget=std::clamp(uint64_t(desc.DedicatedVideoMemory)/4,256ull*1024*1024,1024ull*1024*1024);
@@ -198,12 +229,58 @@ struct Renderer {
         target.Reset();offscreen.Reset();resize(1,1);
     }
     void detach(){if(panel){panel->SetSwapChain(nullptr);panel.Reset();}}
+#ifdef LUMA_NVIDIA
+    // ngxMutex must be held by the caller. Parameters can keep old resource
+    // pointers; the feature also caches per-resource processing state.
+    void releaseFeaturesUnlocked(){
+        if(hdrFeature){NVSDK_NGX_D3D11_ReleaseFeature(hdrFeature);hdrFeature=nullptr;}
+        if(vsrFeature){NVSDK_NGX_D3D11_ReleaseFeature(vsrFeature);vsrFeature=nullptr;}
+        for(auto params:{hdrParams,vsrParams})if(params){params->Set(NVSDK_NGX_Parameter_Input1,static_cast<ID3D11Resource*>(nullptr));params->Set(NVSDK_NGX_Parameter_Output,static_cast<ID3D11Resource*>(nullptr));}
+    }
+#endif
+    bool reuseBudget()const{
+        if(FAILED(device->GetDeviceRemovedReason()))return false;
+        ComPtr<IDXGIAdapter3> memory;DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+        // Do not retain an idle device when its process is near Windows' GPU
+        // budget. A missing budget on an older adapter conservatively disables caching.
+        if(FAILED(adapter.As(&memory))||FAILED(memory->QueryVideoMemoryInfo(0,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&info))||!info.Budget)return false;
+        return info.CurrentUsage<info.Budget-info.Budget/5&&info.Budget-info.CurrentUsage>=256ull*1024*1024;
+    }
+    void resetForReuse(){
+        if(panel)throw Failure{E_UNEXPECTED};check(device->GetDeviceRemovedReason());
+        // Called only after the window has detached and every worker has left
+        // the immediate context. Keep the device/SDK session, never photo results.
+        context->ClearState();
+#ifdef LUMA_NVIDIA
+        {
+            std::lock_guard lock(ngxMutex);
+            // The runtime retains per-resource processing state in a feature.
+            // Recreating photo resources against a retained feature grows its
+            // residency. Release features between windows, keeping NGX Init.
+            releaseFeaturesUnlocked();
+        }
+#endif
+        image.Reset();originalView.Reset();hdrView.Reset();vsrView.Reset();
+        originalTexture.Reset();sdkInput.Reset();hdrTexture.Reset();vsrTexture.Reset();
+        target.Reset();offscreen.Reset();swap.Reset();glass->releaseSurfaces();context->Flush();
+        hwnd=nullptr;width=height=iw=ih=processWidth=processHeight=1;vsrWidth=vsrHeight=0;
+        requestedHdr=requestedVsr=holdOriginal=hdrCached=vsrCached=sdkInputReady=sourceAlpha=false;
+        zoom=1;panX=panY=0;rotation=0;compositionDpi=1;cachedCompositionDpi=0;sceneStamp={};
+        currentPreset=1;middleGrayOverride=peakOverride=cachedPeak=0;metrics={};textureMetrics={};
+        status.nativeHdr=status.hdrEffective=status.vsrEffective=0;status.hdrEvaluations=status.vsrEvaluations=0;
+        status.hdrAvailable=hdrCapability;status.vsrAvailable=vsrCapability;status.gpuBytes=0;
+        wcscpy_s(status.hdrMessage,L"TrueHDR 尚未开启");wcscpy_s(status.vsrMessage,L"VSR 尚未开启");
+    }
+    void bindWindow(HWND h){
+        if(panel||swap||originalTexture)throw Failure{E_UNEXPECTED};check(device->GetDeviceRemovedReason());
+        hwnd=h;probe(false,false);resize(1,1);
+    }
     void shutdownEffects(){
 #ifdef LUMA_NVIDIA
         std::lock_guard lock(ngxMutex);
-        if(hdrFeature){NVSDK_NGX_D3D11_ReleaseFeature(hdrFeature);hdrFeature=nullptr;}if(vsrFeature){NVSDK_NGX_D3D11_ReleaseFeature(vsrFeature);vsrFeature=nullptr;}
+        releaseFeaturesUnlocked();
         if(hdrParams){NVSDK_NGX_D3D11_DestroyParameters(hdrParams);hdrParams=nullptr;}if(vsrParams){NVSDK_NGX_D3D11_DestroyParameters(vsrParams);vsrParams=nullptr;}
-        if(ngxInitialized){NVSDK_NGX_D3D11_Shutdown1(device.Get());ngxInitialized=false;}
+        // ngxLease retires/shuts down the session after context destruction.
 #endif
     }
     ~Renderer(){if(panel)panel->SetSwapChain(nullptr);if(context){context->ClearState();context->Flush();}}
@@ -217,8 +294,9 @@ struct Renderer {
         wchar_t path[32768]{};GetModuleFileNameW(module,path,32768);auto directory=std::filesystem::path(path).parent_path().wstring();
         const wchar_t* search[]={directory.c_str()};NVSDK_NGX_FeatureCommonInfo common{};common.PathListInfo.Path=search;common.PathListInfo.Length=1;
         wchar_t local[32768]{};GetEnvironmentVariableW(L"LOCALAPPDATA",local,32768);auto data=std::filesystem::path(local)/L"Luma"/L"ngx";std::filesystem::create_directories(data);
-        auto result=NVSDK_NGX_D3D11_Init(0,data.c_str(),device.Get(),&common);status.ngxResult=uint32_t(result);
-        if(NVSDK_NGX_FAILED(result)){swprintf_s(status.hdrMessage,L"NGX 初始化失败 (0x%08X)",status.ngxResult);wcscpy_s(status.vsrMessage,status.hdrMessage);return;}ngxInitialized=true;
+        auto result=NVSDK_NGX_Result_Success;
+        if(!ngxInitialized){result=NVSDK_NGX_D3D11_Init(0,data.c_str(),device.Get(),&common);status.ngxResult=uint32_t(result);
+        if(NVSDK_NGX_FAILED(result)){swprintf_s(status.hdrMessage,L"NGX 初始化失败 (0x%08X)",status.ngxResult);wcscpy_s(status.vsrMessage,status.hdrMessage);return;}ngxInitialized=true;ngxLease.registerDevice(device.Get());}
         result=NVSDK_NGX_D3D11_GetCapabilityParameters(&hdrParams);status.ngxResult=uint32_t(result);
         if(NVSDK_NGX_FAILED(result)){swprintf_s(status.hdrMessage,L"无法取得 NGX 能力 (0x%08X)",status.ngxResult);wcscpy_s(status.vsrMessage,status.hdrMessage);return;}
         status.sdkAvailable=1;int available=0;hdrParams->Get(NVSDK_NGX_Parameter_TrueHDR_Available,&available);status.hdrAvailable=available;
@@ -265,7 +343,7 @@ struct Renderer {
         for(UINT i=0;i<d.MipLevels;i++){bytes+=uint64_t(w)*h*bpp;w=std::max(1u,w/2);h=std::max(1u,h/2);}return bytes;
     }
     void updateMemory(){
-        uint64_t bytes=uint64_t(width)*height*(swap?16:8);
+        uint64_t bytes=target?uint64_t(width)*height*(swap?16:8):0;
         for(auto texture:{originalTexture.Get(),sdkInput.Get(),hdrTexture.Get(),vsrTexture.Get()})bytes+=textureBytes(texture);
         if(glass)bytes+=glass->bytes();status.gpuBytes=bytes;
     }
@@ -294,6 +372,12 @@ struct Renderer {
         bool keepInput=!sourceAlpha&&!status.nativeHdr&&(requestedHdr||requestedVsr);
         bool keepVsr=keepInput&&requestedVsr&&status.vsrAvailable;
         bool keepHdr=keepInput&&requestedHdr&&status.hdrAvailable;
+#ifdef LUMA_NVIDIA
+        bool replaceInput=sdkInput&&(!keepInput||!matches(sdkInput.Get(),processWidth,processHeight,DXGI_FORMAT_R8G8B8A8_UNORM));
+        bool replaceVsr=vsrTexture&&(!keepVsr||!matches(vsrTexture.Get(),vsrWidth,vsrHeight,DXGI_FORMAT_R8G8B8A8_UNORM));
+        bool replaceHdr=hdrTexture&&(!keepHdr||!matches(hdrTexture.Get(),keepVsr?vsrWidth:processWidth,keepVsr?vsrHeight:processHeight,DXGI_FORMAT_R16G16B16A16_FLOAT));
+        if(replaceInput||replaceVsr||replaceHdr){std::lock_guard lock(ngxMutex);releaseFeaturesUnlocked();}
+#endif
         if(!keepInput||!matches(sdkInput.Get(),processWidth,processHeight,DXGI_FORMAT_R8G8B8A8_UNORM))sdkInput.Reset();
         if(!keepVsr||!matches(vsrTexture.Get(),vsrWidth,vsrHeight,DXGI_FORMAT_R8G8B8A8_UNORM)){vsrView.Reset();vsrTexture.Reset();}
         if(!keepHdr||!matches(hdrTexture.Get(),keepVsr?vsrWidth:processWidth,keepVsr?vsrHeight:processHeight,DXGI_FORMAT_R16G16B16A16_FLOAT)){hdrView.Reset();hdrTexture.Reset();}
@@ -321,11 +405,11 @@ struct Renderer {
             else{context->ClearState();ComPtr<ID3D11RenderTargetView> outputView;check(device->CreateRenderTargetView(sdkInput.Get(),nullptr,&outputView));auto t=outputView.Get();context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT viewport{0,0,float(processWidth),float(processHeight),0,1};context->RSSetViewports(1,&viewport);float values[]={1,1,0,0,1,0,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(inputPs.Get(),nullptr,0);auto i=originalView.Get();context->PSSetShaderResources(0,1,&i);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);context->Draw(6,0);context->ClearState();}
             sdkInputReady=true;
         }
-        auto output=[&](DXGI_FORMAT format,UINT w,UINT h,ComPtr<ID3D11Texture2D>& texture,ComPtr<ID3D11ShaderResourceView>& view){if(matches(texture.Get(),w,h,format))return;D3D11_TEXTURE2D_DESC d{};d.Width=w;d.Height=h;d.ArraySize=d.MipLevels=1;d.Format=format;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_UNORDERED_ACCESS;ComPtr<ID3D11Texture2D> next;ComPtr<ID3D11ShaderResourceView> nextView;check(device->CreateTexture2D(&d,nullptr,&next));check(device->CreateShaderResourceView(next.Get(),nullptr,&nextView));texture=next;view=nextView;if(format==DXGI_FORMAT_R16G16B16A16_FLOAT)textureMetrics.hdrAllocations++;else textureMetrics.vsrAllocations++;};
+        auto output=[&](DXGI_FORMAT format,UINT w,UINT h,ComPtr<ID3D11Texture2D>& texture,ComPtr<ID3D11ShaderResourceView>& view){if(matches(texture.Get(),w,h,format))return;if(texture){if(format==DXGI_FORMAT_R16G16B16A16_FLOAT&&hdrFeature){NVSDK_NGX_D3D11_ReleaseFeature(hdrFeature);hdrFeature=nullptr;}else if(format!=DXGI_FORMAT_R16G16B16A16_FLOAT&&vsrFeature){NVSDK_NGX_D3D11_ReleaseFeature(vsrFeature);vsrFeature=nullptr;}}D3D11_TEXTURE2D_DESC d{};d.Width=w;d.Height=h;d.ArraySize=d.MipLevels=1;d.Format=format;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_UNORDERED_ACCESS;ComPtr<ID3D11Texture2D> next;ComPtr<ID3D11ShaderResourceView> nextView;check(device->CreateTexture2D(&d,nullptr,&next));check(device->CreateShaderResourceView(next.Get(),nullptr,&nextView));texture=next;view=nextView;if(format==DXGI_FORMAT_R16G16B16A16_FLOAT)textureMetrics.hdrAllocations++;else textureMetrics.vsrAllocations++;};
         NVSDK_NGX_Result result=NVSDK_NGX_Result_Success;
         // HDR-only reaches no VSR creation or evaluation calls.
-        if(vsr&&status.vsrAvailable&&!vsrCached){context->ClearState();if(!vsrParams){result=NVSDK_NGX_D3D11_GetCapabilityParameters(&vsrParams);}if(NVSDK_NGX_SUCCEED(result)&&!vsrFeature){NVSDK_NGX_Feature_Create_Params p{};result=NGX_D3D11_CREATE_VSR_EXT(context.Get(),&vsrFeature,vsrParams,&p);}
-            if(NVSDK_NGX_SUCCEED(result)){output(DXGI_FORMAT_R8G8B8A8_UNORM,vsrWidth,vsrHeight,vsrTexture,vsrView);NVSDK_NGX_D3D11_VSR_Eval_Params p{};p.pInput=sdkInput.Get();p.pOutput=vsrTexture.Get();p.InputSubrectSize={processWidth,processHeight};p.OutputSubrectSize={vsrWidth,vsrHeight};p.QualityLevel=NVSDK_NGX_VSR_Quality_High;result=NGX_D3D11_EVALUATE_VSR_EXT(context.Get(),vsrFeature,vsrParams,&p);status.vsrEvaluations++;}
+        if(vsr&&status.vsrAvailable&&!vsrCached){context->ClearState();output(DXGI_FORMAT_R8G8B8A8_UNORM,vsrWidth,vsrHeight,vsrTexture,vsrView);if(!vsrParams){result=NVSDK_NGX_D3D11_GetCapabilityParameters(&vsrParams);}if(NVSDK_NGX_SUCCEED(result)&&!vsrFeature){NVSDK_NGX_Feature_Create_Params p{};result=NGX_D3D11_CREATE_VSR_EXT(context.Get(),&vsrFeature,vsrParams,&p);}
+            if(NVSDK_NGX_SUCCEED(result)){NVSDK_NGX_D3D11_VSR_Eval_Params p{};p.pInput=sdkInput.Get();p.pOutput=vsrTexture.Get();p.InputSubrectSize={processWidth,processHeight};p.OutputSubrectSize={vsrWidth,vsrHeight};p.QualityLevel=NVSDK_NGX_VSR_Quality_High;result=NGX_D3D11_EVALUATE_VSR_EXT(context.Get(),vsrFeature,vsrParams,&p);status.vsrEvaluations++;}
             status.ngxResult=uint32_t(result);vsrCached=NVSDK_NGX_SUCCEED(result);if(!vsrCached)swprintf_s(status.vsrMessage,L"VSR 执行失败 (0x%08X)",status.ngxResult);else wcscpy_s(status.vsrMessage,L"VSR 已生效");hdrCached=false;
         }
         unsigned peak=peakOverride?peakOverride:unsigned(std::clamp(status.maxNits>=400?status.maxNits:1000.0f,400.0f,2000.0f));
@@ -335,8 +419,9 @@ struct Renderer {
         unsigned key=peak+preset*10000+(vsr&&vsrCached?100000:0)+middle*1000000;
         if(hdr&&status.hdrAvailable&&status.hdrActive&&(!hdrCached||cachedPeak!=key)){
             context->ClearState();
+            UINT w=vsr&&vsrCached?vsrWidth:processWidth,h=vsr&&vsrCached?vsrHeight:processHeight;output(DXGI_FORMAT_R16G16B16A16_FLOAT,w,h,hdrTexture,hdrView);
             if(!hdrFeature){NVSDK_NGX_Feature_Create_Params p{};result=NGX_D3D11_CREATE_TRUEHDR_EXT(context.Get(),&hdrFeature,hdrParams,&p);}else result=NVSDK_NGX_Result_Success;
-            if(NVSDK_NGX_SUCCEED(result)){UINT w=vsr&&vsrCached?vsrWidth:processWidth,h=vsr&&vsrCached?vsrHeight:processHeight;output(DXGI_FORMAT_R16G16B16A16_FLOAT,w,h,hdrTexture,hdrView);NVSDK_NGX_D3D11_TRUEHDR_Eval_Params p{};p.pInput=vsr&&vsrCached?vsrTexture.Get():sdkInput.Get();p.pOutput=hdrTexture.Get();p.InputSubrectBR={w,h};p.OutputSubrectBR={w,h};p.Contrast=preset==0?90:preset==2?115:100;p.Saturation=preset==0?90:preset==2?115:100;p.MiddleGray=middle;p.MaxLuminance=peak;result=NGX_D3D11_EVALUATE_TRUEHDR_EXT(context.Get(),hdrFeature,hdrParams,&p);status.hdrEvaluations++;}
+            if(NVSDK_NGX_SUCCEED(result)){NVSDK_NGX_D3D11_TRUEHDR_Eval_Params p{};p.pInput=vsr&&vsrCached?vsrTexture.Get():sdkInput.Get();p.pOutput=hdrTexture.Get();p.InputSubrectBR={w,h};p.OutputSubrectBR={w,h};p.Contrast=preset==0?90:preset==2?115:100;p.Saturation=preset==0?90:preset==2?115:100;p.MiddleGray=middle;p.MaxLuminance=peak;result=NGX_D3D11_EVALUATE_TRUEHDR_EXT(context.Get(),hdrFeature,hdrParams,&p);status.hdrEvaluations++;}
             status.ngxResult=uint32_t(result);hdrCached=NVSDK_NGX_SUCCEED(result);cachedPeak=key;if(!hdrCached)swprintf_s(status.hdrMessage,L"TrueHDR 执行失败 (0x%08X)",status.ngxResult);else if(processWidth!=iw||processHeight!=ih)swprintf_s(status.hdrMessage,L"TrueHDR 已生效 · 按比例处理 %u × %u",processWidth,processHeight);else wcscpy_s(status.hdrMessage,L"TrueHDR 已生效");
         }
 #endif
@@ -364,6 +449,16 @@ API HRESULT __cdecl LumaInitEffects(void* r){if(!r)return E_POINTER;return safe(
 API void __cdecl LumaFreeFrame(void* f){delete static_cast<Frame*>(f);}
 API HRESULT __cdecl LumaCreate(IUnknown* panel,HWND hwnd,void** result){if(!result)return E_POINTER;*result=nullptr;return safe([&]{*result=new Renderer(panel,hwnd);});}
 API void __cdecl LumaDestroy(void* r){if(r){auto p=static_cast<Renderer*>(r);p->shutdownEffects();delete p;}}
+API HRESULT __cdecl LumaResetForReuse(void* r){
+    if(!r)return E_POINTER;auto& x=*static_cast<Renderer*>(r);
+    auto result=safe([&]{x.resetForReuse();});if(FAILED(result))return result;
+#ifdef LUMA_NVIDIA
+    if(x.effectsInitialized&&NVSDK_NGX_FAILED(static_cast<NVSDK_NGX_Result>(x.status.ngxResult)))return S_FALSE;
+#endif
+    return x.reuseBudget()?S_OK:S_FALSE;
+}
+API HRESULT __cdecl LumaBindWindow(void* r,HWND hwnd){if(!r)return E_POINTER;auto& x=*static_cast<Renderer*>(r);if(!x.reuseBudget())return S_FALSE;return safe([&]{x.bindWindow(hwnd);});}
+API HRESULT __cdecl LumaVideoMemory(void* r,uint64_t* budget,uint64_t* usage){if(!r||!budget||!usage)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);ComPtr<IDXGIAdapter3> memory;check(x.adapter.As(&memory));DXGI_QUERY_VIDEO_MEMORY_INFO info{};check(memory->QueryVideoMemoryInfo(0,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&info));*budget=info.Budget;*usage=info.CurrentUsage;});}
 API HRESULT __cdecl LumaAttach(void* r,IUnknown* panel){if(!r||!panel)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->attach(panel);});}
 API HRESULT __cdecl LumaDetach(void* r){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->detach();});}
 API HRESULT __cdecl LumaSetGlass(void* r,const GlassRect* rects,UINT count,int dark){if(!r||count>8||(count&&!rects))return E_INVALIDARG;return safe([&]{auto& g=*static_cast<Renderer*>(r)->glass;g.rects.clear();if(count)g.rects.assign(rects,rects+count);g.dark=dark!=0;});}

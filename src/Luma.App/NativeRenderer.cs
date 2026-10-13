@@ -29,6 +29,9 @@ internal static class Native
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCreateFast(IntPtr panel,IntPtr hwnd,out IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaInitEffects(IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern void LumaDestroy(IntPtr renderer);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaResetForReuse(IntPtr renderer);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaBindWindow(IntPtr renderer,IntPtr hwnd);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaVideoMemory(IntPtr renderer,out ulong budget,out ulong usage);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaAttach(IntPtr renderer,IntPtr panel);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaDetach(IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaSetGlass(IntPtr renderer,[In]GlassRect[] rects,uint count,int dark);
@@ -73,6 +76,8 @@ internal sealed class NativeRenderer : IDisposable
     private IntPtr handle;
     private readonly SemaphoreSlim access=new(1);
     private bool disposed;
+    private bool healthy=true;
+    internal bool DeviceReused {get;private set;}
     private readonly Microsoft.UI.Dispatching.DispatcherQueue dispatcher;
     private bool flushScheduled;
     private Task painting=Task.CompletedTask;
@@ -94,14 +99,14 @@ internal sealed class NativeRenderer : IDisposable
     {
         dispatcher=panel.DispatcherQueue;
     }
-    public static async Task<NativeRenderer> CreateAsync(SwapChainPanel panel,IntPtr hwnd,CancellationToken token)
+    public static async Task<NativeRenderer> CreateAsync(SwapChainPanel panel,IntPtr hwnd,CancellationToken token,bool enhancements=false)
     {
         var value=new NativeRenderer(panel);
-        await Task.Run(()=>Native.Check(Native.LumaCreateFast(IntPtr.Zero,hwnd,out value.handle)));
+        (value.handle,value.DeviceReused)=await RenderDeviceCache.AcquireAsync(hwnd,enhancements);
         if(token.IsCancellationRequested){await Task.Run(value.Destroy);token.ThrowIfCancellationRequested();}
         var pointer=WinRT.MarshalInspectable<SwapChainPanel>.FromManaged(panel);
         try{Native.Check(Native.LumaAttach(value.handle,pointer));Native.Check(Native.LumaCopyStatus(value.handle,out value.snapshot));return value;}
-        catch{value.Dispose();throw;}
+        catch{value.Dispose(false);throw;}
         finally{WinRT.MarshalInspectable<SwapChainPanel>.DisposeAbi(pointer);}
     }
     // All D3D work and Present run off XAML's thread. SetSwapChain/Detach stay
@@ -114,7 +119,7 @@ internal sealed class NativeRenderer : IDisposable
         try{
         await access.WaitAsync(token);
         entered=true;token.ThrowIfCancellationRequested();ObjectDisposedException.ThrowIf(disposed,this);WorkerJobs++;RenderStatus next=default;await Task.Run(()=>{action();Native.Check(Native.LumaCopyStatus(handle,out next));});snapshot=next;
-        }finally{processing--;if(entered)access.Release();ScheduleFlush();}
+        }catch(COMException){healthy=false;throw;}finally{processing--;if(entered)access.Release();ScheduleFlush();}
     }
     private sealed record PaintBatch(bool? Original,(GlassRect[] Rects,bool Dark)? Glass,(double W,double H,double Dpi)? Size,(double Zoom,double X,double Y,int Rotation)? View);
     private bool HasPending=>pendingOriginal.HasValue||pendingGlass.HasValue||pendingSize.HasValue||pendingView.HasValue;
@@ -139,7 +144,7 @@ internal sealed class NativeRenderer : IDisposable
             await Task.Run(()=>{Prepare(batch);Native.Check(Native.LumaRepaint(handle));Native.Check(Native.LumaCopyStatus(handle,out next));Native.Check(Native.LumaGetRenderMetrics(handle,out metrics));});
             snapshot=next;Metrics=metrics;
         }
-        catch(COMException ex){if(!disposed)Faulted?.Invoke(ex);}
+        catch(COMException ex){healthy=false;if(!disposed)Faulted?.Invoke(ex);}
         finally{access.Release();}
         if(!disposed){Presented?.Invoke();if(HasPending)ScheduleFlush();}
     }
@@ -207,13 +212,14 @@ internal sealed class NativeRenderer : IDisposable
         pendingOriginal=holdOriginal;token.ThrowIfCancellationRequested();
         // The caller checks its photo generation before presenting the prepared texture.
     }
-    public void Dispose()
+    public void Dispose()=>Dispose(true);
+    public void Dispose(bool allowReuse)
     {
-        if(disposed)return;disposed=true;
+        if(disposed)return;disposed=true;healthy&=allowReuse;
         // Detach while the XAML owner is alive; worker jobs touch only D3D textures.
         if(handle!=IntPtr.Zero)Native.LumaDetach(handle);
         DisposedAsync=DestroyWhenIdleAsync();
     }
     private void Destroy(){if(handle!=IntPtr.Zero){Native.LumaDestroy(handle);handle=IntPtr.Zero;}}
-    private async Task DestroyWhenIdleAsync(){await access.WaitAsync();try{await Task.Run(Destroy);}finally{access.Release();}}
+    private async Task DestroyWhenIdleAsync(){await access.WaitAsync();try{var retired=handle;handle=IntPtr.Zero;await RenderDeviceCache.RetireAsync(retired,snapshot.SdkAvailable!=0,healthy);}finally{access.Release();}}
 }

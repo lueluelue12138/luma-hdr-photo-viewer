@@ -112,7 +112,7 @@ internal static class ViewerVerification
                 bool vsr=n%5==4;var viewer=await Open(vsr?small:path,vsr?null:siblings);
                 var baseline=viewer.VerificationStatus;Check(baseline.HdrEffective==0&&baseline.VsrEffective==0,"New windows must begin with original pixels");
                 await viewer.VerificationEffectsAsync(!vsr,vsr);var status=viewer.VerificationStatus;
-                Check(vsr?status.VsrEffective!=0&&status.HdrEvaluations==0:status.HdrEffective!=0&&status.VsrEvaluations==0,"Requested independent enhancement must really evaluate");
+                Check(vsr?status.VsrEffective!=0&&status.HdrEvaluations==0:status.HdrEffective!=0&&status.VsrEvaluations==0,$"Requested independent enhancement must really evaluate; HDR={status.HdrMessage}; VSR={status.VsrMessage}; SDK={status.SdkAvailable}; result=0x{status.NgxResult:X8}; deviceReused={viewer.VerificationDeviceReused}");
                 int jobs=viewer.VerificationWorkerJobs;viewer.VerificationOriginal(true);await viewer.VerificationPresentationAsync();
                 Check(viewer.VerificationStatus.HdrEffective==0&&viewer.VerificationStatus.VsrEffective==0,"Original comparison must hide both enhancements");viewer.VerificationOriginal(false);await viewer.VerificationPresentationAsync();
                 var restored=viewer.VerificationStatus;Check(restored.HdrEffective==status.HdrEffective&&restored.VsrEffective==status.VsrEffective&&restored.HdrEvaluations==status.HdrEvaluations&&restored.VsrEvaluations==status.VsrEvaluations&&viewer.VerificationWorkerJobs==jobs,"Independent HDR/VSR comparison must restore cached output without processing");

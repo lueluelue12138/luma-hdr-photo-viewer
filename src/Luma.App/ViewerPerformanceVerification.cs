@@ -65,8 +65,9 @@ internal static class ViewerPerformanceVerification
             {
                 var timer=Stopwatch.StartNew();viewer=new(path,photos,host);viewer.Activate();await viewer.FirstFrameReady.Task.WaitAsync(TimeSpan.FromSeconds(30));first=viewer.VerificationRenderMetrics;
                 if(first.UnfrostedPhotoPresents!=0||first.BlurBuilds==0)throw new InvalidOperationException("Saved-HDR startup exposed an unfrosted photo frame");
-                results.Add(new{scenario="saved-HDR-first-photo-glass",window=n+1,openMilliseconds=timer.ElapsedMilliseconds,viewer.FirstFrameMilliseconds,first.PhotoPresents,first.UnfrostedPhotoPresents,first.BlurBuilds});
+                var firstMilliseconds=timer.ElapsedMilliseconds;
                 await viewer.VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));if(viewer.VerificationStatus.HdrEffective==0||viewer.VerificationStatus.VsrEvaluations!=0)throw new InvalidOperationException("Saved-HDR startup must actually evaluate TrueHDR-only");
+                results.Add(new{scenario="saved-HDR-first-photo-glass",window=n+1,openMilliseconds=firstMilliseconds,completeMilliseconds=timer.ElapsedMilliseconds,viewer.VerificationDeviceReused,viewer.FirstFrameMilliseconds,first.PhotoPresents,first.UnfrostedPhotoPresents,first.BlurBuilds});
                 viewer.Close();await viewer.VerificationDisposeAsync();viewer=null;
             }
             File.WriteAllText(report,JsonSerializer.Serialize(new{complete=true,results},new JsonSerializerOptions{WriteIndented=true}));
