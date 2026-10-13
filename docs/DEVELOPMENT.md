@@ -90,15 +90,15 @@ python .\tests\verify_thumbnail_pixels.py
 
 测试需要 Python 与 Pillow。`Generate-Assets.py` 从仓库 `branding/Luma.png` 重新生成维护者提供的透明图标尺寸。NVIDIA SDK 按仓库根目录 [SDK 说明](../external/nvidia/README.md) 放置；不放置也可构建，增强按钮会准确报告不可用。
 
-实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](docs/VERIFICATION.md)。解锁后已补完全屏恢复、小窗口布局、收藏快捷键及系统注册检查；完整系统选择器交互、跨屏和休眠恢复仍需扩展验收。
+实际通过的检查、亮度测量及尚未完成的实机项见 [验证记录](VERIFICATION.md)。解锁后已补完全屏恢复、小窗口布局、收藏快捷键及系统注册检查；完整系统选择器交互、跨屏和休眠恢复仍需扩展验收。
 
 MSIX 为 `artifacts/Luma_0.1.16.0_x64.msix`，便携 ZIP 为 `artifacts/Luma_0.1.16_x64.zip`。包包含实际支持格式的文件关联和开始菜单入口。本地 MSIX 未签名，不能按正式安装包直接安装；需要使用 Publisher 匹配的受信任签名证书，或后续由 Microsoft Store 签名。当前直接使用便携版。未更改系统证书信任或默认关联选择。
 
-用户反馈、性能/体积优化和发行准备持续记录在 [待办清单](docs/TODO.md)，新增事项也统一写入此文档。
+用户反馈、性能/体积优化和发行准备持续记录在 [待办清单](TODO.md)，新增事项也统一写入此文档。
 
 ## 许可与发行
 
-Luma 原创代码及图标使用 MIT；第三方组件适用各自独立许可，详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。This software contains source code provided by NVIDIA Corporation.
+Luma 原创代码及图标使用 MIT；第三方组件适用各自独立许可，详见 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。This software contains source code provided by NVIDIA Corporation.
 
 NVIDIA RTX™ Video SDK 提供 HDR 和 VSR 增强。NVIDIA SDK / DLL 没有重新授予 MIT 许可；本地输出附带 NVIDIA 原始许可。正式发行前仍需完成该许可的分发条件、通知与商标使用核对，以及名称/商标检查、MSIX 签名和商店验收。项目没有公开发布。
 
