@@ -16,6 +16,21 @@
 
 正确 SDR 夹具的 `viewer-lifecycle-20261013-233242` 完整通过：48 个真实预览窗口、HDR-only/VSR-only/组合、多个窗口、忙时关闭与快速翻页，再启动一个窗口确认保存 HDR-only，合计 49 个窗口。完整 RTX 安装、重复安装、卸载、另一副本注册保留及真实图库/默认关联未改动检查通过；两个非法 SDK SHA256 输入均在解压前拒绝，原始运行库字节未改变。actionlint 与公共源码边界校验通过。
 
+### 实际云端标签和消费者包（2026-10-14 完成）
+
+标签 `v0.1.17` 固定源码 `ccd3473e5e00ac9ef28199e977a15588afcda74c`。[完整 RTX 发布运行 38424366673](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38424366673) 的 package / draft 两个任务均成功，私有 SDK 取得、精确输入 SHA256、SDK 链接原生检查、500 个便携文件、11 种关联、隔离安装/重复安装/卸载及另一副本注册保护全部通过。独立 [standard CI 38424361806](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38424361806) 也通过。Release 草稿 `411848447` 自动创建，4 个资产上传完成；没有 SDK ZIP、开发工具、头文件、库、密钥或原照片。
+
+实际从 Release 下载 EXE、ZIP、构建信息和校验值，不以本机候选替代云端包。与 GitHub asset digest、SHA256SUMS 和包内构建信息一致，源码干净、能力为完整 RTX，SDK 输入固定 `5ac1070927e9a89c15ffe09a1232a802b65a9a87`。500 个文件全部完整提取，NVIDIA DLL/PDF 与官方原件逐字节相同，运行库条款哈希和新图标一致。EXE 63629654 字节（60.68 MiB）、ZIP 87815862 字节（83.75 MiB）、展开约 192.92 MiB。下载及解压验证报告在 `artifacts/release-preparation/cloud-consumer-verification.json`。
+
+| 云端资产 | SHA256 |
+| --- | --- |
+| `Luma-0.1.17-windows-x64-rtx-setup.exe` | `290b1ab932fc91ee2cb4258f19cd0e712982ca2e458f395e81e1f69a00f66802` |
+| `Luma-0.1.17-windows-x64-rtx-portable.zip` | `85f4f716c80c9c20ef57db36fc4328deeb254ef1e6998d218e02c44ec25cce8a` |
+
+云端包的原生 DLL 在实际 RTX 5070 Ti Laptop / HDR 开启屏幕重新运行：SDK 成功结果 `0x00000001`，4K JPG 高光 12.656 scRGB，HDR-only 的 VSR 调用为 0；VSR-only、组合、40 次缓存对照、原生 HDR 旁路及 FP16 像素检查通过。云端 EXE 的 `viewer-lifecycle-20261013-235834` 完整通过 49 个真实窗口、关闭重开、并发/忙时关闭、偏好恢复；`viewer-interaction-20261014-000935` 的导航、缩放平移、全屏、40 次原图对照及图库刷新检查也通过。对照提交中位 0.06 ms、最大 0.16 ms，没有新增处理任务或 AI 调用；这是提交计时，不是屏幕端到端延迟。24 次图库尺寸/Composition 采样最大仍出现 120.2 ms，不将其归为性能已解决，既有性能待办保留。
+
+Computer Use 实际观察云端消费者窗口，状态为“RTX HDR 已生效”，控件和缩略图可显示；截图仅用于布局，不衡量 HDR 亮度。用户于 2026-10-14 确认 HDR 正常生效，重复检查停止。当前包仍未签名，Release 保持草稿，正式公开下载、商标/商业发行事项和 Store 上架没有自动宣称完成。
+
 ## v0.1.16 标签发布试跑（2026-10-13）
 
 用户明确要求发布当前版本标签进行验证。附注标签 `v0.1.16` 已推送，标签对象 `3e434bee863479abcd91cddc7099ff631004181a`，剥离后指向 `d07199c1ba9c6ad42fba081da1cbfe945eb3f219`；本地与远程一致，Tagger 为 OpenAI Codex，附注保留已确认的人类共同作者。标签对应版本为项目 `0.1.16` / MSIX `0.1.16.0`，对应源码的 [standard CI](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38408480614) 已完整通过。
