@@ -122,10 +122,10 @@ try:
         check(d.LumaEffects(r,0,0,0,1));check(d.LumaUseFrame(r,p));check(d.LumaView(r,1,0,0,0));outside=pixel(r,15,200);red=pixel(r,90,200)
         rect=(GlassRect*1)(GlassRect(40,40,320,320,18,1));check(d.LumaSetGlass(r,rect,1,0));check(d.LumaRepaint(r))
         left=pixel(r,90,200);right=pixel(r,310,200)
-        assert left[0]>right[0]+.3 and right[2]>left[2]+.3,'Glass must sample actual red/blue photo, not a flat tint'
+        assert left[0]>right[0]+.3*s.sdrWhite and right[2]>left[2]+.3*s.sdrWhite,'Glass must sample actual red/blue photo, not a flat tint'
         assert pixel(r,15,200)==outside,'Glass must never blur or alter the photo outside its panel'
-        assert left[1]>red[1] and left[0]>1,'FP16 glass tint must retain linear high-range values'
-        middle=pixel(r,200,200);assert middle[0]<left[0]-.3 and middle[2]>left[2]+.3,'Gaussian blur must mix the actual red/blue boundary'
+        assert left[1]>red[1],'Light glass tint must preserve photo sampling and add its neutral tint'
+        middle=pixel(r,200,200);assert middle[0]<left[0]-.05*s.sdrWhite and middle[2]>left[2]+.05*s.sdrWhite,('Gaussian blur must mix the actual red/blue boundary',middle,left,s.sdrWhite)
         popup=(c.c_uint8*(320*320*4))();check(d.LumaReadGlass(r,rect[0],0,320,320,popup,len(popup)))
         assert popup[(160*320+30)*4+2]>popup[(160*320+280)*4+2]+40,'Popup brush must inherit actual photo colors'
         assert all(popup[n]==255 for n in range(3,len(popup),4)),'Popup background must occlude underlying XAML chrome'
@@ -138,10 +138,25 @@ try:
         rect[0].opacity=1;check(d.LumaSetGlass(r,rect,1,0));check(d.LumaView(r,.5,0,0,0));
         edge=[pixel(r,x,200) for x in range(65,135)]
         assert max(abs(a[ch]-b[ch]) for a,b in zip(edge,edge[1:]) for ch in range(3))<.08*s.sdrWhite,'Glass has a hard seam at the transparent photo boundary'
-        assert max(abs(edge[0][ch]-edge[-1][ch]) for ch in range(3))>.25,'Native Gaussian must retain a gradual photo/letterbox transition'
+        assert max(abs(edge[0][ch]-edge[-1][ch]) for ch in range(3))>.25*s.sdrWhite,'Native Gaussian must retain a gradual photo/letterbox transition'
         check(d.LumaSetGlass(r,None,0,0));check(d.LumaRepaint(r))
         print(f'PASS: real photo-sampled FP16 glass, rounded panels, dark theme, untouched photo and fade; red {left}, blue {right}')
     finally:d.LumaFreeFrame(p)
+    # SDR photographs are correctly <=1 on a standard-brightness SDR display.
+    # Test HDR glass with actual float HDR source data, independently of the
+    # monitor's HDR switch and SDR white level; do not infer HDR from SDR tint.
+    if (out/'linear-hdr.jxr').exists():
+        i,p=decode('linear-hdr.jxr')
+        try:
+            check(d.LumaUseFrame(r,p));check(d.LumaView(r,1,0,0,0));original=pixel(r,15,200)
+            assert i.hdr and original[0]>3.8
+            rect=(GlassRect*1)(GlassRect(40,40,320,320,18,1));check(d.LumaSetGlass(r,rect,1,0));check(d.LumaRepaint(r))
+            hdr_glass=pixel(r,200,200)
+            assert hdr_glass[0]>1,('Real HDR glass must keep FP16 values above 1 on SDR and HDR displays',hdr_glass)
+            assert pixel(r,15,200)==original,'HDR glass must not alter the photo outside its panel'
+            check(d.LumaSetGlass(r,None,0,0));check(d.LumaRepaint(r))
+            print(f'PASS: actual float HDR glass preserves high-range FP16 independent of monitor HDR; value {hdr_glass[0]:.3f}')
+        finally:d.LumaFreeFrame(p)
     # Fine repeating texture should converge to its linear-light average when reduced.
     small=Image.frombytes('RGB',(256,256),bytes(v for y in range(256) for x in range(256) for v in ((255,255,255) if (x+y)%2 else (0,0,0))))
     small.save(out/'checker.png');i,p=decode('checker.png')
