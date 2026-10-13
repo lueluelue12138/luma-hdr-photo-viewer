@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Storage;
 using Windows.Storage.FileProperties;
 using Windows.Storage.Streams;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace Luma.App;
 public sealed class Thumbnail : Grid
@@ -13,18 +14,20 @@ public sealed class Thumbnail : Grid
     public string? FilePath {get=>(string?)GetValue(FilePathProperty);set=>SetValue(FilePathProperty,value);}
     public static readonly DependencyProperty AlbumIdProperty=DependencyProperty.Register(nameof(AlbumId),typeof(long),typeof(Thumbnail),new PropertyMetadata(0L,(d,e)=>((Thumbnail)d).Refresh()));
     public long AlbumId {get=>(long)GetValue(AlbumIdProperty);set=>SetValue(AlbumIdProperty,value);}
-    private readonly Image image=new(){Stretch=Stretch.UniformToFill};
+    private readonly Image image=new(){Stretch=Stretch.UniformToFill,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
     private readonly FontIcon placeholder=new(){Glyph="\uEB9F",FontSize=24,Opacity=0.25};
     private static readonly SemaphoreSlim Slots=new(4);
-    private static readonly Dictionary<string,(BitmapImage Image,long Bytes,long Used)> Images=new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string,(ImageSource Image,long Bytes,long Used)> Images=new(StringComparer.OrdinalIgnoreCase);
     private sealed class ImageRequest
     {
         internal readonly List<Func<bool>> Consumers=[];
-        internal Task<BitmapImage> Loading=null!;
+        internal Task<ImageSource> Loading=null!;
     }
     private static readonly Dictionary<string,ImageRequest> Pending=new(StringComparer.OrdinalIgnoreCase);
     private static long used,cacheBytes,cacheVersion;
     internal static long ShellLoads {get;private set;}
+    internal static long WicLoads {get;private set;}
+    internal static bool PreferWic {get;set;}=true; // controlled only by the isolated gallery verifier
     internal static long SkippedLoads {get;private set;}
     private static event Action<string>? Invalidated;
     internal static void InvalidateFolder(string folder)
@@ -35,6 +38,7 @@ public sealed class Thumbnail : Grid
         Pending.Clear();cacheVersion++;Invalidated?.Invoke(prefix);
     }
     internal static int CachedImages=>Images.Count;
+    internal static long CachedBytes=>cacheBytes;
     internal string? DisplayedPath {get;private set;}
     private long generation;
     private bool active;
@@ -51,7 +55,8 @@ public sealed class Thumbnail : Grid
                 if(g!=generation||!active)return;
                 try
                 {
-                    var bitmap=await GetImageAsync(paths[candidate],()=>g==generation&&active);if(g!=generation||!active)return;image.Source=bitmap;DisplayedPath=paths[candidate];placeholder.Visibility=Visibility.Collapsed;return;
+                    uint edge=(uint)Math.Clamp(Math.Ceiling(320*(XamlRoot?.RasterizationScale??1)),320,1024);
+                    var bitmap=await GetImageAsync(paths[candidate],edge,()=>g==generation&&active);if(g!=generation||!active)return;image.Source=bitmap;DisplayedPath=paths[candidate];placeholder.Visibility=Visibility.Collapsed;return;
                 }
                 catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
                 {
@@ -65,15 +70,16 @@ public sealed class Thumbnail : Grid
         }
         catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException or OperationCanceledException){ /* Offline/unsupported thumbnail has an honest placeholder. */ }
     }
-    private static async Task<BitmapImage> GetImageAsync(string path,Func<bool> needed)
+    private static async Task<ImageSource> GetImageAsync(string path,uint edge,Func<bool> needed)
     {
-        if(Images.TryGetValue(path,out var cached)){Images[path]=(cached.Image,cached.Bytes,++used);return cached.Image;}
-        if(!Pending.TryGetValue(path,out var request)){request=new();request.Consumers.Add(needed);Pending[path]=request;request.Loading=LoadImageAsync(path,request);}
+        string key=path+"|"+edge; // Windows filenames cannot contain '|'.
+        if(Images.TryGetValue(key,out var cached)){Images[key]=(cached.Image,cached.Bytes,++used);return cached.Image;}
+        if(!Pending.TryGetValue(key,out var request)){request=new();request.Consumers.Add(needed);Pending[key]=request;request.Loading=LoadImageAsync(path,edge,key,request);}
         else request.Consumers.Add(needed);
         try{return await request.Loading;}
-        finally{request.Consumers.Remove(needed);if(Pending.TryGetValue(path,out var current)&&current==request&&request.Loading.IsCompleted)Pending.Remove(path);}
+        finally{request.Consumers.Remove(needed);if(Pending.TryGetValue(key,out var current)&&current==request&&request.Loading.IsCompleted)Pending.Remove(key);}
     }
-    private static async Task<BitmapImage> LoadImageAsync(string path,ImageRequest request)
+    private static async Task<ImageSource> LoadImageAsync(string path,uint edge,string key,ImageRequest request)
     {
         long version=cacheVersion;await Slots.WaitAsync();
         try
@@ -81,24 +87,52 @@ public sealed class Thumbnail : Grid
             // A recycled/offscreen card no longer needs its queued Shell RPC.
             // This check runs on XAML, before dispatching any filesystem work.
             if(!request.Consumers.Any(needed=>needed())){SkippedLoads++;throw new OperationCanceledException();}
-            ShellLoads++;
-            // Keep Shell RPC off the UI thread; reuse the decoded, bounded image
-            // when virtualization unloads/reloads a card during live resizing.
-            var bytes=await Task.Run(async()=>
+            ImageSource bitmap;long size;(FrameInfo info,byte[] pixels)? decoded=null;
+            string extension=Path.GetExtension(path);
+            if(PreferWic&&(extension.Equals(".jpg",StringComparison.OrdinalIgnoreCase)||extension.Equals(".jpeg",StringComparison.OrdinalIgnoreCase)))
             {
-                var file=await StorageFile.GetFileFromPathAsync(path);
-                using var thumb=await file.GetThumbnailAsync(ThumbnailMode.PicturesView,320,ThumbnailOptions.UseCurrentScale);
-                using var stream=thumb is not null&&thumb.Type==ThumbnailType.Image?null:await file.OpenReadAsync();
-                var source=stream??thumb;if(source is null||source.Size>64*1024*1024)throw new IOException("Thumbnail source exceeds its memory budget.");
-                using var reader=new DataReader(source.GetInputStreamAt(0));await reader.LoadAsync((uint)source.Size);var data=new byte[(int)source.Size];reader.ReadBytes(data);return data;
-            });
-            using var memory=new InMemoryRandomAccessStream();using(var writer=new DataWriter(memory)){writer.WriteBytes(bytes);await writer.StoreAsync();writer.DetachStream();}memory.Seek(0);
-            var bitmap=new BitmapImage(){DecodePixelWidth=320};await bitmap.SetSourceAsync(memory);
-            long size=(long)bitmap.PixelWidth*bitmap.PixelHeight*4;
+                WicLoads++;
+                // JPEG uses the existing scaled WIC/ICC/EXIF decoder directly,
+                // avoiding Shell RPC and a second encoded bitmap decode.
+                decoded=await Task.Run<(FrameInfo info,byte[] pixels)?>(()=>
+                {
+                    try
+                    {
+                        Native.Check(Native.LumaDecodeSized(path,edge,out var info,out var pointer));
+                        using var frame=new DecodedFrame(pointer,info);
+                        if(info.NativeHdr!=0)return null; // preserve Windows' HDR thumbnail provider
+                        var pixels=new byte[checked((int)info.Bytes)];Native.Check(Native.LumaCopySdrBgra(pointer,pixels,info.Bytes));
+                        return(info,pixels);
+                    }
+                    catch(System.Runtime.InteropServices.COMException){return null;}
+                });
+            }
+            if(decoded is {} sdr)
+            {
+                var writable=new WriteableBitmap((int)sdr.info.Width,(int)sdr.info.Height);
+                using(var stream=writable.PixelBuffer.AsStream())stream.Write(sdr.pixels,0,sdr.pixels.Length);
+                writable.Invalidate();bitmap=writable;size=sdr.info.Width*(long)sdr.info.Height*4;
+            }
+            else
+            {
+                ShellLoads++;
+                // Other formats retain the Windows thumbnail provider.
+                var bytes=await Task.Run(async()=>
+                {
+                    var file=await StorageFile.GetFileFromPathAsync(path);
+                    using var thumb=await file.GetThumbnailAsync(ThumbnailMode.PicturesView,320,ThumbnailOptions.UseCurrentScale);
+                    using var stream=thumb is not null&&thumb.Type==ThumbnailType.Image?null:await file.OpenReadAsync();
+                    var source=stream??thumb;if(source is null||source.Size>64*1024*1024)throw new IOException("Thumbnail source exceeds its memory budget.");
+                    using var reader=new DataReader(source.GetInputStreamAt(0));await reader.LoadAsync((uint)source.Size);var data=new byte[(int)source.Size];reader.ReadBytes(data);return data;
+                });
+                using var memory=new InMemoryRandomAccessStream();using(var writer=new DataWriter(memory)){writer.WriteBytes(bytes);await writer.StoreAsync();writer.DetachStream();}memory.Seek(0);
+                var encoded=new BitmapImage(){DecodePixelWidth=320};await encoded.SetSourceAsync(memory);
+                bitmap=encoded;size=(long)encoded.PixelWidth*encoded.PixelHeight*4;
+            }
             if(version==cacheVersion&&size<=32*1024*1024)
             {
-                if(Images.Remove(path,out var old))cacheBytes-=old.Bytes;
-                Images[path]=(bitmap,size,++used);cacheBytes+=size;
+                if(Images.Remove(key,out var old))cacheBytes-=old.Bytes;
+                Images[key]=(bitmap,size,++used);cacheBytes+=size;
                 foreach(var item in Images.OrderBy(p=>p.Value.Used).ToArray()){if(cacheBytes<=32*1024*1024&&Images.Count<=96)break;Images.Remove(item.Key);cacheBytes-=item.Value.Bytes;}
             }
             return bitmap;

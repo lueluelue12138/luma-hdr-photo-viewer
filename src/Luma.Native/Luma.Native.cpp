@@ -447,6 +447,13 @@ API HRESULT __cdecl LumaDecodeSized(const wchar_t* path,UINT maxEdge,FrameInfo* 
 API HRESULT __cdecl LumaCreateFast(IUnknown* panel,HWND hwnd,void** result){if(!result)return E_POINTER;*result=nullptr;return safe([&]{*result=new Renderer(panel,hwnd,true);});}
 API HRESULT __cdecl LumaInitEffects(void* r){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->initEffects();});}
 API void __cdecl LumaFreeFrame(void* f){delete static_cast<Frame*>(f);}
+// Thumbnail-only SDR copy. HDR photos continue through the FP16 renderer.
+API HRESULT __cdecl LumaCopySdrBgra(void* f,uint8_t* pixels,uint64_t bytes){
+    if(!f||!pixels)return E_POINTER;return safe([&]{auto& frame=*static_cast<Frame*>(f);
+        if(frame.info.nativeHdr)throw Failure{E_NOTIMPL};if(bytes<frame.info.bytes)throw Failure{E_INVALIDARG};
+        for(size_t i=0;i<frame.pixels.size();i+=4){auto p=frame.pixels.data()+i;unsigned a=p[3];pixels[i]=uint8_t((p[2]*a+127)/255);pixels[i+1]=uint8_t((p[1]*a+127)/255);pixels[i+2]=uint8_t((p[0]*a+127)/255);pixels[i+3]=uint8_t(a);}
+    });
+}
 API HRESULT __cdecl LumaCreate(IUnknown* panel,HWND hwnd,void** result){if(!result)return E_POINTER;*result=nullptr;return safe([&]{*result=new Renderer(panel,hwnd);});}
 API void __cdecl LumaDestroy(void* r){if(r){auto p=static_cast<Renderer*>(r);p->shutdownEffects();delete p;}}
 API HRESULT __cdecl LumaResetForReuse(void* r){

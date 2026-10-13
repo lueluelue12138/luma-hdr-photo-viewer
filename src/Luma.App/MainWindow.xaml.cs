@@ -18,6 +18,9 @@ public sealed partial class MainWindow : Window
     private CancellationTokenSource? searchCancellation;private readonly CancellationTokenSource lifetime=new();
     private readonly List<ViewerWindow> viewers=[];
     private int responsiveBand=-1;
+    private bool refreshAllPending;
+    private readonly HashSet<long> refreshAlbumsPending=[];
+    private Task refreshTask=Task.CompletedTask;
     internal TaskCompletionSource VerificationReady {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal async Task<object> VerificationGalleryAsync(string folder)
     {
@@ -29,10 +32,10 @@ public sealed partial class MainWindow : Window
         Check(cover?.DisplayedPath is {} displayed&&!Path.GetFileName(displayed).StartsWith("000-"),"Corrupt default cover must fall back to a readable photograph");
         string removed=Path.Combine(folder,"photo-00.jpg");File.Delete(removed);await RefreshAllAsync();
         Check((await App.Store.PhotosAsync(PhotoScope.Album,id)).All(p=>p.Path!=removed&&!p.Name.StartsWith("._")),"Refresh button path must hide removed and metadata entries");
-        await Task.Delay(350);cover=AlbumsRepeat.TryGetElement(0) is {} refreshed?FindThumbnail(refreshed):null;var items=AlbumsRepeat.ItemsSource;var image=cover?.DisplayedPath;long loads=Thumbnail.ShellLoads;
+        await Task.Delay(350);cover=AlbumsRepeat.TryGetElement(0) is {} refreshed?FindThumbnail(refreshed):null;var items=AlbumsRepeat.ItemsSource;var image=cover?.DisplayedPath;long loads=Thumbnail.ShellLoads+Thumbnail.WicLoads;
         await RefreshAllAsync();Check(ReferenceEquals(items,AlbumsRepeat.ItemsSource),"Unchanged refresh must preserve realized album cards");
         Check(cover?.DisplayedPath==image,"Unchanged refresh must keep its loaded cover visible");
-        Check(Thumbnail.ShellLoads==loads,"Unchanged refresh must not reload Shell thumbnails");
+        Check(Thumbnail.ShellLoads+Thumbnail.WicLoads==loads,"Unchanged refresh must not reload thumbnails");
         Nav.SelectedItem=Nav.MenuItems.OfType<NavigationViewItem>().First(n=>n.Tag is long album&&album==id);await ReloadAsync();await Task.Delay(700);
         var position=AppWindow.Position;var size=AppWindow.Size;var samples=new List<double>();
         for(int n=0;n<24;n++)
@@ -134,10 +137,30 @@ public sealed partial class MainWindow : Window
         catch(OperationCanceledException){}
         finally{ScanProgress.IsActive=false;ScanProgress.Visibility=Visibility.Collapsed;}
     }
-    private async Task RefreshAllAsync(long onlyAlbum=0)
+    private Task RefreshAllAsync(long onlyAlbum=0)
     {
-        if(scanning||closed)return;scanning=true;ScanProgress.IsActive=true;ScanProgress.Visibility=Visibility.Visible;
-        try{foreach(var a in (await App.Store.AlbumsAsync()).Where(a=>onlyAlbum==0||a.Id==onlyAlbum)){ScanText.Text=$"正在刷新 {a.Name}…";var r=await App.Indexer.RefreshAsync(a,lifetime.Token);if(r.Added>0||r.Updated>0||r.Missing>0||r.Offline!=a.Offline)Thumbnail.InvalidateFolder(a.Folder);if(r.Error is not null)App.Log(r.Error);}if(!closed){ScanText.Text="";await ReloadAsync();}}
+        if(closed)return Task.CompletedTask;
+        if(onlyAlbum==0){refreshAllPending=true;refreshAlbumsPending.Clear();}else if(!refreshAllPending)refreshAlbumsPending.Add(onlyAlbum);
+        if(scanning)return refreshTask;
+        scanning=true;refreshTask=DrainRefreshAsync();return refreshTask;
+    }
+    private async Task DrainRefreshAsync()
+    {
+        ScanProgress.IsActive=true;ScanProgress.Visibility=Visibility.Visible;
+        try
+        {
+            // Coalesce requests received during a scan into a subsequent pass;
+            // a refresh after adding a folder must not silently disappear.
+            do
+            {
+                bool all=refreshAllPending;var ids=refreshAlbumsPending.ToArray();refreshAllPending=false;refreshAlbumsPending.Clear();
+                var snapshot=await App.Store.AlbumsAsync();
+                if(verificationBeforeScan is {} pause)await pause();
+                foreach(var a in snapshot.Where(a=>all||ids.Contains(a.Id)))
+                {ScanText.Text=$"正在刷新 {a.Name}…";var r=await App.Indexer.RefreshAsync(a,lifetime.Token);if(r.Added>0||r.Updated>0||r.Missing>0||r.Offline!=a.Offline)Thumbnail.InvalidateFolder(a.Folder);if(r.Error is not null)App.Log(r.Error);}
+                if(!closed){ScanText.Text="";await ReloadAsync();}
+            }while(!closed&&(refreshAllPending||refreshAlbumsPending.Count>0));
+        }
         catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.ToString());ScanText.Text="刷新失败，可稍后重试";}
         finally{scanning=false;ScanProgress.IsActive=false;ScanProgress.Visibility=Visibility.Collapsed;}
     }

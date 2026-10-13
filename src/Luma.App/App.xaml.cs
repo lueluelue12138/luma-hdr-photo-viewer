@@ -39,6 +39,7 @@ public partial class App : Application
             }
             if(test>=0&&cli.Contains("--verify-gallery-performance"))
             {
+                Thumbnail.PreferWic=!cli.Contains("--shell-control");
                 window=new MainWindow();window.Activate();await ((MainWindow)window).VerificationLargeGalleryAsync(Path.Combine(DataDirectory,"source"));return;
             }
             if(test>=0&&cli.Contains("--verify-startup"))
