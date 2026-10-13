@@ -2,7 +2,9 @@
 from pathlib import Path
 import hashlib
 import json
+import re
 import subprocess
+import time
 import uuid
 import winreg
 import xml.etree.ElementTree as ET
@@ -49,6 +51,30 @@ def run(exe, *args):
     assert p.returncode == 0, (exe.name, p.returncode)
 def read(key, name):
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as h: return winreg.QueryValueEx(h, name)[0]
+
+cleanup_waits = []
+
+def uninstall_fixture(log_name):
+    # Inno can choose unins001.exe when an earlier uninstaller is still being
+    # cleaned up. Read the registered executable rather than assume its number.
+    registered = read(UNINSTALL, 'UninstallString')
+    match = re.fullmatch(r'"([^"]+)"', registered)
+    assert match, 'Unexpected isolated uninstall command'
+    uninstaller = Path(match.group(1)).resolve()
+    assert uninstaller.parent == APP.resolve()
+    assert re.fullmatch(r'unins\d+\.exe', uninstaller.name)
+    assert uninstaller.is_file()
+    run(uninstaller, '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', f'/LOG={OUT}/{log_name}')
+    # The uninstall clone deletes its original EXE after the original process
+    # exits. Wait for those actual files and the fixture uninstall key to go
+    # away before installing again; do not race cleanup with the next install.
+    start = time.monotonic()
+    while ((APP/'Luma.App.exe').exists() or any(APP.glob('unins*')) or
+           optional_value(UNINSTALL, 'UninstallString') is not None):
+        assert time.monotonic()-start < 30, 'Isolated uninstall cleanup did not finish'
+        time.sleep(.05)
+    cleanup_waits.append(round((time.monotonic()-start)*1000, 1))
+
 args = ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', f'/DIR={APP}', f'/LOG={OUT}/install.log', '/TASKS=']
 run(EXE, *args)
 assert (APP/'Luma.App.exe').exists() and (APP/'unins000.exe').exists()
@@ -63,7 +89,7 @@ assert command == f'"{APP}\\Luma.App.exe" "%1"'
 for extension in formats: assert read(REG+r'\FileAssociations', extension) == 'Luma.InstallerTest.Photo'
 run(EXE, *args)  # Repeat/upgrade must keep the same installation and registrations.
 assert read(PROG+r'\shell\open\command', '') == command
-run(APP/'unins000.exe', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', f'/LOG={OUT}/uninstall.log')
+uninstall_fixture('uninstall.log')
 assert not (APP/'Luma.App.exe').exists()
 for key in [REG, PROG, UNINSTALL]:
     try:
@@ -78,7 +104,7 @@ assert (hashlib.sha256(production_db.read_bytes()).hexdigest() if production_db.
 run(EXE, *args)
 replacement=f'"{DATA}\\portable-copy.exe" "%1"'
 with winreg.OpenKey(winreg.HKEY_CURRENT_USER,PROG+r'\shell\open\command',0,winreg.KEY_SET_VALUE) as h:winreg.SetValueEx(h,'',0,winreg.REG_SZ,replacement)
-run(APP/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',f'/LOG={OUT}/other-owner-uninstall.log')
+uninstall_fixture('other-owner-uninstall.log')
 assert read(PROG+r'\shell\open\command','')==replacement
 assert read(r'Software\RegisteredApplications','Luma.InstallerTest')==REG
 def remove_fixture_key(key):
@@ -95,6 +121,6 @@ with winreg.OpenKey(winreg.HKEY_CURRENT_USER,r'Software\RegisteredApplications',
 for extension in formats:
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER,'Software\\Classes\\'+extension+r'\OpenWithProgids',0,winreg.KEY_SET_VALUE) as h:winreg.DeleteValue(h,'Luma.InstallerTest.Photo')
 assert production_registration()==registration_before
-report = {'installed_payload_byte_matches': True, 'repeat_install_passed': True, 'format_associations': len(formats), 'uninstall_cleaned_fixture_registration': True, 'other_copy_registration_preserved':True, 'isolated_library_preserved': True, 'production_library_and_default_associations_untouched': True, 'variant': metadata['variant']}
+report = {'installed_payload_byte_matches': True, 'repeat_install_passed': True, 'format_associations': len(formats), 'uninstall_cleaned_fixture_registration': True, 'other_copy_registration_preserved':True, 'uninstall_cleanup_wait_ms': cleanup_waits, 'isolated_library_preserved': True, 'production_library_and_default_associations_untouched': True, 'variant': metadata['variant']}
 (OUT/'verification.json').write_text(json.dumps(report, indent=2)+'\n', encoding='utf-8')
 print(json.dumps(report, indent=2))
