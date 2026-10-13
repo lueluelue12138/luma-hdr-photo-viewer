@@ -35,17 +35,19 @@ try:assert copy(info,frame)[:4]==bytes([0,0,255,255]),'GIF thumbnail did not use
 finally:d.LumaFreeFrame(frame)
 profile=ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
 Image.new('RGB',(2048,1024),(48,96,160)).save(out/'profile.jpg',quality=100,subsampling=0,icc_profile=profile)
-info,frame=decode(out/'profile.jpg')
-try:
-    assert (info.w,info.h)==(480,240);pixels=copy(info,frame);assert all(abs(pixels[i]-v)<=2 for i,v in enumerate([160,96,48,255])),'ICC/channel order changed thumbnail color'
-finally:d.LumaFreeFrame(frame)
+for edge in (168,448,480):
+    info,frame=decode(out/'profile.jpg',edge)
+    try:
+        assert (info.w,info.h)==(edge,edge//2);pixels=copy(info,frame);assert all(abs(pixels[i]-v)<=2 for i,v in enumerate([160,96,48,255])),'ICC/channel order changed thumbnail color'
+    finally:d.LumaFreeFrame(frame)
 image=Image.new('RGB',(2048,1024),(255,0,0));image.paste((0,0,255),(1024,0,2048,1024));exif=Image.Exif();exif[274]=6;image.save(out/'orientation.jpg',quality=100,subsampling=0,exif=exif)
-info,frame=decode(out/'orientation.jpg')
-try:
-    assert (info.w,info.h,info.ow,info.oh)==(240,480,1024,2048);pixels=copy(info,frame)
-    top=pixels[(120*info.w+120)*4:][:4];bottom=pixels[(360*info.w+120)*4:][:4]
-    assert top[2]>240 and top[0]<5 and bottom[0]>240 and bottom[2]<5,'EXIF rotation changed thumbnail orientation'
-finally:d.LumaFreeFrame(frame)
+for edge in (168,448,480):
+    info,frame=decode(out/'orientation.jpg',edge)
+    try:
+        assert (info.w,info.h,info.ow,info.oh)==(edge//2,edge,1024,2048);pixels=copy(info,frame)
+        top=pixels[(info.h//4*info.w+info.w//2)*4:][:4];bottom=pixels[(info.h*3//4*info.w+info.w//2)*4:][:4]
+        assert top[2]>240 and top[0]<5 and bottom[0]>240 and bottom[2]<5,'EXIF rotation changed thumbnail orientation'
+    finally:d.LumaFreeFrame(frame)
 hdr=root/'artifacts/native-tests/linear-hdr.jxr';assert hdr.is_file(),'Generate the existing HDR fixture first'
 info,frame=decode(hdr,64)
 try:

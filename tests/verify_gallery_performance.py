@@ -33,6 +33,8 @@ if a.read_only_folder:
     sampled=[inputs[i*(len(inputs)-1)//31] for i in range(32)]
     for original in dict.fromkeys(sampled):original_hashes[original]=hashlib.sha256(original.read_bytes()).hexdigest()
     dataset={'kind':'complete-read-only-album','count':count,'sourceBytes':sum(s[0] for s in source_before.values()),'sampledOriginalHashes':len(original_hashes),'sourceHashes':list(original_hashes.values()),'fixtureBytes':0,'filesystemCacheCleared':False}
+    if a.viewer_stress:
+        fixture=source/'thumbnail-dedupe.png';Image.new('RGB',(2048,1024),(48,96,160)).save(fixture);fixtures.append(fixture);dataset['fixtureBytes']=fixture.stat().st_size
 elif a.large_photo or a.large_folder:
     if a.large_folder and len(originals)<count:p.error('The folder has fewer JPEG photographs than requested')
     inputs=originals[:count] if a.large_folder else [a.large_photo.resolve()]*count
@@ -87,6 +89,9 @@ print({k:v for k,v in data.items() if k not in ('dispatcherLatency','dispatcherS
 if data.get('resources'):
     print('Peak process memory (includes WinUI/native/transient buffers):',{key:max(sample[key] for sample in data['resources']) for key in ('workingSetBytes','privateBytes')})
 if a.viewer_stress:
+    if 'thumbnailRequestSharingVerified' in data:assert data['thumbnailRequestSharingVerified']
+    if any('largerThumbnailCacheHits' in r for r in data['resources']):
+        assert max(r.get('largerThumbnailCacheHits',0) for r in data['resources'])>0,'No completed gallery thumbnail was reused by the compact filmstrip'
     for scenario in ('random-SDR','prefetched-SDR'):
         samples=sorted(r['firstFrame'] for r in data['results'] if r['scenario']==scenario)
         print(f'{scenario}: n={len(samples)}, median={statistics.median(samples):.2f} ms, P95={samples[int(len(samples)*.95)]:.2f} ms, max={max(samples):.2f} ms; {folder}')

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Luma.Core;
+using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace Luma.App;
 
@@ -15,7 +16,7 @@ public sealed partial class MainWindow
         object Resource(string phase)
         {
             using var process=Process.GetCurrentProcess();var cache=FrameCache.Shared.Metrics;
-            return new{phase,workingSetBytes=process.WorkingSet64,privateBytes=process.PrivateMemorySize64,cache.Bytes,cache.Frames,thumbnailBytes=Thumbnail.CachedBytes};
+            return new{phase,workingSetBytes=process.WorkingSet64,privateBytes=process.PrivateMemorySize64,cache.Bytes,cache.Frames,thumbnailBytes=Thumbnail.CachedBytes,thumbnailCount=Thumbnail.CachedImages,largerThumbnailCacheHits=Thumbnail.LargerCacheHits};
         }
         var resources=new List<object>();
         try
@@ -56,7 +57,19 @@ public sealed partial class MainWindow
             var latest=Enumerable.Range(0,10).Select(n=>viewer.VerificationSelectAsync(photos.Count-10+n)).ToArray();await Task.WhenAll(latest);await viewer.VerificationPresentationAsync();
             Check(!viewer.VerificationErrorVisible&&viewer.VerificationPhoto==photos[^1].Path,"Overlapping requests did not finish on the final photo");
             await Task.Delay(1000);resources.Add(Resource("settled"));
-            File.WriteAllText(report,JsonSerializer.Serialize(new{complete=true,count=photos.Count,results,resources,overlappingLatestVerified=true,unfrostedPhotoPresents=viewer.VerificationRenderMetrics.UnfrostedPhotoPresents},new JsonSerializerOptions{WriteIndented=true,IncludeFields=true}));
+            string fixture=Path.Combine(App.DataDirectory,"source","thumbnail-dedupe.png");
+            var reached=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var resume=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);int decodes=0;
+            var large=new Thumbnail{FilePath=fixture,Width=320,Height=160};var small=new Thumbnail{FilePath=fixture,DecodeLogicalEdge=112,Width=88,Height=62};
+            Thumbnail.VerificationBeforeDecode=path=>{if(path!=fixture)return Task.CompletedTask;decodes++;reached.TrySetResult();return resume.Task;};
+            try
+            {
+                Root.Children.Add(large);await reached.Task.WaitAsync(TimeSpan.FromSeconds(10));Root.Children.Add(small);await Task.Delay(100);resume.TrySetResult();
+                timer.Restart();while(large.DisplayedPath!=fixture||small.DisplayedPath!=fixture){if(timer.Elapsed>TimeSpan.FromSeconds(10))throw new InvalidOperationException("Shared thumbnail did not complete");await Task.Delay(20);}
+                Check(decodes==1&&ReferenceEquals(large.VerificationImageSource,small.VerificationImageSource),"Two thumbnail sizes decoded the same file twice");
+                Check(large.VerificationImageSource is WriteableBitmap bitmap&&bitmap.PixelWidth>=320,"Compact request replaced the gallery's high-resolution thumbnail");
+            }
+            finally{resume.TrySetResult();Thumbnail.VerificationBeforeDecode=null;Root.Children.Remove(small);Root.Children.Remove(large);}
+            File.WriteAllText(report,JsonSerializer.Serialize(new{complete=true,count=photos.Count,results,resources,thumbnailRequestSharingVerified=true,overlappingLatestVerified=true,unfrostedPhotoPresents=viewer.VerificationRenderMetrics.UnfrostedPhotoPresents},new JsonSerializerOptions{WriteIndented=true,IncludeFields=true}));
         }
         catch(Exception ex){File.WriteAllText(report,JsonSerializer.Serialize(new{complete=false,results,resources,failure=ex.ToString()}));App.Log(ex.ToString());Environment.ExitCode=1;}
         finally{if(viewer is not null){viewer.Close();await viewer.VerificationDisposeAsync();}Close();}
