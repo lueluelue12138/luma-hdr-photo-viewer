@@ -19,8 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-This license covers Luma's original code and artwork only. It does not
-relicense NVIDIA SDKs, NVIDIA runtime binaries, Microsoft redistributables,
-or other third-party components. See THIRD-PARTY-NOTICES.md and the licenses
-shipped with those components.
