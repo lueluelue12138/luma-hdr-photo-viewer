@@ -1,5 +1,11 @@
 # Luma 本机验证记录
 
+## v0.1.16 标签发布试跑（2026-10-13）
+
+用户明确要求发布当前版本标签进行验证。附注标签 `v0.1.16` 已推送，标签对象 `3e434bee863479abcd91cddc7099ff631004181a`，剥离后指向 `d07199c1ba9c6ad42fba081da1cbfe945eb3f219`；本地与远程一致，Tagger 为 OpenAI Codex，附注保留已确认的人类共同作者。标签对应版本为项目 `0.1.16` / MSIX `0.1.16.0`，对应源码的 [standard CI](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38408480614) 已完整通过。
+
+[标签工作流 38411915122](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38411915122) 实际触发并完成：精确检出源码成功，RTX 分发前置检查失败，后续 SDK 下载、RTX 构建、安装验证与 Release 草稿任务均跳过。只读检查确认仓库 Actions 的 secrets / variables 列表为空，源码未包含 `packaging/RTX-EULA.rtf`；没有自动打开分发门槛或改用基础版冒充 RTX。远程为 1 个标签、0 个 Release。本次证明标签触发与前置阻断有效，不代表 RTX 安装包的云端发布已完成。后续发布配置继续记录于 TODO，保留本标签指向。
+
 ## 开源与安装流水线准备（2026-10-13）
 
 公开名称确定为 Luma HDR Photo Viewer；应用短名、EXE 与图库路径仍为 Luma。公开源码、正式下载版和宣传分开执行；下方历史记录中的“无远程、未公开”描述的是当时状态。GitHub 云端检查及仓库状态随后按真实结果补充。

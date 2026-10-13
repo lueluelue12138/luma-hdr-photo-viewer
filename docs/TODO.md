@@ -8,7 +8,7 @@
 - [x] 在 `AGENTS.md` 固定后续共同署名流程；确认的人类身份仅写入本地 Git 配置 `luma.coAuthorName` / `luma.coAuthorEmail`，不在通用仓库规则中写死维护者，也不修改全局 Git 身份。工具作者按实际提交工具临时指定。
 - [x] 公开定位确定为 **Luma HDR Photo Viewer**，仓库名 `luma-hdr-photo-viewer`；保留应用内 Luma 品牌、已有数据路径和 EXE 名称。首页突出普通 SDR 照片的 RTX HDR 体验，同时明确原生 HDR 当前格式范围，避免把计划中的格式写成已支持。
 - [x] 换用维护者 2026-10-13 更新的透明山脊 logo；1254×1254 原图压缩为 767429 字节（原 1076238 字节），RGBA 与 alpha 逐像素一致，原下载文件不变。四种 PNG 与十种 ICO 尺寸覆盖标题栏、窗口/任务栏、安装器和 MSIX，生成脚本默认读取仓库内 `branding/Luma.png`。
-- [x] 创建并推送 [GitHub 公开源码仓库](https://github.com/lueluelue12138/luma-hdr-photo-viewer)，默认分支 main、默认工作流权限只读、MIT 识别和共同作者确认；[云端 CI 第 4 次运行](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38406378664) 完整通过。包括 25 项图库、SDK-free WIC/D3D11/FP16、496 个包内文件、EXE/ZIP、隔离安装/重复安装/卸载与开发产物上传；没有推送标签或创建正式 Release。
+- [x] 创建并推送 [GitHub 公开源码仓库](https://github.com/lueluelue12138/luma-hdr-photo-viewer)，默认分支 main、默认工作流权限只读、MIT 识别和共同作者确认；[云端 CI 第 4 次运行](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38406378664) 完整通过。包括 25 项图库、SDK-free WIC/D3D11/FP16、496 个包内文件、EXE/ZIP、隔离安装/重复安装/卸载与开发产物上传。首次标签试跑见下项，尚无正式下载 Release。
 
 ## GitHub 安装包与发布准备
 
@@ -17,8 +17,9 @@
 - [x] 使用固定 SHA256 和签名核对的 Inno Setup 7.1.0；原生发布使用独立目录，`RequireNvidia` 明确拒绝缺少 SDK，SDK-free 构建不会混入旧 NVIDIA 运行库。25 项图库检查和 SDK-free WIC/D3D11/FP16 检查通过。
 - [x] 修正连续卸载/重新安装验证的时序与卸载器编号假设：从隔离注册信息解析并校验卸载路径，等待文件和卸载键实际清理完再安装。两次本机清理均约 563 ms，完整安装、重复安装及其他副本注册归属保留检查通过；云端复验也完整通过。
 - [x] 编写 `main` / PR 的 Windows CI 与 `v*` 标签的 RTX Release 草稿流程；Actions 固定实际官方提交，普通 CI 无 SDK 秘密，RTX SDK 仅通过私有配置取得，默认分发门槛关闭。actionlint 工作流校验、26 次历史凭据扫描与 standard 云端构建安装流程通过；完整 RTX 标签发布仍需完成下列前置工作。
+- [x] 按用户要求发布当前版本的附注标签 `v0.1.16`（2026-10-13），固定指向已通过完整 CI 的 `d07199c1ba9c6ad42fba081da1cbfe945eb3f219`，工具 Tagger 与人类共同署名已核对。远程标签对象及剥离后的提交一致；[实际发布试跑 38411915122](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38411915122) 检出成功，随后因 RTX 分发门槛未配置而失败，未下载 SDK、构建 RTX 包或创建 Release。只证明标签触发与门槛有效，不代表完整自动发布成功。
 - [ ] 完成 NVIDIA 下载许可和补充条款的具体分发核对、受控构建机使用条件、下游保护条款与适用通知/商标事项；审阅后提供 `packaging/RTX-EULA.rtf`，再启用 `RTX_DISTRIBUTION_READY`，不能由自动脚本假定完成。
-- [ ] 配置获准的私有 SDK 来源与校验值，实际跑通完整 RTX 标签构建、上传及 Release 草稿；目前不上传 SDK、完整 RTX 产物或推送 Release 标签。
+- [ ] 配置获准的私有 SDK 来源与校验值，实际跑通完整 RTX 标签构建、上传及 Release 草稿；`v0.1.16` 已推送，私有下载源、校验值、下游许可与分发就绪设置仍未完成。下游许可需要加入源码，因此完整修复应提交后使用新版本标签验证，保留原标签指向，不强制移动标签；SDK 仍不公开上传。
 - [ ] 确定代码签名方案，验证安装包与应用签名、升级/卸载和下载信任体验；当前 Luma EXE 安装包未签名，不等于编译器签名。
 - [ ] 准备可以公开的照片样例、HDR 说明和界面截图；性能与格式限制保持准确。正式版本发布和宣传由维护者另行决定。
 - [ ] 统一版本来源与发布检查，逐步补充长期安装升级、遗留依赖清理与版本迁移验证；MSIX / Store 路线继续留在体积与发布部分。
