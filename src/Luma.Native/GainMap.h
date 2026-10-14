@@ -11,8 +11,10 @@
 
 #include <xmllite.h>
 #include <shlwapi.h>
+#include <ultrahdr/jpegr.h>
 #pragma comment(lib,"xmllite.lib")
 #pragma comment(lib,"shlwapi.lib")
+#include "XmpGainMap.h"
 
 struct AppleGainMetadata {unsigned version{};float headroom{};};
 AppleGainMetadata appleGainMetadata(const std::vector<uint8_t>& xml){
@@ -33,14 +35,18 @@ AppleGainMetadata appleGainMetadata(const std::vector<uint8_t>& xml){
 struct GainMapInput {
     std::unique_ptr<uhdr_codec_private_t,decltype(&uhdr_release_decoder)> decoder{uhdr_create_decoder(),uhdr_release_decoder};
     bool apple=false;float appleHeadroom=1;
+    std::vector<uint8_t> baseBytes,gainBytes;uhdr_gainmap_metadata_t metadata{};UINT gainWidth=0,gainHeight=0;bool metadataOverride=false;
 };
-std::vector<uint8_t> appleJpegXml(uhdr_mem_block_t* data){
+std::vector<uint8_t> gainJpegXml(uhdr_mem_block_t* data,const char* nameSpace,bool* iso=nullptr){
     if(!data||data->data_sz<4)return {};auto bytes=static_cast<uint8_t*>(data->data);size_t p=2;
+    std::vector<uint8_t> xml;
     while(p+4<data->data_sz&&p<1024*1024){if(bytes[p++]!=255)break;unsigned marker=bytes[p++];if(marker==0xda||marker==0xd9)break;size_t n=(bytes[p]<<8)|bytes[p+1];p+=2;if(n<2||n-2>data->data_sz-p)throw Failure{WINCODEC_ERR_BADIMAGE};n-=2;
         std::string_view value(reinterpret_cast<char*>(bytes+p),n);std::string prefix="http://ns.adobe.com/xap/1.0/";prefix.push_back(0);
-        if(marker==0xe1&&value.starts_with(prefix)&&value.find("http://ns.apple.com/HDRGainMap/1.0/")!=std::string::npos)return {bytes+p+prefix.size(),bytes+p+n};p+=n;
-    }return {};
+        if(marker==0xe2&&iso&&value.starts_with("urn:iso:std:iso:ts:21496"))*iso=true;
+        if(marker==0xe1&&value.starts_with(prefix)&&value.find(nameSpace)!=std::string::npos){if(!xml.empty())throw Failure{WINCODEC_ERR_BADIMAGE};xml.assign(bytes+p+prefix.size(),bytes+p+n);}p+=n;
+    }return xml;
 }
+std::vector<uint8_t> appleJpegXml(uhdr_mem_block_t* data){return gainJpegXml(data,"http://ns.apple.com/HDRGainMap/1.0/");}
 void checkGain(uhdr_error_info_t result){
     if(result.error_code!=UHDR_CODEC_OK){
         std::string detail=result.has_detail?result.detail:"Unsupported gain map";
@@ -77,11 +83,23 @@ std::unique_ptr<GainMapInput> probeGainMap(const wchar_t* path){
     input.cg=UHDR_CG_UNSPECIFIED;input.ct=UHDR_CT_UNSPECIFIED;input.range=UHDR_CR_UNSPECIFIED;
     checkGain(uhdr_dec_set_image(gain->decoder.get(),&input));
     auto result=uhdr_dec_probe(gain->decoder.get());
-    if(result.error_code!=UHDR_CODEC_OK){if(!explicitHdr)return nullptr;checkGain(result);}
+    if(result.error_code!=UHDR_CODEC_OK){
+        if(!explicitHdr)return nullptr;
+        ultrahdr::JpegR parser;ultrahdr::jpeg_info_struct baseInfo{},gainInfo{};ultrahdr::jpegr_info_struct info{};info.primaryImgInfo=&baseInfo;info.gainmapImgInfo=&gainInfo;
+        checkGain(parser.getJPEGRInfo(&input,&info));
+        // ISO metadata retains precedence. Do not reinterpret a broken ISO
+        // packet as XMP, or pass Apple gain curves through Adobe's formula.
+        if(!gainInfo.isoData.empty()||gainInfo.xmpData.empty())checkGain(result);
+        uhdr_mem_block_t map{};map.data=gainInfo.imgData.data();map.data_sz=gainInfo.imgData.size();if(!appleJpegXml(&map).empty())checkGain(result);
+        gain->metadata=readGainXmp(gainInfo.xmpData);gain->metadataOverride=true;
+        if(!info.width||!info.height||uint64_t(info.width)*info.height>128ull*1024*1024||!gainInfo.width||!gainInfo.height||uint64_t(gainInfo.width)*gainInfo.height>128ull*1024*1024||(gainInfo.numComponents!=1&&gainInfo.numComponents!=3))throw Failure{WINCODEC_ERR_BADIMAGE};
+        gain->baseBytes=std::move(baseInfo.imgData);gain->gainBytes=std::move(gainInfo.imgData);gain->gainWidth=gainInfo.width;gain->gainHeight=gainInfo.height;return gain;
+    }
     int w=uhdr_dec_get_image_width(gain->decoder.get()),h=uhdr_dec_get_image_height(gain->decoder.get());
     if(w<=0||h<=0||uint64_t(w)*h>128ull*1024*1024)throw Failure{E_OUTOFMEMORY,L"HDR JPEG 源尺寸超出解码预算"};
     auto appleXml=appleJpegXml(uhdr_dec_get_gainmap_image(gain->decoder.get()));
     if(!appleXml.empty()){auto a=appleGainMetadata(appleXml);gain->apple=true;gain->appleHeadroom=a.headroom>0?a.headroom:uhdr_dec_get_gainmap_metadata(gain->decoder.get())->hdr_capacity_max;if(!std::isfinite(gain->appleHeadroom)||gain->appleHeadroom<1||gain->appleHeadroom>256)throw Failure{WINCODEC_ERR_BADIMAGE};}
+    else{bool iso=false;auto xml=gainJpegXml(uhdr_dec_get_gainmap_image(gain->decoder.get()),"http://ns.adobe.com/hdr-gain-map/1.0/",&iso);if(!iso&&!xml.empty()){gain->metadata=readGainXmp(xml);gain->metadataOverride=true;}}
     return gain;
 }
 struct GainJpegPixels {UINT width{},height{};std::vector<uint8_t> pixels;uhdr_color_gamut_t gamut=UHDR_CG_UNSPECIFIED;};
@@ -127,12 +145,13 @@ GainJpegPixels gainJpeg(IWICImagingFactory* wic,uhdr_mem_block_t* data,UINT widt
 struct GainReconstruction {std::vector<uint8_t> hdr,sdr,base;GainDisplay display;};
 GainReconstruction reconstructGainMap(IWICImagingFactory* wic,GainMapInput& input,UINT width,UINT height){
     auto decoder=input.decoder.get();
-    auto base=gainJpeg(wic,uhdr_dec_get_base_image(decoder),width,height);
-    UINT gw=UINT(uhdr_dec_get_gainmap_width(decoder)),gh=UINT(uhdr_dec_get_gainmap_height(decoder));
+    uhdr_mem_block_t baseBlock{},mapBlock{};baseBlock.data=input.baseBytes.data();baseBlock.data_sz=input.baseBytes.size();mapBlock.data=input.gainBytes.data();mapBlock.data_sz=input.gainBytes.size();bool alternate=!input.gainBytes.empty();
+    auto base=gainJpeg(wic,alternate?&baseBlock:uhdr_dec_get_base_image(decoder),width,height);
+    UINT gw=alternate?input.gainWidth:UINT(uhdr_dec_get_gainmap_width(decoder)),gh=alternate?input.gainHeight:UINT(uhdr_dec_get_gainmap_height(decoder));
     if(!gw||!gh||uint64_t(gw)*gh>128ull*1024*1024)throw Failure{WINCODEC_ERR_BADIMAGE};
     double ratio=std::min({1.0,double(width)/gw,double(height)/gh});
-    auto map=gainJpeg(wic,uhdr_dec_get_gainmap_image(decoder),input.apple?width:std::max(1u,UINT(std::ceil(gw*ratio))),input.apple?height:std::max(1u,UINT(std::ceil(gh*ratio))));
-    auto parsed=uhdr_dec_get_gainmap_metadata(decoder);if(!parsed)throw Failure{WINCODEC_ERR_BADIMAGE};auto value=*parsed;auto metadata=&value;
+    auto map=gainJpeg(wic,alternate?&mapBlock:uhdr_dec_get_gainmap_image(decoder),input.apple?width:std::max(1u,UINT(std::ceil(gw*ratio))),input.apple?height:std::max(1u,UINT(std::ceil(gh*ratio))),false);
+    auto parsed=input.metadataOverride?&input.metadata:uhdr_dec_get_gainmap_metadata(decoder);if(!parsed)throw Failure{WINCODEC_ERR_BADIMAGE};auto value=*parsed;auto metadata=&value;
     if(input.apple){metadata->hdr_capacity_min=1;metadata->hdr_capacity_max=input.appleHeadroom;}
     ultrahdr::uhdr_gainmap_metadata_ext_t extended(*metadata,ultrahdr::kJpegrVersion);
     uhdr_raw_image_t sdr{},gain{},hdr{};

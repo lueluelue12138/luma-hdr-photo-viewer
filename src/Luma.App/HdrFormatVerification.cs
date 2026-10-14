@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace Luma.App;
 internal static class HdrFormatVerification
 {
-    internal static async Task RunAsync(MainWindow owner,string folder,string? jxr)
+    internal static async Task RunAsync(MainWindow owner,string folder,string? extraPhoto)
     {
         var results=new List<object>();ViewerWindow? viewer=null;
         void Check(bool condition,string message){if(!condition)throw new InvalidOperationException(message);}
@@ -17,8 +17,9 @@ internal static class HdrFormatVerification
             // preferences, album indexes and photos are never modified.
             await ViewerPreferences.UpdateAsync(new(false,false,1));
             var paths=new[]{"android-xmp.jpg","iso-21496.jpg","apple-old.jpg","apple-new.jpg","ordinary.jpg"}.Select(name=>Path.Combine(folder,name)).ToList();
-            if(jxr is not null)paths.Add(jxr);
+            if(extraPhoto is not null)paths.Add(extraPhoto);
             foreach(var name in new[]{"apple-heic.heic","iso-heic.heic","pq-heic.heic","sdr-heic.heic"}){var path=Path.Combine(folder,name);if(File.Exists(path))paths.Add(path);}
+            foreach(var name in new[]{"xmp-rgb.jpg","array-gamma.jpg","two-values.jpg"}){var path=Path.Combine(folder,name);if(File.Exists(path))paths.Add(path);}
             var photos=paths.Select(path=>{var f=new FileInfo(path);return new Photo(path,f.Name,f.Length,f.LastWriteTimeUtc.Ticks);}).ToList();
             viewer=new ViewerWindow(paths[0],photos,owner);viewer.Activate();await viewer.VerificationReady.Task.WaitAsync(TimeSpan.FromSeconds(30));
             for(int n=0;n<paths.Count;n++)
@@ -26,11 +27,11 @@ internal static class HdrFormatVerification
                 if(n!=0)await viewer.VerificationSelectAsync(n);
                 await viewer.VerificationPresentationAsync();
                 var before=viewer.VerificationStatus;var frame=viewer.VerificationFrameInfo;
-                int expected=Path.GetFileName(paths[n]) switch{"apple-heic.heic"=>3,"iso-heic.heic"=>4,"pq-heic.heic"=>1,"sdr-heic.heic"=>0,_=>n==4?0:n==5?1:2};
+                int expected=Path.GetFileName(paths[n]) switch{"apple-heic.heic"=>3,"iso-heic.heic"=>4,"pq-heic.heic"=>1,"sdr-heic.heic" or "ordinary.jpg" or "two-values.jpg"=>0,_=>Path.GetExtension(paths[n]).Equals(".jxr",StringComparison.OrdinalIgnoreCase)?1:2};
                 Check(frame?.NativeHdr==expected&&before.NativeHdr==expected&&before.Fp16!=0,"Actual viewer frame/FP16 format mismatch");
                 if(expected!=0)
                 {
-                    if(expected is 1 or 3 or 4)results.Add(new{file=Path.GetFileName(paths[n]),scenario="native-HDR-controls",controls=await viewer.VerificationHdrControlsAsync()});
+                    if(expected is 1 or 3 or 4||Path.GetFileName(paths[n])=="xmp-rgb.jpg")results.Add(new{file=Path.GetFileName(paths[n]),scenario="native-HDR-controls",controls=await viewer.VerificationHdrControlsAsync()});
                     await viewer.VerificationEffectsAsync(true,true);var effects=viewer.VerificationStatus;
                     Check(effects.HdrEffective==0&&effects.VsrEffective==0&&effects.HdrEvaluations==before.HdrEvaluations&&effects.VsrEvaluations==before.VsrEvaluations,"Native HDR must skip both SDK evaluations even with persisted enhancement requests");
                     int jobs=viewer.VerificationWorkerJobs;var times=new List<double>();
@@ -43,7 +44,16 @@ internal static class HdrFormatVerification
                     await viewer.VerificationEffectsAsync(false,false);
                     results.Add(new{file=Path.GetFileName(paths[n]),nativeHdr=expected,fp16=before.Fp16,hdrActive=before.HdrActive,width=frame?.Width,height=frame?.Height,hdrCalls=effects.HdrEvaluations,vsrCalls=effects.VsrEvaluations,comparisonMilliseconds=times});
                 }
-                else results.Add(new{file=Path.GetFileName(paths[n]),nativeHdr=0,fp16=before.Fp16});
+                else{
+                    bool compatibility=viewer.VerificationHdrCompatibility;
+                    if(Path.GetFileName(paths[n])=="two-values.jpg"){
+                        Check(compatibility&&!viewer.VerificationErrorVisible,"Malformed optional HDR metadata must retain the readable primary JPEG");
+                        int jobs=viewer.VerificationWorkerJobs;await viewer.VerificationEffectsAsync(true,true);
+                        Check(viewer.VerificationCompatibilityControls&&viewer.VerificationStatusText.Contains("兼容预览"),"Fallback controls/status must identify unavailable HDR honestly");
+                        Check(viewer.VerificationWorkerJobs==jobs&&viewer.VerificationStatus.HdrEvaluations==before.HdrEvaluations&&viewer.VerificationStatus.VsrEvaluations==before.VsrEvaluations,"Compatibility preview must not run AI on a failed HDR source");
+                    }
+                    results.Add(new{file=Path.GetFileName(paths[n]),nativeHdr=0,fp16=before.Fp16,compatibility});
+                }
                 Save(false);
             }
             viewer.Close();await viewer.VerificationDisposeAsync();viewer=null;

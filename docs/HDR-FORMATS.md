@@ -1,6 +1,6 @@
 # HDR 照片格式与实现范围
 
-调研及实现：2026-10-14；显示控制更新：2026-10-15，Luma 0.1.20。原生 HDR 不依赖 RTX，也不会重复进行 NVIDIA SDR→HDR 增强。扩展名和整数位深本身不能证明图片是 HDR。
+调研及实现：2026-10-14；显示控制与 RGB XMP 兼容更新：2026-10-15，Luma 0.1.21。原生 HDR 不依赖 RTX，也不会重复进行 NVIDIA SDR→HDR 增强。扩展名和整数位深本身不能证明图片是 HDR。
 
 ## 三个平台
 
@@ -22,6 +22,14 @@ Luma 只解析有界的 HEIF 项目关系和元数据，像素、网格、旋转
 Apple 路径遵循 [Apple 发布的计算说明](https://developer.apple.com/documentation/appkit/applying-apple-hdr-effect-to-your-photos)：底图按其 sRGB / Display P3 曲线线性化，增益按 Rec.709 反变换，使用线性 headroom 相乘；有明确 XMP headroom 时直接读取，否则从 MakerNote 33 / 48 推导。所用参考库把 Apple 的线性 XMP headroom 当成 log2，并按普通 ISO 增益公式处理；0.1.19 在自主代码中修正这两个 Apple 兼容问题，HEIC 与 JPEG 都采用独立公式测试，上游源码未改动。
 
 ISO 元数据及 gain 运算使用固定 [libultrahdr 2.0.2](https://github.com/google/libultrahdr/tree/e5f5a022fe96fc4dc2ee35c19f733a50df807abe)，JPEG 使用 libjpeg-turbo 3.2.0，原始许可和 Adobe 声明保留。PQ HEIC 使用 WIC 返回的浮点线性 scRGB，已与独立 HEVC 解码及 ST.2084 公式核对，经真实 FP16 读回；没有把 10-bit PQ 转为普通 RGBA8 看图。
+
+### RGB XMP 增益图 JPEG（0.1.21）
+
+部分手机 / 编辑软件分别记录 R、G、B 的增益上下限、Gamma 和偏移，采用 `rdf:Seq`，也可用单值广播。[Android 规范](https://developer.android.com/media/platform/hdr-image-format#hdr-gain-map-metadata) 允许这两种表达。固定版本的上游 XMP 解析仅识别部分单值属性；Luma 自主代码使用 Windows XmlLite 补齐属性、元素、1 / 3 项有序数组及命名空间别名，逐通道重建，ISO 元数据仍优先。未改上游源码，也不将 Apple 曲线套成 Adobe 公式。
+
+XML 长度、深度、节点与数值均设边界，禁止 DTD / 外部实体。缺失、无效或当前不支持的可选 HDR 数据会保留可读取的 JPEG 主图，并明确标为 **兼容预览 · HDR 数据未读取**；该状态禁用 HDR / VSR 和 HDR 调参，不将普通预览冒称原生 HDR。实际主图无法解码仍显示加载失败；内存预算错误不作为成功预览吞掉。目前此兼容回退针对 JPEG，HEIC 的未知变体继续列在 TODO。
+
+`tests/verify_xmp_gainmaps.py` 在本机和 CI 生成 RGB / Gamma / 元素 / 命名空间测试图，以独立公式和真实 FP16 读回验证；覆盖异常元数据、ISO 优先、缓存底图切换以及不可读主图。可选的本地用户照片对照不上传文件，不随源码或安装包发行。
 
 ## 亮度与屏幕适配
 

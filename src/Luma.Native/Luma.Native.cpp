@@ -70,7 +70,7 @@ void report(HRESULT hr) { wchar_t* s=nullptr; FormatMessageW(FORMAT_MESSAGE_ALLO
 template<class F> HRESULT safe(F f) noexcept {try{ f(); lastError.clear(); return S_OK; }catch(const Failure& e){if(e.message.empty())report(e.hr);else lastError=e.message;return e.hr;}catch(std::bad_alloc&){lastError=L"Insufficient memory";return E_OUTOFMEMORY;}catch(...){lastError=L"Unexpected native error";return E_FAIL;}}
 struct FrameInfo {uint32_t width,height,originalWidth,originalHeight; int32_t nativeHdr,downsampled; uint64_t bytes;};
 struct GainDisplay {float minimum=1,maximum=1;float offsetSdr[3]{},offsetHdr[3]{};int gamut=0,model=0;};
-struct Frame {FrameInfo info{}; std::vector<uint8_t> pixels,sdrPixels,gainBasePixels;GainDisplay gainDisplay;bool hasAlpha=false;};
+struct Frame {FrameInfo info{}; std::vector<uint8_t> pixels,sdrPixels,gainBasePixels;GainDisplay gainDisplay;bool hasAlpha=false;std::wstring warning;};
 struct Status { wchar_t gpu[128]; wchar_t display[128]; int32_t nvidia,hdrActive,fp16,nativeHdr; float maxNits,sdrWhite; uint64_t gpuBytes; int32_t hdrEffective,vsrEffective,sdkAvailable,hdrAvailable,vsrAvailable; uint32_t ngxResult,hdrEvaluations,vsrEvaluations; wchar_t hdrMessage[256],vsrMessage[256];};
 struct RenderMetrics {uint64_t presents{},photoPresents{},unfrostedPhotoPresents{},blurBuilds{};double lastDrawMilliseconds{};};
 // Separate diagnostics ABI: leave existing status/render-metrics callers intact.
@@ -84,7 +84,7 @@ ComPtr<ID3DBlob> compiledShader(const char* source,const char* entry,const char*
 #include "GainMap.h"
 #include "Heif.h"
 
-std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=false) {
+std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=false,bool compatibility=false) {
     HRESULT init=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
     struct Uninit{bool yes;~Uninit(){if(yes)CoUninitialize();}} uninit{SUCCEEDED(init)};
     ComPtr<IWICImagingFactory> wic; check(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&wic)));
@@ -98,7 +98,9 @@ std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=
     GUID container{};check(decoder->GetContainerFormat(&container));
     // Ordinary JPEGs only scan their small marker header; thumbnails use the
     // backward-compatible SDR base and never reconstruct an HDR image.
-    auto gain=(!thumbnail&&IsEqualGUID(container,GUID_ContainerFormatJpeg))?probeGainMap(path):nullptr;
+    auto fallback=[&](const Failure& error){if(error.hr==E_OUTOFMEMORY)throw error;auto frame=decode(path,maxEdge,false,true);frame->warning=L"HDR 数据暂时无法读取，当前显示兼容预览。"+(error.message.empty()?std::wstring():L"\n"+error.message);return frame;};
+    std::unique_ptr<GainMapInput> gain;
+    if(!thumbnail&&!compatibility&&IsEqualGUID(container,GUID_ContainerFormatJpeg)){try{gain=probeGainMap(path);}catch(const Failure& error){return fallback(error);}}
     bool heifGain=heif&&heif->gain&&!thumbnail,hasGain=gain||heifGain;
     // Floating-point sources stay linear scRGB; JPEG gain maps must pass the
     // reference parser above. Integer bit depth alone never implies HDR.
@@ -107,14 +109,14 @@ std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=
     ComPtr<IWICBitmapSource> source=first;
     // Decode JPEG at its codec's native reduced resolution before ICC conversion.
     // A screen-sized preview should not transform 33 million pixels first.
-    double budget=hdr?16000000.0:64000000.0;
+    double budget=hdr||compatibility?16000000.0:64000000.0;
     double ratio=std::min({1.0,16384.0/ow,16384.0/oh,std::sqrt(budget/(double(ow)*oh))});
     if(maxEdge)ratio=std::min(ratio,double(maxEdge)/std::max(ow,oh));
     UINT width=std::max(1u,UINT(std::ceil(ow*ratio))),height=std::max(1u,UINT(std::ceil(oh*ratio)));
     std::vector<uint8_t> reduced;
     GainReconstruction gainPixels;
     if(hasGain){
-        gainPixels=gain?reconstructGainMap(wic.Get(),*gain,width,height):reconstructHeif(wic.Get(),*heif,first.Get(),width,height);
+        try{gainPixels=gain?reconstructGainMap(wic.Get(),*gain,width,height):reconstructHeif(wic.Get(),*heif,first.Get(),width,height);}catch(const Failure& error){if(gain)return fallback(error);throw;}
         ComPtr<IWICBitmap> bitmap;check(wic->CreateBitmapFromMemory(width,height,GUID_WICPixelFormat128bppRGBAFloat,width*16,UINT(gainPixels.hdr.size()),gainPixels.hdr.data(),&bitmap));source=bitmap;
     }
     if(!hdr&&ratio<1&&IsEqualGUID(container,GUID_ContainerFormatJpeg)) {
@@ -553,6 +555,7 @@ API HRESULT __cdecl LumaFramePixel(void* value,UINT x,UINT y,float* rgba){
     if(!value||!rgba)return E_POINTER;return safe([&]{auto& frame=*static_cast<Frame*>(value);if(x>=frame.info.width||y>=frame.info.height||!frame.info.nativeHdr)throw Failure{E_INVALIDARG};memcpy(rgba,frame.pixels.data()+(size_t(y)*frame.info.width+x)*16,16);});
 }
 API HRESULT __cdecl LumaFrameGainInfo(void* value,GainDisplay* result){if(!value||!result)return E_POINTER;*result=static_cast<Frame*>(value)->gainDisplay;return S_OK;}
+API HRESULT __cdecl LumaFrameWarning(void* value,wchar_t* text,UINT count){if(!value||!text||!count)return E_POINTER;auto& message=static_cast<Frame*>(value)->warning;size_t length=std::min(message.size(),size_t(count-1));memcpy(text,message.data(),length*sizeof(wchar_t));text[length]=0;return S_OK;}
 // Diagnostic display injection exercises real GPU presentation, without
 // changing Windows settings. The product only calls the real display probe.
 API HRESULT __cdecl LumaNativeDisplayTest(void* r,int hdr,float peak,float white){if(!r||!std::isfinite(peak)||peak<=0||!std::isfinite(white)||white<=0)return E_INVALIDARG;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.status.hdrActive=hdr!=0;x.status.maxNits=peak;x.status.sdrWhite=white;x.selectImage();x.sceneStamp={};x.draw();});}

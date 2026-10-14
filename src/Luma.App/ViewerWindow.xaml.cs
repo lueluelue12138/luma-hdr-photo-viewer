@@ -100,6 +100,8 @@ public sealed partial class ViewerWindow : Window
     internal int VerificationWorkerJobs=>renderer?.WorkerJobs??0;
     internal bool VerificationDeviceReused=>renderer?.DeviceReused??false;
     internal string VerificationStatusText=>StatusText.Text;
+    internal bool VerificationHdrCompatibility=>currentFrame?.HdrCompatibility==true;
+    internal bool VerificationCompatibilityControls=>!HdrSwitch.IsEnabled&&!VsrSwitch.IsEnabled&&!OriginalButton.IsEnabled&&!AutoBrightnessSwitch.IsEnabled&&!AutoPeakSwitch.IsEnabled;
     internal void VerificationOriginal(bool value)=>SetOriginalHeld(value);
     internal async Task VerificationEffectsAsync(bool hdr,bool vsr){hdrRequested=hdr;vsrRequested=vsr;await ApplyEffectsAsync();}
     internal Task VerificationSelectAsync(int selected)=>DisplayAsync(selected);
@@ -433,13 +435,13 @@ public sealed partial class ViewerWindow : Window
         if(renderer is null||closed)return;
         try
         {
-            var s=probe?renderer.Status():renderer.CachedStatus;bool photoReady=currentFrame is not null;bool busy=renderer.Busy||(!photoReady&&Loading.IsActive);updatingEnhancements=true;
+            var s=probe?renderer.Status():renderer.CachedStatus;bool photoReady=currentFrame is not null;bool compatibility=currentFrame?.HdrCompatibility==true;bool busy=renderer.Busy||(!photoReady&&Loading.IsActive);updatingEnhancements=true;
             HdrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):s.NativeHdr!=0||hdrRequested?s.HdrReason:s.HdrAvailable!=0?"TrueHDR 可用，未开启":s.HdrReason;
             VsrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):s.NativeHdr!=0?"原生 HDR 保留原始细节，暂不应用 VSR":vsrRequested?s.VsrMessage:s.VsrAvailable!=0?"VSR 可用，默认关闭":s.VsrMessage;
             HdrSwitch.IsOn=hdrRequested;VsrSwitch.IsOn=vsrRequested;
-            HdrSwitch.IsEnabled=photoReady&&s.HdrAvailable!=0&&s.HdrActive!=0&&s.NativeHdr==0;
-            VsrSwitch.IsEnabled=photoReady&&s.VsrAvailable!=0&&s.NativeHdr==0;
-            HdrPreset.IsEnabled=photoReady&&s.NativeHdr==0;
+            HdrSwitch.IsEnabled=photoReady&&!compatibility&&s.HdrAvailable!=0&&s.HdrActive!=0&&s.NativeHdr==0;
+            VsrSwitch.IsEnabled=photoReady&&!compatibility&&s.VsrAvailable!=0&&s.NativeHdr==0;
+            HdrPreset.IsEnabled=photoReady&&!compatibility&&s.NativeHdr==0;
             OriginalButton.Content=s.HasGainMap?"按住查看 SDR 底图（空格）":s.NativeHdr!=0?(!AutoBrightnessSwitch.IsOn||!AutoPeakSwitch.IsOn?"按住查看 HDR 原片（空格）":"此格式没有 SDR 底图"):"按住查看原图（空格）";
             OriginalButton.IsEnabled=photoReady&&(s.NativeHdr==0||s.HasGainMap||!AutoBrightnessSwitch.IsOn||!AutoPeakSwitch.IsOn);
             HdrSwitch.OnContent=!photoReady?(Loading.IsActive?"加载中":"未生效"):s.NativeHdr!=0?"无需增强":busy?"处理中":originalHeld?"查看原图":s.HdrEffective!=0?"已生效":"未生效";
@@ -449,7 +451,8 @@ public sealed partial class ViewerWindow : Window
             double peak=AutoPeakSwitch.IsOn?(nativeTuningMode?(s.MaxNits>0?s.MaxNits:1000):Math.Floor(Math.Clamp(s.MaxNits>=400?s.MaxNits:1000,400,2000))):PeakSlider.Value;
             double gray=AutoBrightnessSwitch.IsOn?(nativeTuningMode?(s.HasGainMap?Math.Min(s.SdrWhite*80,peak)*.21586:203*.21586):Math.Floor(Math.Clamp(s.SdrWhite*80*.21586,50,100))):MiddleGraySlider.Value;
             if(AutoPeakSwitch.IsOn)PeakSlider.Value=peak;if(AutoBrightnessSwitch.IsOn)MiddleGraySlider.Value=gray;
-            MiddleGraySlider.IsEnabled=photoReady&&!AutoBrightnessSwitch.IsOn;PeakSlider.IsEnabled=photoReady&&!AutoPeakSwitch.IsOn;
+            MiddleGraySlider.IsEnabled=photoReady&&!compatibility&&!AutoBrightnessSwitch.IsOn;PeakSlider.IsEnabled=photoReady&&!compatibility&&!AutoPeakSwitch.IsOn;
+            AutoBrightnessSwitch.IsEnabled=AutoPeakSwitch.IsEnabled=photoReady&&!compatibility;
             MiddleGrayValue.Text=$"{gray:0.#} nits";PeakValue.Text=$"{peak:0} nits";
             AutoBrightnessSwitch.Header=nativeTuningMode&&!s.HasGainMap?"保留原片亮度":"匹配 Windows SDR 亮度";
             MiddleGrayLabel.Text=nativeTuningMode&&!s.HasGainMap?"中间灰参考（曝光）":"中间灰亮度";
@@ -458,8 +461,9 @@ public sealed partial class ViewerWindow : Window
             TuningExplanation.Text=nativeTuningMode?(s.HasGainMap?"调整增益图的显示亮度与高光范围，自动模式匹配当前屏幕。":"PQ / JXR 没有 SDR 底图。自动保留原片亮度；手动中间灰调整曝光，手动峰值压缩高光。"):"RTX HDR 参数：中间灰 10–100 nits，峰值 400–2000 nits。";
             string brightness=s.NativeHdr!=0?$"屏幕峰值：{s.MaxNits:0} nits\n显示中间灰参考：{gray:0.#} nits\n{(s.HasGainMap?$"增益图白色：{Math.Min((AutoBrightnessSwitch.IsOn?s.SdrWhite*80:gray/.21586),peak):0} nits":"线性 scRGB 原图")}":$"增强峰值 / 中间灰：{peak:0} / {gray:0} nits";
             DisplayText.Text=$"{s.Gpu}\nWindows HDR：{(s.HdrActive!=0?"已开启":"未开启")}\nFP16 / scRGB\nSDR 白色：{s.SdrWhite*80:0} nits\n{brightness}\nHDR / VSR 调用：{s.HdrEvaluations} / {s.VsrEvaluations}\n图片与画布显存：{s.GpuBytes/1048576.0:0} MB";
-            StatusText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"照片未加载"):s.HasGainMap?(originalHeld?"SDR 底图 · 对照":s.HdrActive!=0?$"原生 HDR · {s.GainMapSource}":"SDR 底图 · 当前屏幕 SDR"):s.NativeHdr!=0?(s.HdrActive!=0?"原生 HDR · scRGB":"HDR 原图 · 当前屏幕 SDR"):busy&&(hdrRequested||vsrRequested)?"正在处理显示增强…":originalHeld?"原图 · 未应用增强":s.HdrEffective!=0?(s.VsrEffective!=0?"RTX HDR + VSR 已生效":"RTX HDR 已生效"):s.VsrEffective!=0?"VSR 已生效 · SDR":"SDR · 原图";
+            StatusText.Text=!photoReady?(ErrorPanel.Visibility==Visibility.Visible?"照片无法加载":Loading.IsActive?"正在加载照片…":"照片未加载"):s.HasGainMap?(originalHeld?"SDR 底图 · 对照":s.HdrActive!=0?$"原生 HDR · {s.GainMapSource}":"SDR 底图 · 当前屏幕 SDR"):s.NativeHdr!=0?(s.HdrActive!=0?"原生 HDR · scRGB":"HDR 原图 · 当前屏幕 SDR"):busy&&(hdrRequested||vsrRequested)?"正在处理显示增强…":originalHeld?"原图 · 未应用增强":s.HdrEffective!=0?(s.VsrEffective!=0?"RTX HDR + VSR 已生效":"RTX HDR 已生效"):s.VsrEffective!=0?"VSR 已生效 · SDR":"SDR · 原图";
             if(photoReady&&s.NativeHdr==1&&originalHeld)StatusText.Text="HDR 原片 · 对照";
+            if(compatibility){HdrReasonText.Text=currentFrame!.Warning;VsrReasonText.Text="先以兼容预览查看，暂不应用显示增强";HdrSwitch.OnContent=VsrSwitch.OnContent="不适用";OriginalButton.Content="当前为兼容预览";OriginalButton.IsEnabled=false;StatusText.Text="兼容预览 · HDR 数据未读取";TuningExplanation.Text="HDR 数据未能解析，兼容预览保留可读取的原始底图，不应用 HDR / VSR。";}
             updatingEnhancements=false;
             var next=(s.HdrActive,s.SdrWhite,s.MaxNits);bool changed=displayState.HasValue&&displayState.Value!=next;displayState=next;
             if(changed&&hdrRequested&&!busy)_=ApplyEffectsAsync();
@@ -473,6 +477,7 @@ public sealed partial class ViewerWindow : Window
         uint gray=AutoBrightnessSwitch.IsOn?0:(uint)MiddleGraySlider.Value,peak=AutoPeakSwitch.IsOn?0:(uint)PeakSlider.Value;int preset=Math.Max(0,HdrPreset.SelectedIndex);
         try
         {
+            if(currentFrame.HdrCompatibility){RefreshStatus(false);return;}
             if(currentFrame.Info.NativeHdr!=0){ApplyNativeTuning();await active.PresentPendingAsync(token);RefreshStatus(false);return;}
             StatusText.Text=hdrRequested||vsrRequested?"正在处理显示增强…":"SDR · 原图";
             if((hdrRequested||vsrRequested)&&currentFrame.Info.NativeHdr==0)
@@ -504,7 +509,7 @@ public sealed partial class ViewerWindow : Window
     {
         try{var picker=new FileOpenPicker(AppWindow.Id);foreach(var ext in SupportedFormats.Extensions)picker.FileTypeFilter.Add(ext);var f=await picker.PickSingleFileAsync();if(f is not null){new ViewerWindow(f.Path).Activate();Close();}}catch(Exception ex){Fail(ex);}
     }
-    private void Fail(Exception ex){App.Log(ex.ToString());ErrorText.Text=ex.Message;ErrorPanel.Visibility=Visibility.Visible;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;ShowControls();}
+    private void Fail(Exception ex){App.Log(ex.ToString());ErrorText.Text=ex.Message;ErrorPanel.Visibility=Visibility.Visible;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;StatusText.Text="照片无法加载";ShowControls();}
     private void ShowControls(bool force=false){lastActivity=DateTime.UtcNow;if(force)manuallyHidden=false;if(manuallyHidden)return;if(!controlsVisible){controlsVisible=true;AnimateChrome(true);}}
     private void AnimateChrome(bool visible)
     {
@@ -577,7 +582,7 @@ public sealed partial class ViewerWindow : Window
     private void RootPointerMoved(object sender,PointerRoutedEventArgs e)=>ShowControls();
     private void PanelEntered(object sender,PointerRoutedEventArgs e){hover=true;ShowControls();}private void PanelExited(object sender,PointerRoutedEventArgs e){hover=false;lastActivity=DateTime.UtcNow;}
     private void MenuOpened(object sender,object e){menuDepth++;ShowControls(true);DispatcherQueue.TryEnqueue(UpdateGlass);}private void MenuClosed(object sender,object e){menuDepth=Math.Max(0,menuDepth-1);ShowControls();DispatcherQueue.TryEnqueue(UpdateGlass);}
-    private async void EnhancementOpened(object sender,object e){MenuOpened(sender,e);RefreshStatus();if(currentFrame?.Info.NativeHdr!=0)return;try{if(renderer is not null){await renderer.InitializeEffectsAsync(lifetime.Token);if(!closed)RefreshStatus();}}catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(Exception ex){App.Log("Enhancement detection: "+ex.Message);}}
+    private async void EnhancementOpened(object sender,object e){MenuOpened(sender,e);RefreshStatus();if(currentFrame?.Info.NativeHdr!=0||currentFrame?.HdrCompatibility==true)return;try{if(renderer is not null){await renderer.InitializeEffectsAsync(lifetime.Token);if(!closed)RefreshStatus();}}catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(Exception ex){App.Log("Enhancement detection: "+ex.Message);}}
     private void SetOriginalHeld(bool value)
     {
         if(closed||originalHeld==value)return;originalHeld=value;

@@ -15,6 +15,7 @@ class Status(c.Structure):_fields_=[('gpu',c.c_wchar*128),('display',c.c_wchar*1
 d=c.CDLL(str(native));d.LumaError.restype=c.c_wchar_p
 for name in ['LumaDecodeSized','LumaDecodeThumbnail']:getattr(d,name).argtypes=[c.c_wchar_p,c.c_uint,c.POINTER(Info),c.POINTER(c.c_void_p)]
 d.LumaFreeFrame.argtypes=[c.c_void_p];d.LumaFramePixel.argtypes=[c.c_void_p,c.c_uint,c.c_uint,c.POINTER(c.c_float)];d.LumaCopySdrBgra.argtypes=[c.c_void_p,c.POINTER(c.c_uint8),c.c_uint64]
+d.LumaFrameWarning.argtypes=[c.c_void_p,c.c_wchar_p,c.c_uint]
 d.LumaCreateFast.argtypes=[c.c_void_p,c.c_void_p,c.POINTER(c.c_void_p)];d.LumaDestroy.argtypes=[c.c_void_p];d.LumaUseFrame.argtypes=[c.c_void_p,c.c_void_p];d.LumaCopyStatus.argtypes=[c.c_void_p,c.POINTER(Status)];d.LumaResize.argtypes=[c.c_void_p,c.c_uint,c.c_uint,c.c_float,c.c_float];d.LumaReadPixel.argtypes=[c.c_void_p,c.c_uint,c.c_uint,c.POINTER(c.c_uint16)];d.LumaEffects.argtypes=[c.c_void_p,c.c_int,c.c_int,c.c_int,c.c_uint];d.LumaSetOriginal.argtypes=[c.c_void_p,c.c_int];d.LumaRepaint.argtypes=[c.c_void_p]
 d.LumaNativeDisplayTest.argtypes=[c.c_void_p,c.c_int,c.c_float,c.c_float]
 def check(hr):
@@ -113,7 +114,11 @@ try:
     try:assert(i.w,i.h,i.ow,i.oh,i.hdr)==(96,128,240,320,2)
     finally:d.LumaFreeFrame(p)
     truncated=out/'truncated.jpg';truncated.write_bytes(xmp_photo.read_bytes()[:-len(gain)-len(xmp(description))])
-    i=Info();p=c.c_void_p();hr=d.LumaDecodeSized(str(truncated),128,c.byref(i),c.byref(p));assert hr<0 and not p.value,'Invalid gain map was silently advertised as HDR';invalid_error=d.LumaError()
+    i,p,_=decode(truncated,128)
+    try:
+        message=c.create_unicode_buffer(512);check(d.LumaFrameWarning(p,message,len(message)));invalid_error=message.value
+        assert i.hdr==0 and invalid_error,'Invalid gain map must show the readable primary with an explicit warning'
+    finally:d.LumaFreeFrame(p)
     plain=out/'ordinary.jpg';plain.write_bytes(base);i,p,_=decode(plain,128)
     try:assert not i.hdr
     finally:d.LumaFreeFrame(p)
@@ -139,6 +144,6 @@ try:
         finally:d.LumaFreeFrame(p)
         assert before==(path.stat().st_size,path.stat().st_mtime_ns)
 finally:d.LumaDestroy(renderer)
-out.joinpath('hdr-formats.json').write_text(json.dumps(dict(complete=True,results=results,invalidGainMapRejected=invalid_error,orientation=True,ordinaryJpeg=True),ensure_ascii=False,indent=2),encoding='utf-8')
+out.joinpath('hdr-formats.json').write_text(json.dumps(dict(complete=True,results=results,invalidGainMapCompatibility=invalid_error,orientation=True,ordinaryJpeg=True),ensure_ascii=False,indent=2),encoding='utf-8')
 print('PASS: XMP/ISO and two Apple gain maps, linear scRGB/reference pixels, FP16, SDR comparison, sized previews, fast SDR thumbnails, orientation and malformed input.',flush=True)
 for result in results:print(json.dumps(result,ensure_ascii=False),flush=True)

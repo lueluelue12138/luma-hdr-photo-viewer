@@ -28,6 +28,7 @@ internal static class Native
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaDecodeSized(string path,uint maxEdge,out FrameInfo info,out IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaDecodeThumbnail(string path,uint maxEdge,out FrameInfo info,out IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern void LumaFreeFrame(IntPtr frame);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaFrameWarning(IntPtr frame,System.Text.StringBuilder text,uint count);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCopySdrBgra(IntPtr frame,[Out]byte[] pixels,ulong bytes);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCreate(IntPtr panel,IntPtr hwnd,out IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCreateFast(IntPtr panel,IntPtr hwnd,out IntPtr renderer);
@@ -63,7 +64,9 @@ internal static class Native
 internal sealed class DecodedFrame : SafeHandle
 {
     public FrameInfo Info {get;}
-    public DecodedFrame(IntPtr pointer,FrameInfo info):base(IntPtr.Zero,true){SetHandle(pointer);Info=info;}
+    public string Warning {get;}
+    public bool HdrCompatibility=>!string.IsNullOrEmpty(Warning);
+    public DecodedFrame(IntPtr pointer,FrameInfo info):base(IntPtr.Zero,true){SetHandle(pointer);Info=info;var message=new System.Text.StringBuilder(512);Native.Check(Native.LumaFrameWarning(pointer,message,512));Warning=message.ToString();}
     public override bool IsInvalid=>handle==IntPtr.Zero;
     protected override bool ReleaseHandle(){Native.LumaFreeFrame(handle);return true;}
 }

@@ -1,5 +1,19 @@
 # Luma 本机验证记录
 
+## RGB XMP 增益图兼容与可读 JPEG 回退（0.1.21，2026-10-15）
+
+维护者下载的 JPG 未损坏：SDR 主图 1662×2493，Display P3 / sRGB 曲线，附加 RGB 增益图；三通道 GainMapMin / Max / Gamma 用 `rdf:Seq` 表达。上游仅支持部分单值 XMP 属性，错误地报缺少 GainMapMax。现已在自主代码用 XmlLite 处理命名空间、属性 / 元素、单值 / 三通道数组；上游 JPEG 容器与 gain 运算不改动，ISO 优先，Apple 曲线独立。
+
+- 最终 RTX 自包含消费者构建与 SDK-free 原生构建通过。`verify_xmp_gainmaps.py` 对两版完成 7 种合法表达、12 种异常元数据、不可读主图、缩小预览和 ISO 优先检查。每种合法表达使用独立逐通道公式，实际 FP16 输出误差小于 0.02 scRGB；每种 20 次底图 / HDR 缓存切换恢复相同输出，无 AI 调用。异常 XMP 显示可读底图并返回明确警告；真正损坏主图仍失败。恶意 DTD 样本会产生上游预期解析拒绝日志，随后兼容回退通过，不是测试失败。
+- 用户原图在最终 RTX 核心完整解码约 508.85 ms，SDK-free 约 472.63 ms；未清空系统文件缓存，不含 UI / 上传，不能当作普遍或冷启动速度。按 Pillow JPEG 独立像素、XML 元数据、sRGB 反变换和 Display P3→709 数学对照，抽样平均误差 **0.0007215 scRGB**、最大 **0.02714**；HDR 源抽样峰值 **12.25915 scRGB**，真实 FP16 读回与缓存像素的中心误差 **0.00003174**。测试输出强制 203 nits 白色 / 256 倍 headroom 以单独验证完整重建，不表示物理显示器测得该峰值。
+- 原文件 SHA256 始终为 `56527fcaa59a3f04b5efe9e0db29e32e7bbb194d80c69436ff71139809087e55`，大小和修改时间未变；图片没有进入 Git 或消费者包。报告 `artifacts/xmp-gainmaps/xmp-Luma-xmp-arrays.json` 与 `xmp-xmp-standard-native.json`。
+- 两版 `verify_hdr_formats.py` 的既有 scalar XMP、ISO、Apple JPEG 独立参考 / FP16 / 底图对照、方向、大图预算和缩略图检查通过；更新破损增益图的预期为明确 SDR 兼容预览。两版 `verify_native_hdr_tuning.py` 的 5 种 HDR 来源 / 数学显示参数 / Gaussian 场景缓存 / 原片恢复仍通过。
+- 最终 WinUI 在隔离库完成 **20 项记录**，包括真实用户 JPG、RGB 与 Gamma 数组、Apple / ISO / PQ HEIC、普通 SDR、异常数组兼容预览、原生 HDR 调参与重新打开 HEIC。兼容预览没有错误遮罩，增强控件明确禁用，即使请求 HDR / VSR 也不新增处理任务；原生 HDR 全部跳过 SDK。报告 `artifacts/xmp-windows-final-heic/hdr-format-windows.json`。
+- 最终消费者程序通过 **49 个真实预览窗口、两次新进程**，覆盖实际 SDK HDR-only / VSR-only / 组合、忙时关闭、偏好恢复和浮层玻璃；报告 `artifacts/viewer-lifecycle-20261015-012723/`。28 项核心 / 索引检查通过。
+- Computer Use 实际打开同一张用户 JPG，完整适配正常、无加载错误，显示“原生 HDR · 增益图 JPEG”，增强面板正确识别自带增益图，提供“按住查看 SDR 底图”。重新观察打开动画完成后的状态；截图只用于检查图像 / 布局和控件，不用于判断屏幕 HDR 亮度。维护者原应用没有关闭；只关闭本轮隔离测试窗口。
+
+候选：`artifacts/Luma-xmp-arrays/Luma.App.exe`，502 个文件共 **203320783 字节**，原生 DLL **1254912 字节**。本轮 CI 新增合成 RGB XMP / 兼容回退检查，云端不读取私有照片。完成验证后按维护者新授权提交并正常推送；不创建新标签或 Release。
+
 ## 原生 HDR 显示控制与悬浮界面（0.1.20，2026-10-15）
 
 原生 HDR 新增独立保存的曝光 / 增益参考与峰值设置，自动模式保留之前的映射；手动参数仅改 GPU 呈现，不改缓存帧、不重新解码、不运行 NVIDIA。具体公式、范围与 PQ / JXR 无 SDR 底图的含义见 [HDR 格式说明](HDR-FORMATS.md)。状态改为右上角主题毛玻璃，窄窗口避免与工具栏 / 信息面板重叠；增强面板统一操作行高、圆角、展开内容宽度及数值；工具栏新增一键适应窗口。旧 popup 背景在尺寸变化期间按原照片坐标放置，不先拉伸再替换；快速调整取消过时的读回任务，并在取得渲染锁后才分配像素缓冲。原生 HDR 打开增强面板无需初始化 NVIDIA SDK。
