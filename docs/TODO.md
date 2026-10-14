@@ -106,6 +106,7 @@
 
 ## 后续产品功能
 
+- [x] 集中本地 HDR 验收样本（2026-10-14）：`artifacts/HDR测试相册/` 共 29 张、98.55 MiB（13 HEIC、9 JPEG、7 JXR），其中 28 张原生 HDR 与 1 张 SDR 对照；包含维护者 iPhone 原片、6 张已验证的 Windows 截屏、公开照片和合成夹具。Apple 官方 PQ 额外 9 张仅检查过元数据，未逐张完成 GPU 验证；阅读说明与本地清单明确区分样本及验证范围。29 份副本 SHA256 均与来源一致，原文件大小、修改时间及哈希未变；损坏夹具、Mac 侧文件、重复样本排除。整个相册位于 Git 忽略目录，不进入源码、安装包或公开发布。
 - [x] 0.1.18 扩展原生 HDR 照片：固定 Google libultrahdr 2.0.2 与 libjpeg-turbo 3.2.0，支持 Android / XMP、ISO 21496-1 及 Apple 增益图 JPEG；两份 Apple 样本、解析/线性 scRGB 与实际 FP16 读回、旋转、损坏增益图拒绝、SDR 底图对照和 SDK-free / RTX 构建通过。4800 万像素合成图先按显示尺寸重建，2048×1536 解码约 253–290 ms，帧含 SDR 底图为 60 MiB，不代表真实手机文件普遍速度。缩略图单独解码 SDR 底图，CPU/GPU 预算包含原生 HDR 对照纹理；不会重复执行 RTX HDR / VSR。
 - [x] 实测用户 Captures 中 6 张 Windows HDR JXR：全部保持浮点原生 HDR，高光约 6.0–12.68 scRGB，FP16 GPU 读回一致，不触发 HDR/VSR；包括用户指出的文件及长文件名截屏，原文件元数据未改动。增加 JPEG XR codec 级缩小解码；首张 4K 截屏的 2048 长边约 0.44–0.46 秒，另一个样本仍约 1.02 秒，不声称全部瞬时打开。真实 WinUI 混合格式翻图与 Computer Use 检查通过。
 - [x] 0.1.19 支持 iPhone HEIC 原片：Apple / ISO 增益图与 PQ 浮点路径，WIC 系统解码、内存选择辅助项、ICC / NCLX、方向、HEIF/HEVC 缺失提示及 HEIC / HEIF 激活 / 索引 / 关联。维护者 iPhone 15 的 2400 万像素原片带有效 Apple 增益图（headroom 5.154915）；另有公开相机 HEIC、iPadOS ISO HEIC、Apple 官方 PQ 与自制 SDR HEIC。独立 libheif / 数学对照、真实 FP16、SDK-free / RTX 构建、混合 WinUI 翻图、Computer Use 来源 / 禁用增强检查通过，详见 HDR-FORMATS 与 VERIFICATION。修正 Apple 线性 headroom 被上游当成 log2、增益曲线误用 ISO 的问题；原始照片和上游源码未改动。
