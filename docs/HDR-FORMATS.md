@@ -1,42 +1,45 @@
 # HDR 照片格式与实现范围
 
-调研及实现：2026-10-14，Luma 0.1.18。扩展名只说明容器：普通 JPEG、8-bit PNG 和 16-bit TIFF 不会因为文件名或位深被认作 HDR。原生 HDR 不需要 RTX GPU，也不经过 NVIDIA 的 SDR→HDR 增强。
+调研及实现：2026-10-14，Luma 0.1.19。原生 HDR 不依赖 RTX，也不会重复进行 NVIDIA SDR→HDR 增强。扩展名和整数位深本身不能证明图片是 HDR。
 
-## 三个平台的重点
+## 三个平台
 
-| 来源 | 主要 HDR 照片形式 | Luma 当前处理 |
+| 来源 | 常见形式 | 当前处理 |
 | --- | --- | --- |
-| Android | Ultra HDR JPEG：可直接兼容 SDR 的底图、第二张增益图及 XMP / ISO 元数据，仍使用 `.jpg` / `.jpeg` | 已实现增益图解析与 HDR 重建，直接进入 FP16 / scRGB；不是只打开 SDR 底图 |
-| Apple | 相机 HEIC 中的 Apple / ISO Adaptive HDR 增益图，分享或导出也可能保留为增益图 JPEG；另有 PQ / HLG 的 ISO HDR 图像 | 本轮覆盖 Apple 增益图 **JPEG** 与 ISO 增益图 JPEG；**尚未支持 HEIC HDR**，不能据此声称完整支持 iPhone 相机原始文件 |
-| Windows | HDR 屏幕截图的浮点、线性 scRGB JPEG XR，常见扩展名 `.jxr` / `.wdp` / `.hdp` | 已有浮点解码，本轮补充真实 Windows 截屏验证及 codec 级缩小解码；不是所有 JPEG XR 都是 HDR |
-| 跨平台 / Web | AVIF 中的 PQ / HLG 或增益图，带明确 HDR 色彩标记的 PNG 等 | 保留为后续范围；本轮不安装或分发 HEVC / AV1 / libheif，不注册尚未验证的扩展名 |
+| Android | Ultra HDR JPEG，SDR 底图 + XMP / ISO 增益图 | 解析并重建线性 HDR，经 FP16 / scRGB 显示 |
+| Apple / iPhone | HEIC 中的 Apple / ISO 增益图；PQ HDR HEIC；分享后的增益图 JPEG | 已支持 Apple / ISO 增益图 HEIC、PQ HEIC、Apple 增益图 JPEG；实测维护者 iPhone 15 原片、公开相机 HEIC、iPadOS ISO HEIC 和 Apple 官方 PQ 样本 |
+| Windows | 浮点线性 scRGB JPEG XR 截屏，JXR / WDP / HDP | 保留原始浮点亮度，经 FP16 显示，已有 6 张实际截屏验证 |
+| 待补充 | HLG HEIC、AVIF HDR、HDR PNG、HDR 基底 / 替代色域增益图 | 尚未作为完整能力宣传 |
 
-Android 14 起提供 Ultra HDR 显示支持；它沿用 JPEG 的兼容底图，应用必须处理增益图才能显示 HDR。[Android 显示文档](https://developer.android.com/media/grow/ultra-hdr/display)、[格式规范](https://developer.android.com/media/platform/hdr-image-format)。
+[Android 格式规范](https://developer.android.com/media/platform/hdr-image-format)、[Apple HDR 图像说明](https://developer.apple.com/videos/play/wwdc2024/10177/)、[Apple 官方 HDR 示例](https://developer.apple.com/documentation/uikit/supporting-hdr-images-in-your-app)。
 
-Apple 区分 ISO HDR 与增益图 HDR，较新的 Adaptive HDR 使用 ISO 21496-1 的元数据和重建规则。HEIF、JPEG、AVIF 等容器可能承载不同编码，不能只依赖 `.heic` 推断亮度曲线。[Apple HDR 图像说明](https://developer.apple.com/videos/play/wwdc2024/10177/)、[Apple 增益图计算说明](https://developer.apple.com/documentation/appkit/applying-apple-hdr-effect-to-your-photos)。
+## HEIC 解码
 
-Windows WIC 的浮点 / 定点格式一般以 scRGB 为推断色彩空间；HEIF 扩展另有获取 8-bit gain 表示的接口，返回的增益仍需应用解析元数据并重建。只安装扩展不等于应用自动具有完整 HEIC HDR 路径。[WIC 像素格式](https://learn.microsoft.com/en-us/windows/win32/wic/-wic-codec-native-pixel-formats)、[HEIF 扩展与 gain 表示](https://learn.microsoft.com/en-us/windows/win32/wic/heif-codec)。
+利用已经安装的 Windows **HEIF 图像扩展 + HEVC 视频扩展**。本轮没有安装系统扩展；缺少解码器时返回安装提示。扩展的可用性和收费由 Microsoft Store 决定，Luma 不捆绑 HEVC、libheif 或整套视频工具。standard 和 RTX 版都具有此原生 HDR 路径。
 
-## 本轮实现
+Luma 只解析有界的 HEIF 项目关系和元数据，像素、网格、旋转及裁切交给 WIC。Apple 增益图通过系统 `GUID_WICPixelFormat8bppGain` 取得；ISO 图通过 `tmap` / `dimg` 关联选择底图和增益图，选择只发生在内存副本，原文件不变。HEIC / HEIF 已加入文件激活、图库索引、选择器及安装包关联清单。[Microsoft WIC HEIF 接口](https://learn.microsoft.com/en-us/windows/win32/wic/heif-codec)。
 
-- 固定 Google **libultrahdr 2.0.2** 源码提交 `e5f5a022fe96fc4dc2ee35c19f733a50df807abe`。通过官方解析器取得底图、增益图、XMP / ISO / Apple 参数；使用官方 `UltraHdr::applyGainMap` 重建，不另写 HDR 增益公式。当前参考库的 RGB888 分类路径存在兼容问题，Luma 使用其完整支持的 RGBA8888 底图路径，未修改上游源码。
-- WIC 先按目标尺寸分别解码两张 JPEG，再交给参考库。参考 C API 的 resize 效果在完整 HDR 解码后才执行，因此没有直接用它来缩小巨幅图片。
-- 保留 sRGB / Display P3 / Rec.2020 色域，输出线性 Rec.709/scRGB。参考库线性输出的参考白为 203 nits，DXGI scRGB 的 1.0 为 80 nits，转换时乘以 `203 / 80`；保留超过 1.0 的高光和宽色域转换产生的负分量。未知 ICC 色域会报明确信息，而不会猜成 sRGB。
-- HDR 图像与正确旋转后的兼容 SDR 底图一同缓存，CPU 预算同时计入两者。HDR 开启的屏幕使用 HDR 纹理，SDR 屏幕使用兼容底图；按住空格也可直接切换底图，松开恢复缓存的 HDR，没有 AI 重算。
-- 缩略图沿用 JPEG 的 SDR 底图、ICC 和 EXIF，专用入口不会为每张小卡片重建 HDR。JPEG XR 保留现有 Windows 缩略图提供器。
-- 原生 HDR 禁用 RTX HDR / VSR，显示来源及“无需增强”；普通 JPEG 的增强偏好保持独立。无需更改已有 `.jpg` / `.jpeg` / `.jxr` 关联。
-- 两个版本 standard / RTX 都静态包含这个开放源码解码器。原生 DLL 实测约增加 0.80 MiB，另有许可文本；无需另装图片解码运行库。源码、JPEG SIMD 用的 NASM 工具及测试照片不随应用分发。输入下载固定 SHA256，许可和归属声明见 [第三方声明](../THIRD-PARTY-NOTICES.md)。
+Apple 路径遵循 [Apple 发布的计算说明](https://developer.apple.com/documentation/appkit/applying-apple-hdr-effect-to-your-photos)：底图按其 sRGB / Display P3 曲线线性化，增益按 Rec.709 反变换，使用线性 headroom 相乘；有明确 XMP headroom 时直接读取，否则从 MakerNote 33 / 48 推导。所用参考库把 Apple 的线性 XMP headroom 当成 log2，并按普通 ISO 增益公式处理；0.1.19 在自主代码中修正这两个 Apple 兼容问题，HEIC 与 JPEG 都采用独立公式测试，上游源码未改动。
 
-库的支持范围、线性半浮点输出及构建说明见 [Google 官方源码](https://github.com/google/libultrahdr/tree/e5f5a022fe96fc4dc2ee35c19f733a50df807abe)。JPEG 依赖选用当前稳定的 [libjpeg-turbo 3.2.0 官方源代码发行包](https://github.com/libjpeg-turbo/libjpeg-turbo/releases/tag/3.2.0)，静态链接并启用 SIMD。
+ISO 元数据及 gain 运算使用固定 [libultrahdr 2.0.2](https://github.com/google/libultrahdr/tree/e5f5a022fe96fc4dc2ee35c19f733a50df807abe)，JPEG 使用 libjpeg-turbo 3.2.0，原始许可和 Adobe 声明保留。PQ HEIC 使用 WIC 返回的浮点线性 scRGB，已与独立 HEVC 解码及 ST.2084 公式核对，经真实 FP16 读回；没有把 10-bit PQ 转为普通 RGBA8 看图。
 
-## 边界与后续顺序
+## 亮度与屏幕适配
 
-本轮验证了 XMP-only 与 ISO JPEG、上游两份 Apple JPEG 样本、合成 4800 万像素增益图照片，以及用户实际 Windows 截屏。尚未获得多个品牌 Android 手机的原始拍摄文件或新版本 iPhone HEIC 样本，不能从几个样本推出所有设备及导出软件都兼容。
+增益图描述相对于 SDR 底图的增益。缓存完整 HDR 时使用 203 nits 参考白转为 scRGB（1.0 = 80 nits），保留高光和宽色域负分量。显示时匹配 Windows SDR 白色，以峰值 / 白色比决定 ISO 对数权重，避免底图对照产生与照片无关的整体变暗。换屏或白色 / 峰值变化只调整 GPU 参数，无需重新解码或运行 AI。空格直接切换两份缓存纹理。
 
-为控制资源，HDR 输出仍受 1600 万像素 / 16384 长边预算约束；大图保持比例缩小，原始尺寸保留，文件可以打开。增益图 JPEG 压缩输入预算 256 MiB、源像素预算 128 MiPixels；后者是异常输入保护，不要求普通照片低于预览输出预算。
+峰值通过与 RTX HDR 相同的 `IDXGIOutput6::GetDesc1` 读取，Windows 已应用的 MHC 校准配置可以覆盖这些显示器特性。[Microsoft HDR 呈现说明](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range)、[校准管线](https://learn.microsoft.com/en-us/windows/win32/wcs/display-calibration-mhc)。整个输出保持 FP16 / scRGB。
 
-当前重建完整的源 HDR 意图；低峰值屏幕上的逐屏 headroom 自适应、照片峰值与实际显示能力的色调映射还需专项实现与验证。SDR 底图切换已完成，但不声称所有屏幕都得到完全相同的 HDR 观感。
+本机 Windows 报告约 **3675.74 nits** 峰值、**480 nits** SDR 白色。恒定增益测试经真实 GPU FP16 读回约 **3675 nits**；203 / 406 / 812 / 1600 nits 端点测试也通过。这证明管线可以表达系统报告的峰值，不是亮度计测量了屏幕。照片 headroom 不足时保持其范围，不额外制造高光。
 
-下一步优先 **HEIC 的 Apple / ISO 增益图及 PQ / HLG**，再考虑 AVIF。Windows WIC 扩展可减少安装体积，但必须验证辅助图、元数据、10-bit 输出和缺少编解码器时的状态；另一条路线是 libheif / libavif，加上其解码依赖及独立许可，避免为了一个格式捆绑编码器与整套视频工具。
+NVIDIA SDK 1.1.0 明确规定 TrueHDR `MaxLuminance` 参数为 **400–2000 nits**，RTX 增强继续遵守此范围。**原生增益图不受这个 SDK 参数上限约束。** PQ / 原始 scRGB 是绝对亮度数据，不随 SDR 白色再次缩放；其跨屏峰值压缩仍在 TODO 中。
 
-JPEG XL、OpenEXR、RAW、HDR 视频和格式转换不纳入当前照片预览迭代。详细验证证据及差异见 [验证记录](VERIFICATION.md)，余项持续记录在 [TODO](TODO.md)。
+## 性能与边界
+
+- 缩略图使用 SDR 底图，不重建 HDR；浮点源交给 Windows 缩略图提供器。宽色域 HDR、SDR 对照和额外增益计算底图全部计入 CPU / GPU 预算。
+- Apple 的 8-bit 曲线使用查找表，避免逐像素重复幂运算。按预览尺寸重建；HDR 输出预算 1600 万像素 / 16384 长边，压缩输入 256 MiB、HEIF 元数据 16 MiB。大图保持比例缩小，不因超过预览尺寸而禁用 HDR。
+- Apple 增益版本覆盖 65536 / 131072，识别 sRGB、Display P3、Rec.2020。未知 ICC、反向 HDR 基底或尚不支持的增益应用色域明确报错，不猜测 HDR。
+- 增益图 SDR 底图目前使用 WIC RGB8；**PQ HEIC 的高位深浮点路径独立**。高位深增益底图、复杂 ICC、更多手机导出格式仍需补充。
+- libheif / Pillow 和 WIC 使用不同色度与缩放滤波，真实样本存在像素差异，未声称逐像素一致。平均 / 最大误差和首次解码时间见 [验证记录](VERIFICATION.md)。
+- 后续补充真实 HLG、原生 PQ / JXR 的低峰值 / SDR 色调映射、多屏物理观感和 AVIF。测试照片及第三方参考解码器只保留在忽略的 QA 目录，不随应用或源码发行。
+
+自动验证：`scripts/Get-HdrSamples.ps1` 固定样本 SHA256；`tests/verify_heic.py` 使用 QA 专用 pillow-heif / numpy 做独立对照；`tests/verify_hdr_peak.py` 检查真实 FP16 端点；隔离 WinUI 混合翻图和 Computer Use 检查验证来源、完整适配、SDK 跳过及缓存对照。余项见 [TODO](TODO.md)。

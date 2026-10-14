@@ -14,9 +14,9 @@ public sealed record ScanResult(long AlbumId, int Added, int Updated, int Missin
 public enum PhotoScope { All, Album, Favorites, Recent }
 public static class SupportedFormats
 {
-    // Windows WIC formats and JPEG gain maps. Gain-map JPEGs keep .jpg/.jpeg;
-    // optional HEIF/AVIF codecs are not advertised until their HDR path works.
-    public static readonly string[] Extensions = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".jxr", ".wdp", ".hdp", ".ico"];
+    // HEIC/HEIF uses the installed Windows HEIF + HEVC extensions, including
+    // Apple/ISO gain maps and WIC floating-point PQ/HLG representations.
+    public static readonly string[] Extensions = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".jxr", ".wdp", ".hdp", ".ico", ".heic", ".heif"];
     private static readonly HashSet<string> Set = new(Extensions, StringComparer.OrdinalIgnoreCase);
     public static bool IsSupported(string path) => !System.IO.Path.GetFileName(path).StartsWith("._",StringComparison.Ordinal) && Set.Contains(System.IO.Path.GetExtension(path));
     public static string Normalize(string path)

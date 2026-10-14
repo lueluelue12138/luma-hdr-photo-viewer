@@ -12,7 +12,7 @@ for entry in subprocess.check_output(['git', 'ls-files', '--stage', '-z'], cwd=R
     _, oid, stage = info.split()
     if stage != '0': raise RuntimeError('Resolve index conflicts before publishing.')
     files.append([oid, name])
-forbidden_suffixes = {'.exe', '.dll', '.lib', '.exp', '.obj', '.zip', '.pfx', '.p12', '.pem', '.key', '.db', '.sqlite', '.lth', '.jpg', '.jpeg', '.jxr', '.arw', '.mp4'}
+forbidden_suffixes = {'.exe', '.dll', '.lib', '.exp', '.obj', '.zip', '.pfx', '.p12', '.pem', '.key', '.db', '.sqlite', '.lth', '.jpg', '.jpeg', '.jxr', '.heic', '.heif', '.wdp', '.hdp', '.avif', '.arw', '.mp4'}
 errors = []
 for oid, name in files:
     p = Path(name)

@@ -60,6 +60,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native checks failed.' }
           python tests/verify_hdr_formats.py
           if ($LASTEXITCODE -ne 0) { throw 'Native gain-map format checks failed.' }
+          python tests/verify_hdr_peak.py "$PWD/artifacts/ci-native/Luma.Native.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'FP16 display-headroom endpoint checks failed.' }
           # Hosted CI verifies WIC/D3D11/FP16 fallback. It has no RTX GPU and
           # must never claim that it has verified NVIDIA AI enhancement.
 

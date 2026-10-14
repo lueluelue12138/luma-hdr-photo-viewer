@@ -22,7 +22,7 @@ Luma 是一个免费、开源的 Windows 原生图库与照片查看器。它把
 
 ## 当前状态
 
-**正在开发，尚未发布正式下载版。** 当前源码版本为 `0.1.18`，性能和实际使用体验仍在持续完善。首次未缓存的大相册缩略图、首次 AI 初始化，以及更多显示器上的验证还需要继续优化。
+**正在开发，尚未发布正式下载版。** 当前源码版本为 `0.1.19`，性能和实际使用体验仍在持续完善。首次未缓存的大相册缩略图、首次 AI 初始化，以及更多显示器上的验证还需要继续优化。
 
 GitHub Actions 的 **standard** 开发构建可验证安装与普通看图，**不包含 NVIDIA SDK，也不提供 RTX HDR / VSR**。版本标签触发的 **rtx** 流程从受控私有构建输入读取官方 SDK，自动生成包含 TrueHDR / VSR 运行库的完整 EXE 与便携 ZIP，并上传到 **Release 草稿**；正式公开下载由维护者另行决定。两种构建都会明确标识能力并保留独立许可，详见 [发布流程](docs/RELEASING.md)。
 
@@ -31,14 +31,14 @@ GitHub Actions 的 **standard** 开发构建可验证安装与普通看图，**�
 | 内容 | 当前支持 |
 | --- | --- |
 | 普通图片 | JPEG、PNG、BMP、GIF、TIFF、ICO |
-| 原生 HDR 图片 | Android Ultra HDR / ISO / Apple 增益图 JPEG；浮点线性 scRGB JPEG XR：JXR / WDP / HDP。直接显示，不再进行 SDR → HDR 增强；增益图 JPEG 可按住空格对照 SDR 底图 |
+| 原生 HDR 图片 | iPhone HEIC 的 Apple / ISO 增益图、PQ HEIC；Android Ultra HDR / ISO / Apple 增益图 JPEG；线性 scRGB JPEG XR（JXR / WDP / HDP）。直接显示，无需 RTX；增益图可按住空格对照 SDR 底图 |
 | SDR → RTX HDR | 官方 TrueHDR；需要兼容 RTX GPU、驱动与启用 HDR 的屏幕 |
 | AI 超分 | 官方 RTX VSR，独立开关，默认关闭 |
-| 暂未支持 | Apple HEIC、HEIF / AVIF HDR、JPEG XL、OpenEXR、RAW、动画播放；GIF / 多页 TIFF 当前显示第一帧 |
+| 暂未支持 | HLG HEIC 的完整验证、AVIF HDR、JPEG XL、OpenEXR、RAW、动画播放；GIF / 多页 TIFF 当前显示第一帧 |
 
 主流 HDR 格式会继续扩展，但**普通 SDR 照片的 RTX HDR 体验**仍是 Luma 的核心方向。大图片可能依据资源预算缩小处理；HDR 不保证每个区域都更亮，结果取决于图片、模型、显示器和参数。
 
-Apple 增益图 JPEG 已验证部分样本，尚不代表支持 iPhone 的 HEIC 原始照片；支持范围、屏幕适配边界及后续顺序见 [HDR 格式说明](docs/HDR-FORMATS.md)。
+HEIC 需要 Windows HEIF 图像扩展和 HEVC 视频扩展。已验证真实 iPhone 原片、ISO 增益图及 Apple 官方 PQ 样本；增益图跟随 Windows 白色与峰值。具体支持范围及后续验证见 [HDR 格式说明](docs/HDR-FORMATS.md)。
 
 ## 自己构建
 

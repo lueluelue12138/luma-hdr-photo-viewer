@@ -69,7 +69,8 @@ void check(HRESULT hr) { if(FAILED(hr)) throw Failure{hr}; }
 void report(HRESULT hr) { wchar_t* s=nullptr; FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS,nullptr,hr,0,(wchar_t*)&s,0,nullptr); lastError=s?s:L"Native rendering error"; if(s)LocalFree(s); }
 template<class F> HRESULT safe(F f) noexcept {try{ f(); lastError.clear(); return S_OK; }catch(const Failure& e){if(e.message.empty())report(e.hr);else lastError=e.message;return e.hr;}catch(std::bad_alloc&){lastError=L"Insufficient memory";return E_OUTOFMEMORY;}catch(...){lastError=L"Unexpected native error";return E_FAIL;}}
 struct FrameInfo {uint32_t width,height,originalWidth,originalHeight; int32_t nativeHdr,downsampled; uint64_t bytes;};
-struct Frame {FrameInfo info{}; std::vector<uint8_t> pixels,sdrPixels;bool hasAlpha=false;};
+struct GainDisplay {float minimum=1,maximum=1;float offsetSdr[3]{},offsetHdr[3]{};int gamut=0,model=0;};
+struct Frame {FrameInfo info{}; std::vector<uint8_t> pixels,sdrPixels,gainBasePixels;GainDisplay gainDisplay;bool hasAlpha=false;};
 struct Status { wchar_t gpu[128]; wchar_t display[128]; int32_t nvidia,hdrActive,fp16,nativeHdr; float maxNits,sdrWhite; uint64_t gpuBytes; int32_t hdrEffective,vsrEffective,sdkAvailable,hdrAvailable,vsrAvailable; uint32_t ngxResult,hdrEvaluations,vsrEvaluations; wchar_t hdrMessage[256],vsrMessage[256];};
 struct RenderMetrics {uint64_t presents{},photoPresents{},unfrostedPhotoPresents{},blurBuilds{};double lastDrawMilliseconds{};};
 // Separate diagnostics ABI: leave existing status/render-metrics callers intact.
@@ -81,12 +82,16 @@ ComPtr<ID3DBlob> compiledShader(const char* source,const char* entry,const char*
 }
 #include "Glass.h"
 #include "GainMap.h"
+#include "Heif.h"
 
 std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=false) {
     HRESULT init=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
     struct Uninit{bool yes;~Uninit(){if(yes)CoUninitialize();}} uninit{SUCCEEDED(init)};
     ComPtr<IWICImagingFactory> wic; check(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&wic)));
-    ComPtr<IWICBitmapDecoder> decoder; check(wic->CreateDecoderFromFilename(path,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&decoder));
+    auto heif=probeHeif(path);
+    ComPtr<IWICBitmapDecoder> decoder;
+    if(heif&&heif->base!=heif->primary)decoder=heif->decoder(wic.Get(),heif->base);
+    else{auto hr=wic->CreateDecoderFromFilename(path,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&decoder);if(heif&&hr==WINCODEC_ERR_COMPONENTNOTFOUND)throw Failure{hr,L"HEIC 需要 Windows HEIF 图像扩展和 HEVC 视频扩展，请在 Microsoft Store 安装"};check(hr);}
     ComPtr<IWICBitmapFrameDecode> first; check(decoder->GetFrame(0,&first));
     UINT ow,oh; check(first->GetSize(&ow,&oh)); if(!ow||!oh)throw Failure{E_INVALIDARG};
     WICPixelFormatGUID format; check(first->GetPixelFormat(&format));
@@ -94,9 +99,10 @@ std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=
     // Ordinary JPEGs only scan their small marker header; thumbnails use the
     // backward-compatible SDR base and never reconstruct an HDR image.
     auto gain=(!thumbnail&&IsEqualGUID(container,GUID_ContainerFormatJpeg))?probeGainMap(path):nullptr;
+    bool heifGain=heif&&heif->gain&&!thumbnail,hasGain=gain||heifGain;
     // Floating-point sources stay linear scRGB; JPEG gain maps must pass the
     // reference parser above. Integer bit depth alone never implies HDR.
-    bool hdr=gain||IsEqualGUID(format,GUID_WICPixelFormat128bppRGBAFloat)||IsEqualGUID(format,GUID_WICPixelFormat128bppRGBFloat)||IsEqualGUID(format,GUID_WICPixelFormat64bppRGBAHalf)||IsEqualGUID(format,GUID_WICPixelFormat48bppRGBHalf)||IsEqualGUID(format,GUID_WICPixelFormat64bppRGBHalf);
+    bool hdr=hasGain||IsEqualGUID(format,GUID_WICPixelFormat128bppRGBAFloat)||IsEqualGUID(format,GUID_WICPixelFormat128bppRGBFloat)||IsEqualGUID(format,GUID_WICPixelFormat64bppRGBAHalf)||IsEqualGUID(format,GUID_WICPixelFormat48bppRGBHalf)||IsEqualGUID(format,GUID_WICPixelFormat64bppRGBHalf);
     if(thumbnail&&hdr)throw Failure{E_NOTIMPL,L"浮点 HDR 使用 Windows 缩略图提供器"};
     ComPtr<IWICBitmapSource> source=first;
     // Decode JPEG at its codec's native reduced resolution before ICC conversion.
@@ -107,8 +113,8 @@ std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=
     UINT width=std::max(1u,UINT(std::ceil(ow*ratio))),height=std::max(1u,UINT(std::ceil(oh*ratio)));
     std::vector<uint8_t> reduced;
     GainReconstruction gainPixels;
-    if(gain){
-        gainPixels=reconstructGainMap(wic.Get(),*gain,width,height);
+    if(hasGain){
+        gainPixels=gain?reconstructGainMap(wic.Get(),*gain,width,height):reconstructHeif(wic.Get(),*heif,first.Get(),width,height);
         ComPtr<IWICBitmap> bitmap;check(wic->CreateBitmapFromMemory(width,height,GUID_WICPixelFormat128bppRGBAFloat,width*16,UINT(gainPixels.hdr.size()),gainPixels.hdr.data(),&bitmap));source=bitmap;
     }
     if(!hdr&&ratio<1&&IsEqualGUID(container,GUID_ContainerFormatJpeg)) {
@@ -125,7 +131,7 @@ std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=
     }
     // JPEG XR also offers codec-level scaled decode. Request a floating-point
     // representation, preserving scRGB rather than passing through RGBA8.
-    if(hdr&&!gain&&ratio<1&&IsEqualGUID(container,GUID_ContainerFormatWmp)){
+    if(hdr&&!hasGain&&ratio<1&&IsEqualGUID(container,GUID_ContainerFormatWmp)){
         ComPtr<IWICBitmapSourceTransform> fast;
         if(SUCCEEDED(first.As(&fast))){
             UINT fw=width,fh=height;WICPixelFormatGUID pixel=GUID_WICPixelFormat128bppRGBAFloat;BOOL supported=FALSE;
@@ -137,7 +143,7 @@ std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=
             }
         }
     }
-    if(!gain&&ratio<1) {ComPtr<IWICBitmapScaler> scaler;check(wic->CreateBitmapScaler(&scaler));check(scaler->Initialize(source.Get(),width,height,WICBitmapInterpolationModeFant));source=scaler;}
+    if(!hasGain&&ratio<1) {ComPtr<IWICBitmapScaler> scaler;check(wic->CreateBitmapScaler(&scaler));check(scaler->Initialize(source.Get(),width,height,WICBitmapInterpolationModeFant));source=scaler;}
     if(!hdr) {
         UINT count=0; first->GetColorContexts(0,nullptr,&count);
         if(count) {
@@ -163,15 +169,20 @@ std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=
     switch(orientation){case 2:opt=WICBitmapTransformFlipHorizontal;break;case 3:opt=WICBitmapTransformRotate180;break;case 4:opt=WICBitmapTransformFlipVertical;break;case 5:opt=WICBitmapTransformOptions(WICBitmapTransformRotate90|WICBitmapTransformFlipHorizontal);break;case 6:opt=WICBitmapTransformRotate90;break;case 7:opt=WICBitmapTransformOptions(WICBitmapTransformRotate270|WICBitmapTransformFlipHorizontal);break;case 8:opt=WICBitmapTransformRotate270;break;}
     if(opt!=WICBitmapTransformRotate0){ComPtr<IWICBitmapFlipRotator> rotate;check(wic->CreateBitmapFlipRotator(&rotate));check(rotate->Initialize(source.Get(),opt));source=rotate;}
     check(source->GetSize(&width,&height)); if(orientation>=5&&orientation<=8)std::swap(ow,oh);
-    auto frame=std::make_unique<Frame>();frame->info={width,height,ow,oh,gain?2:hdr?1:0,ratio<1?(maxEdge?2:1):0,uint64_t(width)*height*(gain?20:hdr?16:4)};
+    auto frame=std::make_unique<Frame>();frame->info={width,height,ow,oh,gain?2:heifGain?(heif->apple?3:4):hdr?1:0,ratio<1?(maxEdge?2:1):0,uint64_t(width)*height*(hasGain?(gainPixels.base.empty()?20:24):hdr?16:4)};
     frame->pixels.resize(size_t(width)*height*(hdr?16:4)); check(source->CopyPixels(nullptr,width*(hdr?16:4),UINT(frame->pixels.size()),frame->pixels.data()));
-    if(gain){
+    if(hasGain){
+        frame->gainDisplay=gainPixels.display;
         if(opt==WICBitmapTransformRotate0)frame->sdrPixels=std::move(gainPixels.sdr);
         else{
             UINT sw=(orientation>=5&&orientation<=8)?height:width,sh=(orientation>=5&&orientation<=8)?width:height;
             ComPtr<IWICBitmap> bitmap;check(wic->CreateBitmapFromMemory(sw,sh,GUID_WICPixelFormat32bppRGBA,sw*4,UINT(gainPixels.sdr.size()),gainPixels.sdr.data(),&bitmap));
             ComPtr<IWICBitmapFlipRotator> rotate;check(wic->CreateBitmapFlipRotator(&rotate));check(rotate->Initialize(bitmap.Get(),opt));
             frame->sdrPixels.resize(size_t(width)*height*4);check(rotate->CopyPixels(nullptr,width*4,UINT(frame->sdrPixels.size()),frame->sdrPixels.data()));
+        }
+        if(!gainPixels.base.empty()){
+            if(opt==WICBitmapTransformRotate0)frame->gainBasePixels=std::move(gainPixels.base);
+            else{UINT sw=(orientation>=5&&orientation<=8)?height:width,sh=(orientation>=5&&orientation<=8)?width:height;ComPtr<IWICBitmap> bitmap;check(wic->CreateBitmapFromMemory(sw,sh,GUID_WICPixelFormat32bppRGBA,sw*4,UINT(gainPixels.base.size()),gainPixels.base.data(),&bitmap));ComPtr<IWICBitmapFlipRotator> rotate;check(wic->CreateBitmapFlipRotator(&rotate));check(rotate->Initialize(bitmap.Get(),opt));frame->gainBasePixels.resize(size_t(width)*height*4);check(rotate->CopyPixels(nullptr,width*4,UINT(frame->gainBasePixels.size()),frame->gainBasePixels.data()));}
         }
     }
     // Pixels are immutable after decode. Cache this property once, rather than
@@ -181,8 +192,18 @@ std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=
 }
 
 const char* shader=R"(
-cbuffer View : register(b0) { float2 scale; float2 offset; float white; float nativeHDR; float rotation; float gammaInput; };
-Texture2D photo : register(t0); SamplerState linearSampler : register(s0);
+cbuffer View : register(b0) { float2 scale; float2 offset; float white; float nativeHDR; float rotation; float gammaInput; float gainWeight; float gainModel; float gainGamut; float gainWhite; float4 gainOffsetSdr; float4 gainOffsetHdr; };
+Texture2D photo : register(t0); Texture2D gainBase : register(t1); SamplerState linearSampler : register(s0);
+float3 gainTo709(float3 c) {
+ if(gainGamut==1)return mul(float3x3(1.22494,-.22494,0,-.042057,1.042057,0,-.019638,-.078636,1.098274),c);
+ if(gainGamut==2)return mul(float3x3(1.660491,-.587641,-.07285,-.124551,1.1329,-.008349,-.018151,-.100579,1.11873),c);
+ return c;
+}
+float3 gainFrom709(float3 c) {
+ if(gainGamut==1)return mul(float3x3(.822462,.177537,.000001,.033194,.966807,-.000001,.017083,.072398,.91052),c);
+ if(gainGamut==2)return mul(float3x3(.627404,.329282,.043314,.069097,.919541,.011362,.016392,.088013,.895595),c);
+ return c;
+}
 struct Vertex {float4 pos:SV_POSITION;float2 uv:TEXCOORD0;};
 Vertex VS(uint id:SV_VertexID) {
  float2 p[6]={float2(-1,1),float2(1,1),float2(-1,-1),float2(-1,-1),float2(1,1),float2(1,-1)};
@@ -194,6 +215,18 @@ float4 PS(Vertex v):SV_TARGET {
  float4 c=photo.Sample(linearSampler,v.uv);float3 rgb=c.rgb;
  if(gammaInput>0.5)rgb=lerp(rgb/12.92,pow((rgb+0.055)/1.055,2.4),step(0.04045,rgb));
  if(nativeHDR<0.5)rgb*=white;
+ if(gainModel>0.5) {
+  if(gainWeight>=0.99999)rgb*=gainWhite*(80.0/203.0);
+  else {
+   // Full HDR is cached in scRGB. Recover the authored ratio in its own
+   // primaries, then apply ISO's logarithmic display-headroom weight. This
+   // needs no re-decode, CPU pixel loop or RTX evaluation when switching screens.
+   float3 b=gainBase.Sample(linearSampler,v.uv).rgb;
+   float3 h=gainFrom709(rgb*(80.0/203.0));
+   float3 factor=max((h+gainOffsetHdr.rgb)/max(b+gainOffsetSdr.rgb,1e-8),1e-8);
+   rgb=gainTo709((b+gainOffsetSdr.rgb)*pow(factor,gainWeight)-gainOffsetHdr.rgb)*gainWhite;
+  }
+ }
  // Premultiplied alpha exposes the native window backdrop outside the photo.
  return float4(rgb*c.a,c.a);
 }
@@ -215,6 +248,7 @@ struct Renderer {
     ComPtr<ID3D11Texture2D> originalTexture,sdkInput,hdrTexture,vsrTexture;bool requestedHdr=false,requestedVsr=false,holdOriginal=false,hdrCached=false,vsrCached=false,sdkInputReady=false,sourceAlpha=false;unsigned cachedPeak=0;int hdrCapability=0,vsrCapability=0;UINT vsrWidth=0,vsrHeight=0;
     std::unique_ptr<GlassRenderer> glass;
     ComPtr<ID3D11Texture2D> sdrOriginalTexture;ComPtr<ID3D11ShaderResourceView> sdrOriginalView;
+    ComPtr<ID3D11Texture2D> gainBaseTexture;ComPtr<ID3D11ShaderResourceView> gainBaseView;GainDisplay gainDisplay;
     float compositionDpi=1;
 #ifdef LUMA_NVIDIA
     NVSDK_NGX_Parameter* hdrParams=nullptr;NVSDK_NGX_Parameter* vsrParams=nullptr;NVSDK_NGX_Handle* hdrFeature=nullptr;NVSDK_NGX_Handle* vsrFeature=nullptr;bool ngxInitialized=false;
@@ -224,7 +258,7 @@ struct Renderer {
     RenderMetrics metrics{};
     TextureMetrics textureMetrics{};
     float cachedCompositionDpi=0;
-    std::tuple<ID3D11ShaderResourceView*,UINT,UINT,float,float,float,int,float,int,int,UINT,UINT> sceneStamp{};
+    std::tuple<ID3D11ShaderResourceView*,UINT,UINT,float,float,float,int,float,float,int,int,UINT,UINT> sceneStamp{};
     Renderer(IUnknown* p,HWND h,bool deferEffects=false):hwnd(h) {
         if(p)check(p->QueryInterface(IID_PPV_ARGS(&panel)));
         check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
@@ -247,7 +281,7 @@ struct Renderer {
         auto v=compiledShader(shader,"VS","vs_5_0"),pixel=compiledShader(shader,"PS","ps_5_0");
         check(device->CreateVertexShader(v->GetBufferPointer(),v->GetBufferSize(),nullptr,&vs));check(device->CreatePixelShader(pixel->GetBufferPointer(),pixel->GetBufferSize(),nullptr,&ps));
         auto input=compiledShader(shader,"PSInput","ps_5_0");check(device->CreatePixelShader(input->GetBufferPointer(),input->GetBufferSize(),nullptr,&inputPs));
-        D3D11_BUFFER_DESC cb{};cb.ByteWidth=32;cb.Usage=D3D11_USAGE_DEFAULT;cb.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(device->CreateBuffer(&cb,nullptr,&constants));
+        D3D11_BUFFER_DESC cb{};cb.ByteWidth=80;cb.Usage=D3D11_USAGE_DEFAULT;cb.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(device->CreateBuffer(&cb,nullptr,&constants));
         D3D11_SAMPLER_DESC sd{};sd.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sd.AddressU=sd.AddressV=sd.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sd.MaxLOD=D3D11_FLOAT32_MAX;check(device->CreateSamplerState(&sd,&sampler));
         glass=std::make_unique<GlassRenderer>(device.Get());
         if(panel)attach(p);
@@ -296,7 +330,7 @@ struct Renderer {
         }
 #endif
         image.Reset();originalView.Reset();hdrView.Reset();vsrView.Reset();
-        originalTexture.Reset();sdrOriginalView.Reset();sdrOriginalTexture.Reset();sdkInput.Reset();hdrTexture.Reset();vsrTexture.Reset();
+        originalTexture.Reset();sdrOriginalView.Reset();sdrOriginalTexture.Reset();gainBaseView.Reset();gainBaseTexture.Reset();gainDisplay={};sdkInput.Reset();hdrTexture.Reset();vsrTexture.Reset();
         target.Reset();offscreen.Reset();swap.Reset();glass->releaseSurfaces();context->Flush();
         hwnd=nullptr;width=height=iw=ih=processWidth=processHeight=1;vsrWidth=vsrHeight=0;
         requestedHdr=requestedVsr=holdOriginal=hdrCached=vsrCached=sdkInputReady=sourceAlpha=false;
@@ -363,7 +397,7 @@ struct Renderer {
                 if(status.hdrActive&&DisplayConfigGetDeviceInfo(&white.header)==ERROR_SUCCESS)status.sdrWhite=white.SDRWhiteLevel/1000.0f;
             }
         }
-        if(image){if(evaluate&&requestedHdr&&status.hdrActive&&(oldHdr!=status.hdrActive||oldPeak!=status.maxNits||oldWhite!=status.sdrWhite))effects(requestedHdr,requestedVsr,holdOriginal,currentPreset);else selectImage();if(present&&(oldHdr!=status.hdrActive||oldWhite!=status.sdrWhite||oldEffective!=status.hdrEffective))draw();}
+        if(image){if(evaluate&&requestedHdr&&status.hdrActive&&(oldHdr!=status.hdrActive||oldPeak!=status.maxNits||oldWhite!=status.sdrWhite))effects(requestedHdr,requestedVsr,holdOriginal,currentPreset);else selectImage();if(present&&(oldHdr!=status.hdrActive||oldPeak!=status.maxNits||oldWhite!=status.sdrWhite||oldEffective!=status.hdrEffective))draw();}
     }
     void resize(UINT w,UINT h){w=std::clamp(w,1u,16384u);h=std::clamp(h,1u,16384u);if(target&&w==width&&h==height)return;
         context->OMSetRenderTargets(0,nullptr,nullptr);target.Reset();offscreen.Reset();
@@ -379,7 +413,7 @@ struct Renderer {
     }
     void updateMemory(){
         uint64_t bytes=target?uint64_t(width)*height*(swap?16:8):0;
-        for(auto texture:{originalTexture.Get(),sdrOriginalTexture.Get(),sdkInput.Get(),hdrTexture.Get(),vsrTexture.Get()})bytes+=textureBytes(texture);
+        for(auto texture:{originalTexture.Get(),sdrOriginalTexture.Get(),gainBaseTexture.Get(),sdkInput.Get(),hdrTexture.Get(),vsrTexture.Get()})bytes+=textureBytes(texture);
         if(glass)bytes+=glass->bytes();status.gpuBytes=bytes;
     }
     void use(Frame& f){auto started=std::chrono::steady_clock::now();context->ClearState();sceneStamp={};zoom=1;panX=panY=0;rotation=0;D3D11_TEXTURE2D_DESC d{};d.Width=f.info.width;d.Height=f.info.height;d.MipLevels=0;d.ArraySize=1;d.Format=f.info.nativeHdr?DXGI_FORMAT_R32G32B32A32_FLOAT:DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;d.MiscFlags=D3D11_RESOURCE_MISC_GENERATE_MIPS;
@@ -390,6 +424,12 @@ struct Renderer {
             if(!matches(sdrOriginalTexture.Get(),d.Width,d.Height,d.Format)){ComPtr<ID3D11Texture2D> tex;ComPtr<ID3D11ShaderResourceView> view;check(device->CreateTexture2D(&d,nullptr,&tex));check(device->CreateShaderResourceView(tex.Get(),nullptr,&view));sdrOriginalTexture=tex;sdrOriginalView=view;}
             context->UpdateSubresource(sdrOriginalTexture.Get(),0,nullptr,f.sdrPixels.data(),iw*4,0);context->GenerateMips(sdrOriginalView.Get());
         }else{sdrOriginalView.Reset();sdrOriginalTexture.Reset();}
+        gainDisplay=f.gainDisplay;
+        if(!f.gainBasePixels.empty()){
+            d.Format=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+            if(!matches(gainBaseTexture.Get(),d.Width,d.Height,d.Format)){ComPtr<ID3D11Texture2D> tex;ComPtr<ID3D11ShaderResourceView> view;check(device->CreateTexture2D(&d,nullptr,&tex));check(device->CreateShaderResourceView(tex.Get(),nullptr,&view));gainBaseTexture=tex;gainBaseView=view;}
+            context->UpdateSubresource(gainBaseTexture.Get(),0,nullptr,f.gainBasePixels.data(),iw*4,0);context->GenerateMips(gainBaseView.Get());
+        }else{gainBaseView.Reset();gainBaseTexture.Reset();}
         // Allocation reuse is not result reuse: each new frame invalidates its
         // SDK input, enhanced pixels and scene/blur contents.
         hdrCached=vsrCached=sdkInputReady=false;selectImage();
@@ -398,7 +438,7 @@ struct Renderer {
         if(sourceAlpha){status.hdrAvailable=status.vsrAvailable=0;wcscpy_s(status.hdrMessage,L"透明图片保留原始透明度，暂不支持增强");wcscpy_s(status.vsrMessage,L"透明图片暂不支持 VSR");}
         // Plan the same budget from the source/canvas, excluding reusable
         // enhancement allocations. Counting them twice would shrink each photo.
-        uint64_t canvasBytes=uint64_t(width)*height*16,sourceBytes=textureBytes(originalTexture.Get())+textureBytes(sdrOriginalTexture.Get())+(glass?glass->bytes():0);
+        uint64_t canvasBytes=uint64_t(width)*height*16,sourceBytes=textureBytes(originalTexture.Get())+textureBytes(sdrOriginalTexture.Get())+textureBytes(gainBaseTexture.Get())+(glass?glass->bytes():0);
         double available=double(textureBudget>canvasBytes+sourceBytes?textureBudget-canvasBytes-sourceBytes:64ull*1024*1024);
         // Reserve 4 bytes/pixel for SDK input + 8 for FP16 output. Full resolution whenever budget permits.
         float processingScale=std::min(1.0f,float(std::sqrt(available/(12.0*iw*ih))));
@@ -442,7 +482,7 @@ struct Renderer {
         // Ordinary GPU resampling prepares large photos for the SDK; it never invokes VSR.
         if(!sdkInputReady){if(!sdkInput){D3D11_TEXTURE2D_DESC d{};d.Width=processWidth;d.Height=processHeight;d.ArraySize=d.MipLevels=1;d.Format=DXGI_FORMAT_R8G8B8A8_UNORM;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;check(device->CreateTexture2D(&d,nullptr,&sdkInput));textureMetrics.inputAllocations++;}
             if(processWidth==iw&&processHeight==ih)context->CopySubresourceRegion(sdkInput.Get(),0,0,0,0,originalTexture.Get(),0,nullptr);
-            else{context->ClearState();ComPtr<ID3D11RenderTargetView> outputView;check(device->CreateRenderTargetView(sdkInput.Get(),nullptr,&outputView));auto t=outputView.Get();context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT viewport{0,0,float(processWidth),float(processHeight),0,1};context->RSSetViewports(1,&viewport);float values[]={1,1,0,0,1,0,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(inputPs.Get(),nullptr,0);auto i=originalView.Get();context->PSSetShaderResources(0,1,&i);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);context->Draw(6,0);context->ClearState();}
+            else{context->ClearState();ComPtr<ID3D11RenderTargetView> outputView;check(device->CreateRenderTargetView(sdkInput.Get(),nullptr,&outputView));auto t=outputView.Get();context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT viewport{0,0,float(processWidth),float(processHeight),0,1};context->RSSetViewports(1,&viewport);float values[20]={1,1,0,0,1,0,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(inputPs.Get(),nullptr,0);auto i=originalView.Get();context->PSSetShaderResources(0,1,&i);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);context->Draw(6,0);context->ClearState();}
             sdkInputReady=true;
         }
         auto output=[&](DXGI_FORMAT format,UINT w,UINT h,ComPtr<ID3D11Texture2D>& texture,ComPtr<ID3D11ShaderResourceView>& view){if(matches(texture.Get(),w,h,format))return;if(texture){if(format==DXGI_FORMAT_R16G16B16A16_FLOAT&&hdrFeature){NVSDK_NGX_D3D11_ReleaseFeature(hdrFeature);hdrFeature=nullptr;}else if(format!=DXGI_FORMAT_R16G16B16A16_FLOAT&&vsrFeature){NVSDK_NGX_D3D11_ReleaseFeature(vsrFeature);vsrFeature=nullptr;}}D3D11_TEXTURE2D_DESC d{};d.Width=w;d.Height=h;d.ArraySize=d.MipLevels=1;d.Format=format;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_UNORDERED_ACCESS;ComPtr<ID3D11Texture2D> next;ComPtr<ID3D11ShaderResourceView> nextView;check(device->CreateTexture2D(&d,nullptr,&next));check(device->CreateShaderResourceView(next.Get(),nullptr,&nextView));texture=next;view=nextView;if(format==DXGI_FORMAT_R16G16B16A16_FLOAT)textureMetrics.hdrAllocations++;else textureMetrics.vsrAllocations++;};
@@ -468,12 +508,17 @@ struct Renderer {
         selectImage();updateMemory();if(present)draw();
     }
     void draw(){auto started=std::chrono::steady_clock::now();context->ClearState();bool frosted=glass&&glass->enabled();if(frosted)glass->ensure(width,height);
-        auto nextStamp=std::make_tuple(image.Get(),width,height,zoom,panX,panY,rotation,status.sdrWhite,int(status.nativeHdr||status.hdrEffective),status.vsrEffective,status.hdrEvaluations,status.vsrEvaluations);
+        auto nextStamp=std::make_tuple(image.Get(),width,height,zoom,panX,panY,rotation,status.sdrWhite,status.maxNits,int(status.nativeHdr||status.hdrEffective),status.vsrEffective,status.hdrEvaluations,status.vsrEvaluations);
         bool refresh=!frosted||!glass->blurReady||sceneStamp!=nextStamp||cachedCompositionDpi!=compositionDpi;cachedCompositionDpi=compositionDpi;
         if(refresh){const float clear[]={0,0,0,0};auto t=frosted?glass->sceneTarget.Get():target.Get();context->ClearRenderTargetView(t,clear);context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT vp{0,0,float(width),float(height),0,1};context->RSSetViewports(1,&vp);
         if(image){float w=float(rotation%2?ih:iw),h=float(rotation%2?iw:ih);float fit=std::min(width/w,height/h);
-            float values[]={w*fit*zoom/width,h*fit*zoom/height,2*panX/width,-2*panY/height,status.sdrWhite,float((status.nativeHdr||status.hdrEffective)&&image!=sdrOriginalView),float(rotation),float(status.vsrEffective&&!status.hdrEffective)};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
-            context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(ps.Get(),nullptr,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->PSSetConstantBuffers(0,1,&c);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);auto i=image.Get();context->PSSetShaderResources(0,1,&i);context->Draw(6,0);}
+            // Gain maps describe HDR relative to their SDR rendition. Match
+            // Windows SDR white so the base and HDR comparison don't acquire
+            // an unrelated brightness jump. PQ and captured scRGB stay absolute.
+            float gainWhite=status.maxNits>0?std::min(status.sdrWhite,status.maxNits/80):status.sdrWhite;
+            float weight=1;if(gainDisplay.model&&status.maxNits>0&&gainDisplay.maximum>gainDisplay.minimum)weight=std::clamp((std::log2(std::max(status.maxNits/(gainWhite*80),1.0f))-std::log2(gainDisplay.minimum))/(std::log2(gainDisplay.maximum)-std::log2(gainDisplay.minimum)),0.0f,1.0f);
+            float values[]={w*fit*zoom/width,h*fit*zoom/height,2*panX/width,-2*panY/height,status.sdrWhite,float((status.nativeHdr||status.hdrEffective)&&image!=sdrOriginalView),float(rotation),float(status.vsrEffective&&!status.hdrEffective),weight,float(image==originalView?gainDisplay.model:0),float(gainDisplay.gamut),gainWhite,gainDisplay.offsetSdr[0],gainDisplay.offsetSdr[1],gainDisplay.offsetSdr[2],0,gainDisplay.offsetHdr[0],gainDisplay.offsetHdr[1],gainDisplay.offsetHdr[2],0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
+            context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(ps.Get(),nullptr,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->PSSetConstantBuffers(0,1,&c);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);ID3D11ShaderResourceView* resources[]={image.Get(),gainBaseView?gainBaseView.Get():sdrOriginalView.Get()};context->PSSetShaderResources(0,2,resources);context->Draw(6,0);}
         }if(frosted)sceneStamp=nextStamp;else sceneStamp={};
         if(frosted)glass->composite(context.Get(),target.Get(),sampler.Get(),status.sdrWhite,compositionDpi,refresh);
         if(swap)check(swap->Present(1,0));else context->Flush();
@@ -489,6 +534,10 @@ API HRESULT __cdecl LumaDecodeThumbnail(const wchar_t* path,UINT maxEdge,FrameIn
 API HRESULT __cdecl LumaFramePixel(void* value,UINT x,UINT y,float* rgba){
     if(!value||!rgba)return E_POINTER;return safe([&]{auto& frame=*static_cast<Frame*>(value);if(x>=frame.info.width||y>=frame.info.height||!frame.info.nativeHdr)throw Failure{E_INVALIDARG};memcpy(rgba,frame.pixels.data()+(size_t(y)*frame.info.width+x)*16,16);});
 }
+API HRESULT __cdecl LumaFrameGainInfo(void* value,GainDisplay* result){if(!value||!result)return E_POINTER;*result=static_cast<Frame*>(value)->gainDisplay;return S_OK;}
+// Diagnostic display injection exercises real GPU presentation, without
+// changing Windows settings. The product only calls the real display probe.
+API HRESULT __cdecl LumaNativeDisplayTest(void* r,int hdr,float peak,float white){if(!r||!std::isfinite(peak)||peak<=0||!std::isfinite(white)||white<=0)return E_INVALIDARG;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.status.hdrActive=hdr!=0;x.status.maxNits=peak;x.status.sdrWhite=white;x.selectImage();x.sceneStamp={};x.draw();});}
 API HRESULT __cdecl LumaCreateFast(IUnknown* panel,HWND hwnd,void** result){if(!result)return E_POINTER;*result=nullptr;return safe([&]{*result=new Renderer(panel,hwnd,true);});}
 API HRESULT __cdecl LumaInitEffects(void* r){if(!r)return E_POINTER;return safe([&]{static_cast<Renderer*>(r)->initEffects();});}
 API void __cdecl LumaFreeFrame(void* f){delete static_cast<Frame*>(f);}

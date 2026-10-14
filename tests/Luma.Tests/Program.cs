@@ -10,6 +10,7 @@ Assert(LaunchArguments.PhotoPath(["--test-library","test.jpg","--import","album.
 Assert(LaunchArguments.PhotoPath(["--import","album.jpg"]) is null,"image-like import folder still launches gallery");
 Assert(LaunchArguments.PhotoPath(["--test-library","test.jpg","--gallery-source","album.png"]) is null,"read-only gallery source cannot become photo activation");
 Assert(LaunchArguments.PhotoPath(["--verify-startup","._one.JPG","photo.PNG"])=="photo.PNG","activation respects supported formats and metadata exclusion");
+Assert(LaunchArguments.PhotoPath(["camera.HEIC"])=="camera.HEIC"&&SupportedFormats.IsSupported("camera.heif"),"HEIC and HEIF support activation and indexing");
 long id=await store.AddFolderAsync(source);Assert(await store.AddFolderAsync(source)==id,"repeat import is idempotent");
 var album=(await store.AlbumsAsync()).Single();var scan=await indexer.RefreshAsync(album);Assert(scan.Added==2,"recursive supported format index");
 var photos=await store.PhotosAsync();Assert(photos.Count==2,"all photos indexed");var photo=photos[0];await store.ToggleFavoriteAsync(photo);await store.RecordOpenAsync(photo);

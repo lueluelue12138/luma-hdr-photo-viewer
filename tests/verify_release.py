@@ -20,7 +20,7 @@ installer = output/f'Luma-{version}-windows-x64-{args.variant}-setup.exe'
 assert installer.read_bytes()[:2] == b'MZ'
 files = sorted(p for p in payload.rglob('*') if p.is_file())
 for file in files:
-    assert file.suffix.lower() not in {'.db', '.sqlite', '.log', '.lth', '.jpg', '.jpeg', '.jxr', '.zip', '.pfx', '.pem'}, file.name
+    assert file.suffix.lower() not in {'.db', '.sqlite', '.log', '.lth', '.jpg', '.jpeg', '.jxr', '.heic', '.heif', '.wdp', '.hdp', '.avif', '.zip', '.pfx', '.pem'}, file.name
 assert (payload/'licenses/dotnet-LICENSE.txt').exists()
 assert (payload/'licenses/dotnet-ThirdPartyNotices.txt').exists()
 with zipfile.ZipFile(zip_path) as z:

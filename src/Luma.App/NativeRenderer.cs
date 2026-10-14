@@ -16,7 +16,9 @@ internal struct RenderStatus
     public int Nvidia,HdrActive,Fp16,NativeHdr;public float MaxNits,SdrWhite;public ulong GpuBytes;public int HdrEffective,VsrEffective,SdkAvailable,HdrAvailable,VsrAvailable;public uint NgxResult,HdrEvaluations,VsrEvaluations;
     [MarshalAs(UnmanagedType.ByValTStr,SizeConst=256)]public string HdrMessage;
     [MarshalAs(UnmanagedType.ByValTStr,SizeConst=256)]public string VsrMessage;
-    public string HdrReason => NativeHdr==2 ? "照片自带 HDR 增益图，直接还原光影，无需 RTX HDR" : NativeHdr!=0 ? "原生 HDR 图片，跳过 SDR 增强" : HdrEffective!=0 ? HdrMessage : HdrActive==0 ? "当前显示器未启用 Windows HDR" : HdrMessage;
+    public bool HasGainMap => NativeHdr is 2 or 3 or 4;
+    public string GainMapSource => NativeHdr==3?"Apple HEIC":NativeHdr==4?"ISO HEIC":"增益图 JPEG";
+    public string HdrReason => HasGainMap ? "照片自带 HDR 增益图，直接还原光影，无需 RTX HDR" : NativeHdr!=0 ? "原生 HDR 图片，跳过 SDR 增强" : HdrEffective!=0 ? HdrMessage : HdrActive==0 ? "当前显示器未启用 Windows HDR" : HdrMessage;
 }
 internal static class Native
 {

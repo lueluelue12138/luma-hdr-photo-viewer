@@ -1,5 +1,28 @@
 # Luma 本机验证记录
 
+## iPhone HEIC 与校准峰值（0.1.19，2026-10-14）
+
+本轮完成维护者要求的 HEIC 原片支持，详见 [HDR 格式说明](HDR-FORMATS.md)。使用系统 WIC HEIF/HEVC，未增加消费者 HEVC/libheif 依赖。实际支持 Apple 增益图 HEIC、ISO tmap HEIC、浮点 PQ HEIC 和普通 SDR HEIC；同步更新索引、文件激活、选择器及安装包清单。修正 Apple 线性 XMP headroom 被通用解析器当成 log2、Apple 增益被当作 ISO 的问题；下面 0.1.18 的 Apple 数字是当时对通用参考库的比较，不能继续作为正确 Apple 映射的证据。
+
+`tests/verify_heic.py` 使用 QA 专用 pillow-heif/libheif 与 numpy 独立解码、ST.2084 / Apple / ISO 公式，实际 GPU FP16 读回、SDR 选择和缓存切换；所有测试文件 hash 与修改时间前后一致。报告 `artifacts/heic-verification/heic.json`。样本下载地址与 SHA256 固定在 `scripts/Get-HdrSamples.ps1`，第三方样本与测试依赖只保留在忽略的 artifacts，不进入应用或仓库。
+
+| 输入 | 验证结果（512 长边，单次解码，不等于界面首帧） |
+| --- | --- |
+| 维护者 iPhone 15，24 MP / iOS 17.6.1 | 原生 HDR 类型 3；headroom 5.154915；约 430–500 ms；独立参照平均 / 最大通道差约 0.0772 / 1.498 scRGB |
+| 公开相机 Apple HEIC，1512×850 | 原生 HDR 类型 3；headroom 7.371721；约 68–137 ms；平均 / 最大差 0.0976 / 7.175 |
+| iPadOS 26 ISO HEIC，2752×2064 | 原生 HDR 类型 4；headroom 10；约 144–153 ms；平均 / 最大差 0.1509 / 3.645 |
+| Apple 官方 PQ HEIC，2960×3948 | 原生 HDR 类型 1；ST.2084 绝对亮度与 Rec.2020→709 验证；约 206–372 ms；平均 / 最大差 0.0302 / 1.786 |
+
+两套 HEVC 解码、色度及缩放滤波存在差异，边缘最大值明显高于平均值，未声称逐像素一致或全部 iPhone/iOS 认证。三种 HEIC 高光实际保留到 FP16；原生 HDR 下即使请求 HDR 与 VSR，SDK 两个调用计数仍为 0。40 次纹理选择无重解码或 AI；普通 SDR HEIC、.heif 别名、三种破损输入拒绝、SDR 增益底图缩略图通过。首次 HEIC 仍由系统 HEVC 处理，未声称全部照片瞬时打开。Apple 8-bit 曲线使用查找表，预算包含 HDR、SDR 和原始色域底图。
+
+亮度适配与原始数值校验分开：原始 HDR 缓存以 203 nits 参考白表示；显示增益图时以 Windows SDR 白色为参考并按 peak/white 比应用对数权重。PQ / 原始 scRGB 保持绝对亮度。`tests/verify_hdr_peak.py` 在真实 FP16 GPU 目标检查 203 / 406 / 812 / 1600 nits 端点和当前 Windows 峰值。Windows 本次报告 **3675.7439 nits、SDR 白色 480 nits**，足够 headroom 的白色测试读回约 **3675 nits**；不足 headroom 的测试保持自己的范围，不强行填满屏幕。误差在 FP16 量化范围内。该结果证明数值表达和映射，未使用亮度计测量物理面板。峰值来源沿用 RTX 的 DXGI 输出查询，系统 MHC 校准可覆盖该信息。TrueHDR 的参数仍遵守 SDK 规定的 400–2000 nits，原生增益图没有这个 SDK 上限。
+
+最终隔离 WinUI 报告 `artifacts/heic-windows-reopen/hdr-format-windows.json`：9 个 JPEG/HEIC 混合输入、原生来源文字、FP16、SDK 跳过及无新处理任务的空格对照全部通过；再关闭并重新打开 Apple / ISO / PQ HEIC，3 次均实际复用渲染设备并维持正确 HDR 类型。Computer Use 实际打开维护者原片，观察到完整比例适配、Apple HEIC 来源、两个禁用的增强开关和 SDR 底图对照。截图只检查布局/控件，不用其过曝推断 HDR 物理观感。
+
+Release WinUI 与 SDK-free native 构建通过；28 项核心索引/激活/离线/设置检查、SDR 缩略图 ICC/EXIF/alpha 检查，以及 TrueHDR-only（VSR 0）、独立 VSR、组合 VSR、40 次缓存对照、真实照片玻璃、FP16、mip/预算回归通过。SDK-free 构建也通过 JPEG、HEIC 和 GPU 峰值检查。交互报告 `artifacts/viewer-interaction-20261014-201729/viewer-interaction.json`：小 JPEG 随机/预读首帧中位 9/3 ms；40 次缓存 HDR 对照调用中位 0.03 ms、最大 0.07 ms，无额外 worker/AI。这些调用时间不是显示器扫描延迟。24 次图库尺寸合成回调中位 27.5 ms、最大 70.7 ms，既有复杂图库布局性能待办仍未全部解决。
+
+可运行候选为 `artifacts/Luma-heic/Luma.App.exe`，0.1.19，自包含 x64。原生 DLL 1232384 字节，比 0.1.18 增加 45056 字节（44 KiB）；HEIC 没有增加分发解码运行库。没有替换正式安装、改变默认关联、生成新安装包或推送发布。HLG 的完整验证、更多相机 ISO 原片、高位深增益底图、复杂 ICC/逆向 HDR 基底、PQ/JXR 的低峰值色调映射仍在 TODO。
+
 ## 原生 HDR 照片格式（0.1.18，2026-10-14）
 
 调研及范围见 [HDR 格式说明](HDR-FORMATS.md)。本轮新增 Google 参考库解析的 XMP / ISO / Apple 增益图 JPEG，经按显示尺寸的 WIC 双图解码、官方 gain-map 运算、203/80 参考白转换与 P3/Rec.2020→线性 Rec.709 后进入现有 FP16 / scRGB。兼容 SDR 底图同时保留并计入预算，用于 SDR 屏幕和缓存空格对照；原生 HDR 不运行 NVIDIA SDR→HDR 或 VSR。图库小卡片另有 SDR 底图解码入口，浮点 JXR 缩略图继续交由 Windows，避免为缩略图做完整 HDR 解码。

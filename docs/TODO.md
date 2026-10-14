@@ -108,9 +108,12 @@
 
 - [x] 0.1.18 扩展原生 HDR 照片：固定 Google libultrahdr 2.0.2 与 libjpeg-turbo 3.2.0，支持 Android / XMP、ISO 21496-1 及 Apple 增益图 JPEG；两份 Apple 样本、解析/线性 scRGB 与实际 FP16 读回、旋转、损坏增益图拒绝、SDR 底图对照和 SDK-free / RTX 构建通过。4800 万像素合成图先按显示尺寸重建，2048×1536 解码约 253–290 ms，帧含 SDR 底图为 60 MiB，不代表真实手机文件普遍速度。缩略图单独解码 SDR 底图，CPU/GPU 预算包含原生 HDR 对照纹理；不会重复执行 RTX HDR / VSR。
 - [x] 实测用户 Captures 中 6 张 Windows HDR JXR：全部保持浮点原生 HDR，高光约 6.0–12.68 scRGB，FP16 GPU 读回一致，不触发 HDR/VSR；包括用户指出的文件及长文件名截屏，原文件元数据未改动。增加 JPEG XR codec 级缩小解码；首张 4K 截屏的 2048 长边约 0.44–0.46 秒，另一个样本仍约 1.02 秒，不声称全部瞬时打开。真实 WinUI 混合格式翻图与 Computer Use 检查通过。
-- [ ] 下一阶段优先支持 Apple HEIC：旧 Apple 与 ISO Adaptive HDR 增益图、PQ / HLG、ICC / NCLX、方向和缺少系统 HEIF/HEVC 扩展的提示；取得实际不同代际 iPhone 样本后再同步注册扩展名。当前 Apple **JPEG** 支持不能代表 iPhone **HEIC** 原文件已支持。
+- [x] 0.1.19 支持 iPhone HEIC 原片：Apple / ISO 增益图与 PQ 浮点路径，WIC 系统解码、内存选择辅助项、ICC / NCLX、方向、HEIF/HEVC 缺失提示及 HEIC / HEIF 激活 / 索引 / 关联。维护者 iPhone 15 的 2400 万像素原片带有效 Apple 增益图（headroom 5.154915）；另有公开相机 HEIC、iPadOS ISO HEIC、Apple 官方 PQ 与自制 SDR HEIC。独立 libheif / 数学对照、真实 FP16、SDK-free / RTX 构建、混合 WinUI 翻图、Computer Use 来源 / 禁用增强检查通过，详见 HDR-FORMATS 与 VERIFICATION。修正 Apple 线性 headroom 被上游当成 log2、增益曲线误用 ISO 的问题；原始照片和上游源码未改动。
+- [ ] 继续 HEIC：真实 HLG 与更新 iPhone 相机 ISO 原片、未知 / 复杂 ICC、反向 HDR 基底及替代增益色域；进一步保留高位深 SDR 增益底图。当前 RGB8 增益底图不影响独立的 PQ 浮点路径，但不声称所有导出软件和 HDR 变体均已认证。
+- [ ] 继续优化 HEIC 首次打开与缩略图性能，实测 codec 级缩小解码及不同硬件的系统 HEVC 路径；相机原片本轮首次解码约数百毫秒，不声称瞬时打开。
 - [ ] HEIC 后补充 AVIF 的 PQ / HLG 与增益图；优先精简解码依赖和许可，不捆绑无用编码器或整套视频工具。JPEG XL / OpenEXR / RAW 暂不进入主要照片预览迭代。
-- [ ] 根据显示器实际 headroom 调整增益图重建或呈现，补充低峰值 HDR、跨屏、SDR / HDR 开关变化的实际画面验证；当前恢复完整源 HDR 意图并提供 SDR 底图，不声称所有显示器的观感与裁切均已解决。
+- [x] 0.1.19 原生增益图按 Windows SDR 白色和实际屏幕峰值，在 GPU 上应用对数 headroom 权重；换屏不重新解码、不运行 AI。203 / 406 / 812 / 1600 nits 与 Windows 报告的 3675.74 nits 端点，经真实 FP16 读回通过；后一项约 3675 nits。HEIC / JPEG 缓存底图对照不增加 SDK 调用。原生增益不套用 TrueHDR SDK 400–2000 nits 的参数范围。
+- [ ] 补充低峰值 / SDR 物理屏幕、HDR 开关变化和跨屏的实际观感；PQ / 原始 JXR 仍保留绝对 scRGB，超出目标屏幕的色调映射需专项补充，不能把端点数字测试当成物理亮度计结果。
 - [ ] 收集多个品牌 Android 手机的原始 Ultra HDR，以及 Apple 分享/编辑后的 JPEG 样本，检查 ISO / XMP 优先级、未知 ICC、HDR 基底、稀有 gain-map 元数据和 Windows HDR 缩略图服务；当前合成样本及两份上游 Apple JPEG 不是完整设备认证。调研、已实现边界与验证见 `docs/HDR-FORMATS.md`。
 - [x] 使用 Windows App SDK 桌面原生文件/文件夹选择器；Computer Use 实际完成文件夹选取→建立相册→封面/数量、图库选择 JPG→预览、预览 Ctrl+O→取消→再次打开另一张照片并替换窗口（0.1.9，隔离图库与用户照片副本）。
 - [ ] 完整验收 Windows 默认应用选择流程；本机应用专属 URI 仍落到通用页面，注册与系统枚举已验证，不改写 UserChoice。
