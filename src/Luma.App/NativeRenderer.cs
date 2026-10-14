@@ -57,6 +57,7 @@ internal static class Native
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaPrepareEffects(IntPtr renderer,int hdr,int vsr,int original,uint preset);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaSetOriginal(IntPtr renderer,int original);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaHdrTuning(IntPtr renderer,uint middleGray,uint peak);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaNativeHdrTuning(IntPtr renderer,float middleGray,float peak);
     internal static void Check(int result){if(result<0)throw new COMException(Marshal.PtrToStringUni(LumaError())??"原生渲染失败",result);}
 }
 internal sealed class DecodedFrame : SafeHandle
@@ -125,14 +126,17 @@ internal sealed class NativeRenderer : IDisposable
         entered=true;token.ThrowIfCancellationRequested();ObjectDisposedException.ThrowIf(disposed,this);WorkerJobs++;RenderStatus next=default;await Task.Run(()=>{action();Native.Check(Native.LumaCopyStatus(handle,out next));});snapshot=next;
         }catch(COMException){healthy=false;throw;}finally{processing--;if(entered)access.Release();ScheduleFlush();}
     }
-    private sealed record PaintBatch(bool? Original,(GlassRect[] Rects,bool Dark)? Glass,(double W,double H,double Dpi)? Size,(double Zoom,double X,double Y,int Rotation)? View);
-    private bool HasPending=>pendingOriginal.HasValue||pendingGlass.HasValue||pendingSize.HasValue||pendingView.HasValue;
+    private (float Gray,float Peak)? pendingNativeTuning,lastNativeTuning;
+    public int NativeTuningRevision {get;private set;}
+    private sealed record PaintBatch(bool? Original,(GlassRect[] Rects,bool Dark)? Glass,(double W,double H,double Dpi)? Size,(double Zoom,double X,double Y,int Rotation)? View,(float Gray,float Peak)? NativeTuning);
+    private bool HasPending=>pendingOriginal.HasValue||pendingGlass.HasValue||pendingSize.HasValue||pendingView.HasValue||pendingNativeTuning.HasValue;
     private PaintBatch TakePending()
     {
-        var batch=new PaintBatch(pendingOriginal,pendingGlass,pendingSize,pendingView);pendingOriginal=null;pendingGlass=null;pendingSize=null;pendingView=null;return batch;
+        var batch=new PaintBatch(pendingOriginal,pendingGlass,pendingSize,pendingView,pendingNativeTuning);pendingOriginal=null;pendingGlass=null;pendingSize=null;pendingView=null;pendingNativeTuning=null;return batch;
     }
     private void Prepare(PaintBatch batch)
     {
+        if(batch.NativeTuning is {} tuning)Native.Check(Native.LumaNativeHdrTuning(handle,tuning.Gray,tuning.Peak));
         if(batch.Original is {} original)Native.Check(Native.LumaSetOriginal(handle,original?1:0));
         if(batch.Glass is {} glass)Native.Check(Native.LumaSetGlass(handle,glass.Rects,(uint)glass.Rects.Length,glass.Dark?1:0));
         if(batch.Size is {} size)Native.Check(Native.LumaPrepareResize(handle,(uint)Math.Max(1,size.W*size.Dpi),(uint)Math.Max(1,size.H*size.Dpi),(float)size.Dpi,(float)size.Dpi));
@@ -163,6 +167,7 @@ internal sealed class NativeRenderer : IDisposable
     }
     public void Resize(double w,double h,double dpi){pendingSize=(w,h,dpi);ScheduleFlush();}
     public void View(double zoom,double x,double y,int rotation){pendingView=(zoom,x,y,rotation);ScheduleFlush();}
+    public void NativeTuning(float gray,float peak){if(lastNativeTuning==(gray,peak))return;lastNativeTuning=(gray,peak);pendingNativeTuning=(gray,peak);NativeTuningRevision++;ScheduleFlush();}
     public void HoldOriginal(bool value)
     {
         if(disposed||holdOriginal==value)return;holdOriginal=value;pendingOriginal=value;
@@ -174,8 +179,8 @@ internal sealed class NativeRenderer : IDisposable
     public void Glass(GlassRect[] rects,bool dark){if(lastGlass is {} previous&&previous.Dark==dark&&previous.Rects.SequenceEqual(rects))return;lastGlass=(rects,dark);pendingGlass=(rects,dark);ScheduleFlush();}
     public async Task<byte[]> ReadGlassAsync(GlassRect rect,bool dark,uint w,uint h,CancellationToken token)
     {
-        var pixels=new byte[checked((int)(w*h*4))];await access.WaitAsync(token);
-        try{ObjectDisposedException.ThrowIf(disposed,this);await Task.Run(()=>Native.Check(Native.LumaReadGlass(handle,rect,dark?1:0,w,h,pixels,(uint)pixels.Length)),token);return pixels;}
+        await access.WaitAsync(token);
+        try{token.ThrowIfCancellationRequested();ObjectDisposedException.ThrowIf(disposed,this);var pixels=new byte[checked((int)(w*h*4))];await Task.Run(()=>Native.Check(Native.LumaReadGlass(handle,rect,dark?1:0,w,h,pixels,(uint)pixels.Length)),token);return pixels;}
         finally{access.Release();ScheduleFlush();}
     }
     public async Task ShowAsync(DecodedFrame frame,CancellationToken token,double zoom=1,double x=0,double y=0,int rotation=0)

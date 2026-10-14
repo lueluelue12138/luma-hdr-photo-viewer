@@ -1,5 +1,20 @@
 # Luma 本机验证记录
 
+## 原生 HDR 显示控制与悬浮界面（0.1.20，2026-10-15）
+
+原生 HDR 新增独立保存的曝光 / 增益参考与峰值设置，自动模式保留之前的映射；手动参数仅改 GPU 呈现，不改缓存帧、不重新解码、不运行 NVIDIA。具体公式、范围与 PQ / JXR 无 SDR 底图的含义见 [HDR 格式说明](HDR-FORMATS.md)。状态改为右上角主题毛玻璃，窄窗口避免与工具栏 / 信息面板重叠；增强面板统一操作行高、圆角、展开内容宽度及数值；工具栏新增一键适应窗口。旧 popup 背景在尺寸变化期间按原照片坐标放置，不先拉伸再替换；快速调整取消过时的读回任务，并在取得渲染锁后才分配像素缓冲。原生 HDR 打开增强面板无需初始化 NVIDIA SDK。
+
+- 最终 RTX 自包含构建和 SDK-free 原生构建通过。`tests/verify_native_hdr_tuning.py` 对增益 JPEG、浮点 JXR、Apple / ISO HEIC、PQ HEIC，每种 5 组参数，通过实际 FP16 目标检查增益 / 曝光 / 峰值数学、自动恢复、按住原片及松开恢复、无新增 SDK 调用或 GPU 图片分配。开启真实 Gaussian 场景缓存后再检查对照，覆盖绝对 HDR 在纹理不变时仍须刷新显示调整的情形。最终两版报告独立保存在 `artifacts/hdr-controls-verification/tuning-rtx.json` 与 `tuning-standard.json`。
+- 最终 `verify_heic.py` 对维护者 iPhone 15、公开相机、iPadOS ISO 与 Apple PQ 的独立 libheif / 数学 / FP16 对照通过；原始文件大小、修改时间和哈希未变，SDR HEIC、别名及三种破损文件拒绝仍通过。源报告 `artifacts/heic-verification/heic.json`，最终副本在本轮 verification 目录。此检查仍是 512 长边，不代替 2048 的性能测量。
+- `artifacts/hdr-controls-windows-final/hdr-format-windows.json` 完整通过，共 15 项记录，含三类 HEIC 的手动数值、零新增处理任务、亮 / 暗主题、右上角玻璃、专用适应窗口按钮、原生 HDR 请求增强仍跳过 SDK，以及关闭 / 重新打开。
+- `viewer-lifecycle-20261015-001522/` 的最终消费者程序通过 49 个真实预览窗口、两次新进程，含实际 HDR-only / VSR-only / 组合、忙时关闭、重叠请求、偏好恢复与 5 次展开 popup。增加风格下拉打开时父背景对象不重建、展开时旧图像刷按坐标对齐的检查。
+- 最终 `viewer-interaction-20261015-001602/viewer-interaction.json` 完整通过。真实 7008×4672 JPG 所在相册：6 次混合缓存随机首图中位 118.5 ms、最大 247 ms；10 次预读首图中位 5.5 ms、最大 6 ms。40 次缓存原图 / HDR 选择中位 0.05 ms、最大 0.10 ms，无新增处理任务或 AI。24 次图库尺寸更新到两次 Composition 回调中位 31.1 ms、最大 68.4 ms；这些不是物理屏幕帧间隔，原有调度峰值继续待办。
+- Computer Use 实际打开公开 Apple 相机 HEIC，检查深色右上角状态、适应窗口图标、统一圆角 / 行高的增强面板、展开后数值与手动开关。最初抓取到展开动画进行中的裁切帧，随后重新观察完成状态，内容与圆角正常；没有把中间动画帧当作最终布局，也没有用 SDR 截图亮度验证 HDR 观感。测试进程已关闭，维护者原来的 Luma 窗口未关闭。
+
+Apple 官方 PQ 的慢加载确认存在：10 张、2048 长边各解码三次，中位 1113.53–2030.51 ms，报告 `artifacts/native-hdr-tuning/apple-pq-decode.json`。未清空系统文件缓存，不含窗口 / 上传，也不清楚所有硬件的表现。codec float 缩小接口 A/B 对首张约 1965.62 / 2090.72 ms，81 个 RGB 抽样点一致但无收益，已撤回，试验报告保留。此项未声称解决。交互脚本第一次误用了不足 12 张的 native-tests 小目录，校验明确失败；换用真实 Screenshots 相册后完成，失败证据保留，不计入成功验证。
+
+28 项核心 / 索引检查通过。最终候选 `artifacts/Luma-hdr-controls/Luma.App.exe`，502 个文件共 203292956 字节，原生 DLL 1234432 字节；相对 0.1.19 的 DLL 增加 2048 字节。样本、数据库、日志、测试 exe / oracle 未进入消费者目录，NVIDIA 运行库和许可仍保持原始字节。此轮仅本地提交，不推送、不生成新公开 Release 或替换已安装版本。
+
 ## iPhone HEIC 与校准峰值（0.1.19，2026-10-14）
 
 本轮完成维护者要求的 HEIC 原片支持，详见 [HDR 格式说明](HDR-FORMATS.md)。使用系统 WIC HEIF/HEVC，未增加消费者 HEVC/libheif 依赖。实际支持 Apple 增益图 HEIC、ISO tmap HEIC、浮点 PQ HEIC 和普通 SDR HEIC；同步更新索引、文件激活、选择器及安装包清单。修正 Apple 线性 XMP headroom 被通用解析器当成 log2、Apple 增益被当作 ISO 的问题；下面 0.1.18 的 Apple 数字是当时对通用参考库的比较，不能继续作为正确 Apple 映射的证据。

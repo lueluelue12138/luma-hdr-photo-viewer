@@ -30,6 +30,7 @@ internal static class HdrFormatVerification
                 Check(frame?.NativeHdr==expected&&before.NativeHdr==expected&&before.Fp16!=0,"Actual viewer frame/FP16 format mismatch");
                 if(expected!=0)
                 {
+                    if(expected is 1 or 3 or 4)results.Add(new{file=Path.GetFileName(paths[n]),scenario="native-HDR-controls",controls=await viewer.VerificationHdrControlsAsync()});
                     await viewer.VerificationEffectsAsync(true,true);var effects=viewer.VerificationStatus;
                     Check(effects.HdrEffective==0&&effects.VsrEffective==0&&effects.HdrEvaluations==before.HdrEvaluations&&effects.VsrEvaluations==before.VsrEvaluations,"Native HDR must skip both SDK evaluations even with persisted enhancement requests");
                     int jobs=viewer.VerificationWorkerJobs;var times=new List<double>();

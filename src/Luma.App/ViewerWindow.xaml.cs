@@ -31,8 +31,19 @@ public sealed partial class ViewerWindow : Window
     private bool controlsVisible=true,manuallyHidden,panMoved;
     private ScrollViewer? filmstripScroller;
     private bool leftNavigationHover,rightNavigationHover;
-    private ViewerPreferences CapturePreferences()=>new(hdrRequested,vsrRequested,Math.Clamp(HdrPreset.SelectedIndex,0,2),AutoBrightnessSwitch.IsOn,AutoPeakSwitch.IsOn,(uint)MiddleGraySlider.Value,(uint)PeakSlider.Value);
-    private async Task SavePreferencesAsync(){try{await ViewerPreferences.UpdateAsync(CapturePreferences());}catch(Exception ex){App.Log("Save viewer preferences: "+ex.Message);}}
+    private ViewerPreferences tuningOptions=new();private bool nativeTuningMode;
+    private ViewerPreferences CapturePreferences(){var value=tuningOptions with{Hdr=hdrRequested,Vsr=vsrRequested,Preset=Math.Clamp(HdrPreset.SelectedIndex,0,2)};return nativeTuningMode?value with{NativeAutoBrightness=AutoBrightnessSwitch.IsOn,NativeAutoPeak=AutoPeakSwitch.IsOn,NativeMiddleGray=(float)MiddleGraySlider.Value,NativePeak=(float)PeakSlider.Value}:value with{AutoBrightness=AutoBrightnessSwitch.IsOn,AutoPeak=AutoPeakSwitch.IsOn,MiddleGray=(uint)MiddleGraySlider.Value,Peak=(uint)PeakSlider.Value};}
+    private async Task SavePreferencesAsync(){try{tuningOptions=CapturePreferences();await ViewerPreferences.UpdateAsync(tuningOptions);}catch(Exception ex){App.Log("Save viewer preferences: "+ex.Message);}}
+    private void ConfigureTuning(bool native)
+    {
+        if(nativeTuningMode!=native){tuningOptions=CapturePreferences();nativeTuningMode=native;updatingEnhancements=true;
+            MiddleGraySlider.Maximum=native?300:100;PeakSlider.Maximum=native?10000:2000;PeakSlider.Minimum=native?80:400;
+            AutoBrightnessSwitch.IsOn=native?tuningOptions.NativeAutoBrightness:tuningOptions.AutoBrightness;AutoPeakSwitch.IsOn=native?tuningOptions.NativeAutoPeak:tuningOptions.AutoPeak;
+            MiddleGraySlider.Value=native?tuningOptions.NativeMiddleGray:tuningOptions.MiddleGray;PeakSlider.Value=native?tuningOptions.NativePeak:tuningOptions.Peak;updatingEnhancements=false;
+        }
+        ApplyNativeTuning();
+    }
+    private void ApplyNativeTuning()=>renderer?.NativeTuning(nativeTuningMode&&!AutoBrightnessSwitch.IsOn?(float)MiddleGraySlider.Value:0,nativeTuningMode&&!AutoPeakSwitch.IsOn?(float)PeakSlider.Value:0);
     private CancellationTokenSource? tuningCancellation,enhancementCancellation;
     private (int Hdr,float White,float Peak)? displayState;
     private readonly DispatcherTimer viewTimer=new(){Interval=TimeSpan.FromMilliseconds(16)};
@@ -43,18 +54,29 @@ public sealed partial class ViewerWindow : Window
     private (bool Effects,bool Contrast,ElementTheme Theme,bool Ready)? glassMaterial;
     private bool glassUpdateScheduled;
     private readonly Dictionary<FrameworkElement,PopupMaterial> popupMaterials=new();
+    private readonly Dictionary<FrameworkElement,CancellationTokenSource> popupRequests=new();
     private int popupGlassSnapshots;
-    private sealed record PopupMaterial(GlassRect Rect,bool Dark,NativeRenderer Renderer,int Photo,double Zoom,double X,double Y,int Rotation,int Hdr,int Vsr,uint HdrCalls,uint VsrCalls);
+    private sealed record PopupMaterial(GlassRect Rect,bool Dark,NativeRenderer Renderer,int Photo,double Zoom,double X,double Y,int Rotation,int Hdr,int Vsr,uint HdrCalls,uint VsrCalls,int Tuning,bool Original);
+    private readonly Dictionary<FrameworkElement,GlassRect> popupImageRects=new();
+    private static void AlignPopupImage(FrameworkElement child,GlassRect source,GlassRect target)
+    {
+        var brush=child is Control c?c.Background:child is Border b?b.Background:child is Panel p?p.Background:null;
+        if(brush is ImageBrush image){double x=source.Width/target.Width,y=source.Height/target.Height,tx=(source.Left-target.Left)/target.Width,ty=(source.Top-target.Top)/target.Height;
+            if(image.RelativeTransform is CompositeTransform previous&&previous.ScaleX==x&&previous.ScaleY==y&&previous.TranslateX==tx&&previous.TranslateY==ty)return;
+            if(x==1&&y==1&&tx==0&&ty==0){if(image.RelativeTransform is not null)image.RelativeTransform=null;return;}
+            image.RelativeTransform=new CompositeTransform{ScaleX=x,ScaleY=y,TranslateX=tx,TranslateY=ty};}
+    }
     private static void PopupBackground(FrameworkElement child,Brush brush){if(child is Control control)control.Background=brush;else if(child is Border border)border.Background=brush;else if(child is Panel panel)panel.Background=brush;}
-    private async void LoadPopupGlass(FrameworkElement child,PopupMaterial material)
+    private async void LoadPopupGlass(FrameworkElement child,PopupMaterial material,CancellationToken token)
     {
         try
         {
+            if(token.IsCancellationRequested||!popupMaterials.TryGetValue(child,out var latest)||latest!=material)return;
             uint w=(uint)Math.Clamp(Math.Ceiling(material.Rect.Width),1,2048),h=(uint)Math.Clamp(Math.Ceiling(material.Rect.Height),1,2048);
-            var pixels=await material.Renderer.ReadGlassAsync(material.Rect,material.Dark,w,h,lifetime.Token);
+            var pixels=await material.Renderer.ReadGlassAsync(material.Rect,material.Dark,w,h,token);
             if(closed||!popupMaterials.TryGetValue(child,out var pending)||pending!=material)return;
             var bitmap=new WriteableBitmap((int)w,(int)h);using(var stream=bitmap.PixelBuffer.AsStream())stream.Write(pixels,0,pixels.Length);bitmap.Invalidate();
-            PopupBackground(child,new ImageBrush{ImageSource=bitmap,Stretch=Stretch.Fill});popupGlassSnapshots++;
+            PopupBackground(child,new ImageBrush{ImageSource=bitmap,Stretch=Stretch.Fill});popupImageRects[child]=material.Rect;popupGlassSnapshots++;
         }
         catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(COMException ex){App.Log("Popup glass: "+ex.Message);popupMaterials.Remove(child);}
     }
@@ -81,6 +103,27 @@ public sealed partial class ViewerWindow : Window
     internal void VerificationOriginal(bool value)=>SetOriginalHeld(value);
     internal async Task VerificationEffectsAsync(bool hdr,bool vsr){hdrRequested=hdr;vsrRequested=vsr;await ApplyEffectsAsync();}
     internal Task VerificationSelectAsync(int selected)=>DisplayAsync(selected);
+    internal async Task<object> VerificationHdrControlsAsync()
+    {
+        if(renderer is null||currentFrame?.Info.NativeHdr==0)throw new InvalidOperationException("HDR controls require a native HDR frame");
+        var saved=CapturePreferences();bool savedNative=nativeTuningMode;var before=renderer.CachedStatus;int jobs=renderer.WorkerJobs;
+        void Check(bool value,string message){if(!value)throw new InvalidOperationException(message);}
+        AutoBrightnessSwitch.IsOn=false;AutoPeakSwitch.IsOn=false;MiddleGraySlider.Value=65;PeakSlider.Value=700;
+        await renderer.PresentPendingAsync(lifetime.Token);RefreshStatus(false);
+        Check(MiddleGrayValue.Text=="65 nits"&&PeakValue.Text=="700 nits","HDR sliders must show their effective numeric values");
+        Check(MiddleGraySlider.IsEnabled&&PeakSlider.IsEnabled,"Native HDR sliders must be operable in manual mode");
+        Check(renderer.WorkerJobs==jobs&&renderer.CachedStatus.HdrEvaluations==before.HdrEvaluations&&renderer.CachedStatus.VsrEvaluations==before.VsrEvaluations,"Native HDR tuning must be presentation-only");
+        foreach(var theme in new[]{ElementTheme.Light,ElementTheme.Dark}){
+            ApplyTheme(theme);await Task.Delay(120);await renderer.PresentPendingAsync(lifetime.Token);
+            Check(StatusBadge.Background is SolidColorBrush brush&&brush.Color.A==0,"HDR status must share the native glass material");
+            var p=StatusBadge.TransformToVisual(Canvas).TransformPoint(new(0,0));Check(p.X>Canvas.ActualWidth*.5&&p.Y<150,"HDR status must be in the upper right");
+        }
+        double beforeZoom=zoom;VerificationZoom(2);await Task.Delay(220);FitClick(FitToWindowButton,new RoutedEventArgs());await Task.Delay(220);
+        Check(zoom==1&&Math.Abs(renderedZoom-1)<.001&&panX==0&&panY==0,"Dedicated fit button must restore a centered full view");
+        Check(FitToWindowButton.ActualHeight==ZoomOutButton.ActualHeight,"Fit must use the standard toolbar button sizing");
+        updatingEnhancements=true;tuningOptions=saved;AutoBrightnessSwitch.IsOn=savedNative?saved.NativeAutoBrightness:saved.AutoBrightness;AutoPeakSwitch.IsOn=savedNative?saved.NativeAutoPeak:saved.AutoPeak;MiddleGraySlider.Value=savedNative?saved.NativeMiddleGray:saved.MiddleGray;PeakSlider.Value=savedNative?saved.NativePeak:saved.Peak;updatingEnhancements=false;ApplyNativeTuning();await renderer.PresentPendingAsync(lifetime.Token);RefreshStatus(false);await SavePreferencesAsync();
+        return new{nativeHdr=before.NativeHdr,numericValues=true,presentationOnly=true,additionalWorkerJobs=renderer.WorkerJobs-jobs,upperRightGlass=true,lightAndDark=true,fitButton=true};
+    }
     internal ViewerPreferences VerificationPreferences=>CapturePreferences();
     internal async Task VerificationPersistAsync(bool hdr,bool vsr){hdrRequested=hdr;vsrRequested=vsr;await SavePreferencesAsync();await ApplyEffectsAsync();}
     internal async Task VerificationScrollAsync()
@@ -119,16 +162,27 @@ public sealed partial class ViewerWindow : Window
     }
     internal async Task VerificationPopupAsync()
     {
+        if(currentFrame?.Info.NativeHdr==0&&renderer is not null){await renderer.InitializeEffectsAsync(lifetime.Token);RefreshStatus(false);}
         int before=popupGlassSnapshots;EnhancementButton.Flyout.ShowAt(EnhancementButton);
         var timer=Stopwatch.StartNew();while(popupGlassSnapshots==before){if(timer.Elapsed>TimeSpan.FromSeconds(5))throw new InvalidOperationException("Popup did not receive its photo glass background");await Task.Delay(50);}
-        if(EnhancementScroll.Content is StackPanel content)content.Children.OfType<Expander>().First().IsExpanded=true;
+        await Task.Delay(200);
+        var child=popupMaterials.Keys.First(c=>FindVisual<ScrollViewer>(c,"EnhancementScroll") is not null);
+        if(HdrPreset.IsEnabled){
+            var stable=child is Control control?control.Background:null;HdrPreset.IsDropDownOpen=true;await Task.Delay(200);
+            if(child is Control parent&&parent.Background!=stable)throw new InvalidOperationException("Opening the style picker must not rebuild the parent glass");
+            HdrPreset.IsDropDownOpen=false;await Task.Delay(100);
+        }
+        BrightnessExpander.IsExpanded=true;UpdateGlass();
+        if(popupImageRects.TryGetValue(child,out var imageRect)&&popupMaterials.TryGetValue(child,out var pending)&&imageRect!=pending.Rect&&child is Control target&&target.Background is ImageBrush image){
+            if(image.RelativeTransform is not CompositeTransform transform||Math.Abs(transform.ScaleY-imageRect.Height/pending.Rect.Height)>.00001)throw new InvalidOperationException("Expanded popup must anchor its old backdrop instead of stretching it");
+        }
         await Task.Delay(350);EnhancementButton.Flyout.Hide();await Task.Delay(50);
     }
     private double renderedZoom=1,renderedPanX,renderedPanY,viewStartZoom,viewStartX,viewStartY;private DateTime viewStarted;
     public ViewerWindow(string path,IReadOnlyList<Photo>? photos=null,Window? owner=null)
     {
         initial=SupportedFormats.Normalize(path);initialSequence=photos;InitializeComponent();ExtendsContentIntoTitleBar=true;SetTitleBar(TitleDrag);SystemBackdrop=new DesktopAcrylicBackdrop();
-        var options=ViewerPreferences.Current;updatingEnhancements=true;hdrRequested=options.Hdr;vsrRequested=options.Vsr;HdrSwitch.IsOn=hdrRequested;VsrSwitch.IsOn=vsrRequested;HdrPreset.SelectedIndex=options.Preset;AutoBrightnessSwitch.IsOn=options.AutoBrightness;AutoPeakSwitch.IsOn=options.AutoPeak;MiddleGraySlider.Value=options.MiddleGray;PeakSlider.Value=options.Peak;MiddleGraySlider.IsEnabled=!options.AutoBrightness;PeakSlider.IsEnabled=!options.AutoPeak;updatingEnhancements=false;
+        var options=ViewerPreferences.Current;tuningOptions=options;updatingEnhancements=true;hdrRequested=options.Hdr;vsrRequested=options.Vsr;HdrSwitch.IsOn=hdrRequested;VsrSwitch.IsOn=vsrRequested;HdrPreset.SelectedIndex=options.Preset;AutoBrightnessSwitch.IsOn=options.AutoBrightness;AutoPeakSwitch.IsOn=options.AutoPeak;MiddleGraySlider.Value=options.MiddleGray;PeakSlider.Value=options.Peak;MiddleGraySlider.IsEnabled=!options.AutoBrightness;PeakSlider.IsEnabled=!options.AutoPeak;updatingEnhancements=false;
         Filmstrip.AddHandler(UIElement.PointerWheelChangedEvent,new PointerEventHandler(FilmstripWheel),true);
         EnhancementScroll.PreviewKeyDown+=ViewerPreviewKeyDown;EnhancementScroll.PreviewKeyUp+=ViewerPreviewKeyUp;
         foreach(var button in new[]{PreviousButton,NextButton}){button.Opacity=1;ElementCompositionPreview.GetElementVisual(button).Opacity=0;}
@@ -143,7 +197,7 @@ public sealed partial class ViewerWindow : Window
         if(initialSequence is null){BottomPanel.Visibility=Visibility.Collapsed;siblingEnumeration=Task.Run(()=>FolderIndexer.Siblings(initial),lifetime.Token);}
         WindowLayout.Configure(this,Root);
         chromeTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-chromeStarted).TotalMilliseconds/(chromeTarget>chromeStart?180:240),0,1);chromeOpacity=chromeStart+(chromeTarget-chromeStart)*(1-Math.Pow(1-t,3));ApplyChrome();if(t>=1)chromeTimer.Stop();};
-        foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.SizeChanged+=(_,_)=>ScheduleGlass();Root.ActualThemeChanged+=(_,_)=>ScheduleGlass();Root.LayoutUpdated+=(_,_)=>{if(filmstripScroller is null)UpdateFilmstripBar();ScheduleGlass();};
+        foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel,StatusBadge})panel.SizeChanged+=(_,_)=>ScheduleGlass();Root.ActualThemeChanged+=(_,_)=>ScheduleGlass();Root.LayoutUpdated+=(_,_)=>{if(filmstripScroller is null)UpdateFilmstripBar();ScheduleGlass();};
         viewTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-viewStarted).TotalMilliseconds/180,0,1);double ease=1-Math.Pow(1-t,3);renderedZoom=viewStartZoom+(zoom-viewStartZoom)*ease;renderedPanX=viewStartX+(panX-viewStartX)*ease;renderedPanY=viewStartY+(panY-viewStartY)*ease;try{renderer?.View(renderedZoom,renderedPanX,renderedPanY,rotation);}catch(COMException ex){viewTimer.Stop();Recover(ex);}if(t>=1)viewTimer.Stop();};
         WindowLayout.SizeForDpi(this,Root,1240,850,owner);AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
         displayTimer.Tick+=async(_,_)=>{displayTimer.Stop();await ProbeDisplayAsync(true);};
@@ -187,6 +241,7 @@ public sealed partial class ViewerWindow : Window
         try
         {
             var photo=current;var lease=await cache.GetAsync(photo.Path,token,previewEdge);if(closed||generation!=request){lease.Dispose();return;}
+            ConfigureTuning(lease.Frame.Info.NativeHdr!=0);
             // Install known panel geometry before the upload's first Present.
             // Keep a readable fallback until that composed frame is ready.
             UpdateGlass();
@@ -385,17 +440,26 @@ public sealed partial class ViewerWindow : Window
             HdrSwitch.IsEnabled=photoReady&&s.HdrAvailable!=0&&s.HdrActive!=0&&s.NativeHdr==0;
             VsrSwitch.IsEnabled=photoReady&&s.VsrAvailable!=0&&s.NativeHdr==0;
             HdrPreset.IsEnabled=photoReady&&s.NativeHdr==0;
-            OriginalButton.Content=s.HasGainMap?"按住查看 SDR 底图（空格）":"按住查看原图（空格）";
+            OriginalButton.Content=s.HasGainMap?"按住查看 SDR 底图（空格）":s.NativeHdr!=0?(!AutoBrightnessSwitch.IsOn||!AutoPeakSwitch.IsOn?"按住查看 HDR 原片（空格）":"此格式没有 SDR 底图"):"按住查看原图（空格）";
+            OriginalButton.IsEnabled=photoReady&&(s.NativeHdr==0||s.HasGainMap||!AutoBrightnessSwitch.IsOn||!AutoPeakSwitch.IsOn);
             HdrSwitch.OnContent=!photoReady?(Loading.IsActive?"加载中":"未生效"):s.NativeHdr!=0?"无需增强":busy?"处理中":originalHeld?"查看原图":s.HdrEffective!=0?"已生效":"未生效";
             VsrSwitch.OnContent=!photoReady?(Loading.IsActive?"加载中":"未生效"):s.NativeHdr!=0?"不适用":busy?"处理中":originalHeld?"查看原图":s.VsrEffective!=0?"已生效":"未生效";
             HdrSwitch.OffContent=HdrSwitch.IsEnabled?"已关闭":"不可用";
             VsrSwitch.OffContent=VsrSwitch.IsEnabled?"已关闭":"不可用";
-            double peak=AutoPeakSwitch.IsOn?Math.Floor(Math.Clamp(s.MaxNits>=400?s.MaxNits:1000,400,2000)):PeakSlider.Value;
-            double gray=AutoBrightnessSwitch.IsOn?Math.Floor(Math.Clamp(s.SdrWhite*80*.21586,50,100)):MiddleGraySlider.Value;
+            double peak=AutoPeakSwitch.IsOn?(nativeTuningMode?(s.MaxNits>0?s.MaxNits:1000):Math.Floor(Math.Clamp(s.MaxNits>=400?s.MaxNits:1000,400,2000))):PeakSlider.Value;
+            double gray=AutoBrightnessSwitch.IsOn?(nativeTuningMode?(s.HasGainMap?Math.Min(s.SdrWhite*80,peak)*.21586:203*.21586):Math.Floor(Math.Clamp(s.SdrWhite*80*.21586,50,100))):MiddleGraySlider.Value;
             if(AutoPeakSwitch.IsOn)PeakSlider.Value=peak;if(AutoBrightnessSwitch.IsOn)MiddleGraySlider.Value=gray;
-            string brightness=s.NativeHdr!=0?$"屏幕峰值：{s.MaxNits:0} nits\n{(s.HasGainMap?$"增益图白色：{Math.Min(s.SdrWhite*80,s.MaxNits):0} nits · 自动适配峰值":"线性 scRGB 原图")}":$"增强峰值 / 中间灰：{peak:0} / {gray:0} nits";
+            MiddleGraySlider.IsEnabled=photoReady&&!AutoBrightnessSwitch.IsOn;PeakSlider.IsEnabled=photoReady&&!AutoPeakSwitch.IsOn;
+            MiddleGrayValue.Text=$"{gray:0.#} nits";PeakValue.Text=$"{peak:0} nits";
+            AutoBrightnessSwitch.Header=nativeTuningMode&&!s.HasGainMap?"保留原片亮度":"匹配 Windows SDR 亮度";
+            MiddleGrayLabel.Text=nativeTuningMode&&!s.HasGainMap?"中间灰参考（曝光）":"中间灰亮度";
+            AutoPeakSwitch.Header=nativeTuningMode&&!s.HasGainMap?"保留原片高光":"匹配显示器峰值";
+            PeakLabel.Text=nativeTuningMode&&!s.HasGainMap&&AutoPeakSwitch.IsOn?"屏幕峰值参考":"峰值亮度";
+            TuningExplanation.Text=nativeTuningMode?(s.HasGainMap?"调整增益图的显示亮度与高光范围，自动模式匹配当前屏幕。":"PQ / JXR 没有 SDR 底图。自动保留原片亮度；手动中间灰调整曝光，手动峰值压缩高光。"):"RTX HDR 参数：中间灰 10–100 nits，峰值 400–2000 nits。";
+            string brightness=s.NativeHdr!=0?$"屏幕峰值：{s.MaxNits:0} nits\n显示中间灰参考：{gray:0.#} nits\n{(s.HasGainMap?$"增益图白色：{Math.Min((AutoBrightnessSwitch.IsOn?s.SdrWhite*80:gray/.21586),peak):0} nits":"线性 scRGB 原图")}":$"增强峰值 / 中间灰：{peak:0} / {gray:0} nits";
             DisplayText.Text=$"{s.Gpu}\nWindows HDR：{(s.HdrActive!=0?"已开启":"未开启")}\nFP16 / scRGB\nSDR 白色：{s.SdrWhite*80:0} nits\n{brightness}\nHDR / VSR 调用：{s.HdrEvaluations} / {s.VsrEvaluations}\n图片与画布显存：{s.GpuBytes/1048576.0:0} MB";
             StatusText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"照片未加载"):s.HasGainMap?(originalHeld?"SDR 底图 · 对照":s.HdrActive!=0?$"原生 HDR · {s.GainMapSource}":"SDR 底图 · 当前屏幕 SDR"):s.NativeHdr!=0?(s.HdrActive!=0?"原生 HDR · scRGB":"HDR 原图 · 当前屏幕 SDR"):busy&&(hdrRequested||vsrRequested)?"正在处理显示增强…":originalHeld?"原图 · 未应用增强":s.HdrEffective!=0?(s.VsrEffective!=0?"RTX HDR + VSR 已生效":"RTX HDR 已生效"):s.VsrEffective!=0?"VSR 已生效 · SDR":"SDR · 原图";
+            if(photoReady&&s.NativeHdr==1&&originalHeld)StatusText.Text="HDR 原片 · 对照";
             updatingEnhancements=false;
             var next=(s.HdrActive,s.SdrWhite,s.MaxNits);bool changed=displayState.HasValue&&displayState.Value!=next;displayState=next;
             if(changed&&hdrRequested&&!busy)_=ApplyEffectsAsync();
@@ -409,6 +473,7 @@ public sealed partial class ViewerWindow : Window
         uint gray=AutoBrightnessSwitch.IsOn?0:(uint)MiddleGraySlider.Value,peak=AutoPeakSwitch.IsOn?0:(uint)PeakSlider.Value;int preset=Math.Max(0,HdrPreset.SelectedIndex);
         try
         {
+            if(currentFrame.Info.NativeHdr!=0){ApplyNativeTuning();await active.PresentPendingAsync(token);RefreshStatus(false);return;}
             StatusText.Text=hdrRequested||vsrRequested?"正在处理显示增强…":"SDR · 原图";
             if((hdrRequested||vsrRequested)&&currentFrame.Info.NativeHdr==0)
             {
@@ -423,7 +488,9 @@ public sealed partial class ViewerWindow : Window
     private void ApplyEffects()=>_=ApplyEffectsAsync();
     private async void TuningChanged(object sender,RoutedEventArgs e)
     {
-        if(renderer is null||updatingEnhancements)return;MiddleGraySlider.IsEnabled=!AutoBrightnessSwitch.IsOn;PeakSlider.IsEnabled=!AutoPeakSwitch.IsOn;tuningCancellation?.Cancel();tuningCancellation?.Dispose();tuningCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=tuningCancellation.Token;
+        if(renderer is null||updatingEnhancements)return;MiddleGraySlider.IsEnabled=!AutoBrightnessSwitch.IsOn;PeakSlider.IsEnabled=!AutoPeakSwitch.IsOn;
+        if(nativeTuningMode){ApplyNativeTuning();RefreshStatus(false);await SavePreferencesAsync();return;}
+        RefreshStatus(false);tuningCancellation?.Cancel();tuningCancellation?.Dispose();tuningCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=tuningCancellation.Token;
         try{await SavePreferencesAsync();await Task.Delay(220,token);if(!closed)ApplyEffects();}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}
     }
     private void TuningValueChanged(object sender,Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)=>TuningChanged(sender,new RoutedEventArgs());
@@ -455,16 +522,19 @@ public sealed partial class ViewerWindow : Window
         if(renderer is null||closed)return;
         bool effects=uiSettings.AdvancedEffectsEnabled&&!accessibilitySettings.HighContrast;
         bool ready=renderer.Metrics.BlurBuilds>0;var material=(effects,accessibilitySettings.HighContrast,Root.ActualTheme,ready);
-        if(glassMaterial!=material){glassMaterial=material;var fill=effects&&ready?Colors.Transparent:accessibilitySettings.HighContrast?uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background):Root.ActualTheme==ElementTheme.Dark?Color.FromArgb(255,40,40,40):Color.FromArgb(255,247,247,247);foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})panel.Background=new SolidColorBrush(fill);}
+        if(glassMaterial!=material){glassMaterial=material;var fill=effects&&ready?Colors.Transparent:accessibilitySettings.HighContrast?uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background):Root.ActualTheme==ElementTheme.Dark?Color.FromArgb(255,40,40,40):Color.FromArgb(255,247,247,247);foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel,StatusBadge})panel.Background=new SolidColorBrush(fill);}
+        double badgeTop=(Canvas.ActualWidth-TopPanel.ActualWidth)/2>=StatusBadge.ActualWidth+32?14:TopPanel.ActualHeight+28;
+        if(StatusBadge.Margin.Top!=badgeTop)StatusBadge.Margin=new(20,badgeTop,20,0);
+        double infoTop=Math.Max(82,badgeTop+StatusBadge.ActualHeight+12);if(InfoPanel.Margin.Top!=infoTop)InfoPanel.Margin=new(16,infoTop,20,0);
         var rects=new List<GlassRect>();double dpi=Surface.CompositionScaleX;
-        if(effects)foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel})
+        if(effects)foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel,StatusBadge})
         {
-            double opacity=panel==TopPanel||panel==BottomPanel?chromeOpacity:1;
+            double opacity=panel==TopPanel||panel==BottomPanel||panel==StatusBadge?chromeOpacity:1;
             if(panel.Visibility!=Visibility.Visible||panel.ActualWidth<=0||panel.ActualHeight<=0||opacity<.001)continue;
             var p=panel.TransformToVisual(Canvas).TransformPoint(new(0,0));rects.Add(new((float)(p.X*dpi),(float)(p.Y*dpi),(float)(panel.ActualWidth*dpi),(float)(panel.ActualHeight*dpi),(float)(panel.CornerRadius.TopLeft*dpi),(float)opacity));
         }
         var popups=Root.XamlRoot is null||(menuDepth==0&&popupMaterials.Count==0)?[]:VisualTreeHelper.GetOpenPopupsForXamlRoot(Root.XamlRoot).ToArray();
-        var children=popups.Select(p=>p.Child).OfType<FrameworkElement>().ToHashSet();foreach(var old in popupMaterials.Keys.Where(c=>!children.Contains(c)).ToArray())popupMaterials.Remove(old);
+        var children=popups.Select(p=>p.Child).OfType<FrameworkElement>().ToHashSet();foreach(var old in popupMaterials.Keys.Where(c=>!children.Contains(c)).ToArray()){popupMaterials.Remove(old);popupImageRects.Remove(old);if(popupRequests.Remove(old,out var obsolete)){obsolete.Cancel();obsolete.Dispose();}}
         foreach(var popup in popups)
         {
             if(popup.Child is not FrameworkElement child||child.ActualWidth<=0||child.ActualHeight<=0||rects.Count>=8)continue;
@@ -473,8 +543,9 @@ public sealed partial class ViewerWindow : Window
                 if(effects)
                 {
                     var p=child.TransformToVisual(Canvas).TransformPoint(new(0,0));var rect=new GlassRect((float)(p.X*dpi),(float)(p.Y*dpi),(float)(child.ActualWidth*dpi),(float)(child.ActualHeight*dpi),12*(float)dpi,1);rects.Add(rect);
-                    var status=renderer.Status();var popupMaterial=new PopupMaterial(rect,Root.ActualTheme==ElementTheme.Dark,renderer,request,renderedZoom,renderedPanX,renderedPanY,rotation,status.HdrEffective,status.VsrEffective,status.HdrEvaluations,status.VsrEvaluations);
-                    if(!popupMaterials.TryGetValue(child,out var previous)||previous!=popupMaterial){if(previous is null)PopupBackground(child,(Brush)Application.Current.Resources["FloatingBrush"]);popupMaterials[child]=popupMaterial;DispatcherQueue.TryEnqueue(()=>LoadPopupGlass(child,popupMaterial));}
+                    if(popupImageRects.TryGetValue(child,out var source))AlignPopupImage(child,source,rect);
+                    var status=renderer.Status();var popupMaterial=new PopupMaterial(rect,Root.ActualTheme==ElementTheme.Dark,renderer,request,renderedZoom,renderedPanX,renderedPanY,rotation,status.HdrEffective,status.VsrEffective,status.HdrEvaluations,status.VsrEvaluations,renderer.NativeTuningRevision,originalHeld);
+                    if(!popupMaterials.TryGetValue(child,out var previous)||previous!=popupMaterial){if(previous is null)PopupBackground(child,(Brush)Application.Current.Resources["FloatingBrush"]);popupMaterials[child]=popupMaterial;if(popupRequests.Remove(child,out var obsolete)){obsolete.Cancel();obsolete.Dispose();}var pending=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);popupRequests[child]=pending;var token=pending.Token;DispatcherQueue.TryEnqueue(()=>LoadPopupGlass(child,popupMaterial,token));}
                 }
                 else{popupMaterials.Remove(child);PopupBackground(child,TopPanel.Background);}
             }
@@ -506,7 +577,7 @@ public sealed partial class ViewerWindow : Window
     private void RootPointerMoved(object sender,PointerRoutedEventArgs e)=>ShowControls();
     private void PanelEntered(object sender,PointerRoutedEventArgs e){hover=true;ShowControls();}private void PanelExited(object sender,PointerRoutedEventArgs e){hover=false;lastActivity=DateTime.UtcNow;}
     private void MenuOpened(object sender,object e){menuDepth++;ShowControls(true);DispatcherQueue.TryEnqueue(UpdateGlass);}private void MenuClosed(object sender,object e){menuDepth=Math.Max(0,menuDepth-1);ShowControls();DispatcherQueue.TryEnqueue(UpdateGlass);}
-    private async void EnhancementOpened(object sender,object e){MenuOpened(sender,e);RefreshStatus();try{if(renderer is not null){await renderer.InitializeEffectsAsync(lifetime.Token);if(!closed)RefreshStatus();}}catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(Exception ex){App.Log("Enhancement detection: "+ex.Message);}}
+    private async void EnhancementOpened(object sender,object e){MenuOpened(sender,e);RefreshStatus();if(currentFrame?.Info.NativeHdr!=0)return;try{if(renderer is not null){await renderer.InitializeEffectsAsync(lifetime.Token);if(!closed)RefreshStatus();}}catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(Exception ex){App.Log("Enhancement detection: "+ex.Message);}}
     private void SetOriginalHeld(bool value)
     {
         if(closed||originalHeld==value)return;originalHeld=value;

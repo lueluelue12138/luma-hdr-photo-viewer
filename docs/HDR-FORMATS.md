@@ -1,6 +1,6 @@
 # HDR 照片格式与实现范围
 
-调研及实现：2026-10-14，Luma 0.1.19。原生 HDR 不依赖 RTX，也不会重复进行 NVIDIA SDR→HDR 增强。扩展名和整数位深本身不能证明图片是 HDR。
+调研及实现：2026-10-14；显示控制更新：2026-10-15，Luma 0.1.20。原生 HDR 不依赖 RTX，也不会重复进行 NVIDIA SDR→HDR 增强。扩展名和整数位深本身不能证明图片是 HDR。
 
 ## 三个平台
 
@@ -31,7 +31,19 @@ ISO 元数据及 gain 运算使用固定 [libultrahdr 2.0.2](https://github.com/
 
 本机 Windows 报告约 **3675.74 nits** 峰值、**480 nits** SDR 白色。恒定增益测试经真实 GPU FP16 读回约 **3675 nits**；203 / 406 / 812 / 1600 nits 端点测试也通过。这证明管线可以表达系统报告的峰值，不是亮度计测量了屏幕。照片 headroom 不足时保持其范围，不额外制造高光。
 
-NVIDIA SDK 1.1.0 明确规定 TrueHDR `MaxLuminance` 参数为 **400–2000 nits**，RTX 增强继续遵守此范围。**原生增益图不受这个 SDK 参数上限约束。** PQ / 原始 scRGB 是绝对亮度数据，不随 SDR 白色再次缩放；其跨屏峰值压缩仍在 TODO 中。
+NVIDIA SDK 1.1.0 明确规定 TrueHDR `MaxLuminance` 参数为 **400–2000 nits**，RTX 增强继续遵守此范围。**原生增益图不受这个 SDK 参数上限约束。** PQ / 原始 scRGB 是绝对亮度数据，自动模式不随 SDR 白色再次缩放；其自动跨屏峰值压缩仍在 TODO 中。
+
+### 原生 HDR 的手动显示控制（0.1.20）
+
+原生 HDR 与 RTX 增强各自保存亮度偏好。原生 HDR 允许手动中间灰参考 **10–300 nits**、峰值 **80–10000 nits**，自动模式保留 0.1.19 的映射。这里的数值是显示参数 / 参考值，并非测量某张照片实际具有多少中间灰或高光；自动值旁显示当前屏幕 / 参考数值。PQ / JXR 的自动峰值行明确标为“屏幕峰值参考”，自动模式保留原片绝对亮度。
+
+- 增益图：手动中间灰决定 SDR 参考白（gray / 0.21586），手动峰值决定已有增益的对数权重。不会创造超出原片 headroom 的高光。
+- PQ / JXR：手动中间灰是曝光控制，按相对于 203 × 0.21586 nits 的比例缩放线性 RGB；手动峰值在目标 75% 以上使用连续、保持 RGB 比例的指数肩部压缩，低于肩部的像素保持不变。这是本应用的显示曲线，不声称复现 Windows Photos 的私有映射。自动模式完全跳过此曲线。
+- 全部调整在 GPU FP16 呈现时完成，不重新解码，不执行 RTX HDR / VSR，也不增加图片纹理。浮点源的负色域分量保留。设置和截图数值不等于屏幕物理亮度。
+
+增益图 HEIC / JPEG 带有 SDR 底图，因此按住空格可以对照。PQ HEIC / JXR 通常没有 SDR 底图，自动模式的对照按钮明确提示这个限制；手动调整后，空格可临时查看未调整的 **HDR 原片**，松开恢复显示参数。原片及两份缓存纹理都不改写。关于两类 HDR 数据，参见 [Apple HDR 图像说明](https://developer.apple.com/videos/play/wwdc2024/10177/)；scRGB 采用 [Microsoft 的 80 nits 定义](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range)。
+
+`tests/verify_native_hdr_tuning.py` 检查真实 FP16 输出、增益 / 曝光 / 峰值的独立数值、自动恢复、毛玻璃场景缓存中按住原片的正确刷新，以及无新增 SDK 调用 / 图片显存。无 SDK 和 RTX 原生核心都运行同一检查。
 
 ## 性能与边界
 
@@ -40,6 +52,7 @@ NVIDIA SDK 1.1.0 明确规定 TrueHDR `MaxLuminance` 参数为 **400–2000 nits
 - Apple 增益版本覆盖 65536 / 131072，识别 sRGB、Display P3、Rec.2020。未知 ICC、反向 HDR 基底或尚不支持的增益应用色域明确报错，不猜测 HDR。
 - 增益图 SDR 底图目前使用 WIC RGB8；**PQ HEIC 的高位深浮点路径独立**。高位深增益底图、复杂 ICC、更多手机导出格式仍需补充。
 - libheif / Pillow 和 WIC 使用不同色度与缩放滤波，真实样本存在像素差异，未声称逐像素一致。平均 / 最大误差和首次解码时间见 [验证记录](VERIFICATION.md)。
+- 0.1.20 对 10 张 Apple 官方 PQ 样本、2048 长边各解码三次，中位耗时约 1.11–2.03 秒；未清空系统文件缓存，不含窗口、上传或缩略图竞争。尝试系统 codec 的 float 缩小接口未取得收益，已撤回。512 长边数据不能用来宣传 2048 预览为瞬时加载，后续继续优化该路径。
 - 后续补充真实 HLG、原生 PQ / JXR 的低峰值 / SDR 色调映射、多屏物理观感和 AVIF。测试照片及第三方参考解码器只保留在忽略的 QA 目录，不随应用或源码发行。
 
 自动验证：`scripts/Get-HdrSamples.ps1` 固定样本 SHA256；`tests/verify_heic.py` 使用 QA 专用 pillow-heif / numpy 做独立对照；`tests/verify_hdr_peak.py` 检查真实 FP16 端点；隔离 WinUI 混合翻图和 Computer Use 检查验证来源、完整适配、SDK 跳过及缓存对照。余项见 [TODO](TODO.md)。

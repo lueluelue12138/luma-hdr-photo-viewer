@@ -192,7 +192,7 @@ std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=
 }
 
 const char* shader=R"(
-cbuffer View : register(b0) { float2 scale; float2 offset; float white; float nativeHDR; float rotation; float gammaInput; float gainWeight; float gainModel; float gainGamut; float gainWhite; float4 gainOffsetSdr; float4 gainOffsetHdr; };
+cbuffer View : register(b0) { float2 scale; float2 offset; float white; float nativeHDR; float rotation; float gammaInput; float gainWeight; float gainModel; float gainGamut; float gainWhite; float4 gainOffsetSdr; float4 gainOffsetHdr; float nativeExposure; float nativePeak; float2 reserved; };
 Texture2D photo : register(t0); Texture2D gainBase : register(t1); SamplerState linearSampler : register(s0);
 float3 gainTo709(float3 c) {
  if(gainGamut==1)return mul(float3x3(1.22494,-.22494,0,-.042057,1.042057,0,-.019638,-.078636,1.098274),c);
@@ -227,6 +227,19 @@ float4 PS(Vertex v):SV_TARGET {
    rgb=gainTo709((b+gainOffsetSdr.rgb)*pow(factor,gainWeight)-gainOffsetHdr.rgb)*gainWhite;
   }
  }
+ // Absolute PQ/scRGB keeps its authored luminance in automatic mode. Manual
+ // display adjustments affect only presentation, never the cached source.
+ if(nativeHDR>0.5&&gainModel<0.5) {
+  rgb*=nativeExposure;
+  if(nativePeak>0) {
+   float luminance=max(dot(rgb,float3(.2126,.7152,.0722)),0);
+   float knee=nativePeak*.75;
+   if(luminance>knee) {
+    float mapped=knee+(nativePeak-knee)*(1-exp(-(luminance-knee)/(nativePeak-knee)));
+    rgb*=mapped/max(luminance,1e-8);
+   }
+  }
+ }
  // Premultiplied alpha exposes the native window backdrop outside the photo.
  return float4(rgb*c.a,c.a);
 }
@@ -254,11 +267,11 @@ struct Renderer {
     NVSDK_NGX_Parameter* hdrParams=nullptr;NVSDK_NGX_Parameter* vsrParams=nullptr;NVSDK_NGX_Handle* hdrFeature=nullptr;NVSDK_NGX_Handle* vsrFeature=nullptr;bool ngxInitialized=false;
 #endif
     uint32_t width=1,height=1,iw=1,ih=1,processWidth=1,processHeight=1;float zoom=1,panX=0,panY=0;int rotation=0;unsigned currentPreset=1,middleGrayOverride=0,peakOverride=0;Status status{};uint64_t textureBudget=1024ull*1024*1024;
-    bool effectsInitialized=false;
+    bool effectsInitialized=false;float nativeMiddleGray=0,nativePeakOverride=0;
     RenderMetrics metrics{};
     TextureMetrics textureMetrics{};
     float cachedCompositionDpi=0;
-    std::tuple<ID3D11ShaderResourceView*,UINT,UINT,float,float,float,int,float,float,int,int,UINT,UINT> sceneStamp{};
+    std::tuple<ID3D11ShaderResourceView*,UINT,UINT,float,float,float,int,float,float,int,int,UINT,UINT,bool> sceneStamp{};
     Renderer(IUnknown* p,HWND h,bool deferEffects=false):hwnd(h) {
         if(p)check(p->QueryInterface(IID_PPV_ARGS(&panel)));
         check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
@@ -281,7 +294,7 @@ struct Renderer {
         auto v=compiledShader(shader,"VS","vs_5_0"),pixel=compiledShader(shader,"PS","ps_5_0");
         check(device->CreateVertexShader(v->GetBufferPointer(),v->GetBufferSize(),nullptr,&vs));check(device->CreatePixelShader(pixel->GetBufferPointer(),pixel->GetBufferSize(),nullptr,&ps));
         auto input=compiledShader(shader,"PSInput","ps_5_0");check(device->CreatePixelShader(input->GetBufferPointer(),input->GetBufferSize(),nullptr,&inputPs));
-        D3D11_BUFFER_DESC cb{};cb.ByteWidth=80;cb.Usage=D3D11_USAGE_DEFAULT;cb.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(device->CreateBuffer(&cb,nullptr,&constants));
+        D3D11_BUFFER_DESC cb{};cb.ByteWidth=96;cb.Usage=D3D11_USAGE_DEFAULT;cb.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(device->CreateBuffer(&cb,nullptr,&constants));
         D3D11_SAMPLER_DESC sd{};sd.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sd.AddressU=sd.AddressV=sd.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;sd.MaxLOD=D3D11_FLOAT32_MAX;check(device->CreateSamplerState(&sd,&sampler));
         glass=std::make_unique<GlassRenderer>(device.Get());
         if(panel)attach(p);
@@ -335,7 +348,7 @@ struct Renderer {
         hwnd=nullptr;width=height=iw=ih=processWidth=processHeight=1;vsrWidth=vsrHeight=0;
         requestedHdr=requestedVsr=holdOriginal=hdrCached=vsrCached=sdkInputReady=sourceAlpha=false;
         zoom=1;panX=panY=0;rotation=0;compositionDpi=1;cachedCompositionDpi=0;sceneStamp={};
-        currentPreset=1;middleGrayOverride=peakOverride=cachedPeak=0;metrics={};textureMetrics={};
+        currentPreset=1;middleGrayOverride=peakOverride=cachedPeak=0;nativeMiddleGray=nativePeakOverride=0;metrics={};textureMetrics={};
         status.nativeHdr=status.hdrEffective=status.vsrEffective=0;status.hdrEvaluations=status.vsrEvaluations=0;
         status.hdrAvailable=hdrCapability;status.vsrAvailable=vsrCapability;status.gpuBytes=0;
         wcscpy_s(status.hdrMessage,L"TrueHDR 尚未开启");wcscpy_s(status.vsrMessage,L"VSR 尚未开启");
@@ -482,7 +495,7 @@ struct Renderer {
         // Ordinary GPU resampling prepares large photos for the SDK; it never invokes VSR.
         if(!sdkInputReady){if(!sdkInput){D3D11_TEXTURE2D_DESC d{};d.Width=processWidth;d.Height=processHeight;d.ArraySize=d.MipLevels=1;d.Format=DXGI_FORMAT_R8G8B8A8_UNORM;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;check(device->CreateTexture2D(&d,nullptr,&sdkInput));textureMetrics.inputAllocations++;}
             if(processWidth==iw&&processHeight==ih)context->CopySubresourceRegion(sdkInput.Get(),0,0,0,0,originalTexture.Get(),0,nullptr);
-            else{context->ClearState();ComPtr<ID3D11RenderTargetView> outputView;check(device->CreateRenderTargetView(sdkInput.Get(),nullptr,&outputView));auto t=outputView.Get();context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT viewport{0,0,float(processWidth),float(processHeight),0,1};context->RSSetViewports(1,&viewport);float values[20]={1,1,0,0,1,0,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(inputPs.Get(),nullptr,0);auto i=originalView.Get();context->PSSetShaderResources(0,1,&i);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);context->Draw(6,0);context->ClearState();}
+            else{context->ClearState();ComPtr<ID3D11RenderTargetView> outputView;check(device->CreateRenderTargetView(sdkInput.Get(),nullptr,&outputView));auto t=outputView.Get();context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT viewport{0,0,float(processWidth),float(processHeight),0,1};context->RSSetViewports(1,&viewport);float values[24]={1,1,0,0,1,0,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(inputPs.Get(),nullptr,0);auto i=originalView.Get();context->PSSetShaderResources(0,1,&i);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);context->Draw(6,0);context->ClearState();}
             sdkInputReady=true;
         }
         auto output=[&](DXGI_FORMAT format,UINT w,UINT h,ComPtr<ID3D11Texture2D>& texture,ComPtr<ID3D11ShaderResourceView>& view){if(matches(texture.Get(),w,h,format))return;if(texture){if(format==DXGI_FORMAT_R16G16B16A16_FLOAT&&hdrFeature){NVSDK_NGX_D3D11_ReleaseFeature(hdrFeature);hdrFeature=nullptr;}else if(format!=DXGI_FORMAT_R16G16B16A16_FLOAT&&vsrFeature){NVSDK_NGX_D3D11_ReleaseFeature(vsrFeature);vsrFeature=nullptr;}}D3D11_TEXTURE2D_DESC d{};d.Width=w;d.Height=h;d.ArraySize=d.MipLevels=1;d.Format=format;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_UNORDERED_ACCESS;ComPtr<ID3D11Texture2D> next;ComPtr<ID3D11ShaderResourceView> nextView;check(device->CreateTexture2D(&d,nullptr,&next));check(device->CreateShaderResourceView(next.Get(),nullptr,&nextView));texture=next;view=nextView;if(format==DXGI_FORMAT_R16G16B16A16_FLOAT)textureMetrics.hdrAllocations++;else textureMetrics.vsrAllocations++;};
@@ -508,16 +521,21 @@ struct Renderer {
         selectImage();updateMemory();if(present)draw();
     }
     void draw(){auto started=std::chrono::steady_clock::now();context->ClearState();bool frosted=glass&&glass->enabled();if(frosted)glass->ensure(width,height);
-        auto nextStamp=std::make_tuple(image.Get(),width,height,zoom,panX,panY,rotation,status.sdrWhite,status.maxNits,int(status.nativeHdr||status.hdrEffective),status.vsrEffective,status.hdrEvaluations,status.vsrEvaluations);
+        auto nextStamp=std::make_tuple(image.Get(),width,height,zoom,panX,panY,rotation,status.sdrWhite,status.maxNits,int(status.nativeHdr||status.hdrEffective),status.vsrEffective,status.hdrEvaluations,status.vsrEvaluations,holdOriginal);
         bool refresh=!frosted||!glass->blurReady||sceneStamp!=nextStamp||cachedCompositionDpi!=compositionDpi;cachedCompositionDpi=compositionDpi;
         if(refresh){const float clear[]={0,0,0,0};auto t=frosted?glass->sceneTarget.Get():target.Get();context->ClearRenderTargetView(t,clear);context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT vp{0,0,float(width),float(height),0,1};context->RSSetViewports(1,&vp);
         if(image){float w=float(rotation%2?ih:iw),h=float(rotation%2?iw:ih);float fit=std::min(width/w,height/h);
             // Gain maps describe HDR relative to their SDR rendition. Match
             // Windows SDR white so the base and HDR comparison don't acquire
             // an unrelated brightness jump. PQ and captured scRGB stay absolute.
-            float gainWhite=status.maxNits>0?std::min(status.sdrWhite,status.maxNits/80):status.sdrWhite;
-            float weight=1;if(gainDisplay.model&&status.maxNits>0&&gainDisplay.maximum>gainDisplay.minimum)weight=std::clamp((std::log2(std::max(status.maxNits/(gainWhite*80),1.0f))-std::log2(gainDisplay.minimum))/(std::log2(gainDisplay.maximum)-std::log2(gainDisplay.minimum)),0.0f,1.0f);
-            float values[]={w*fit*zoom/width,h*fit*zoom/height,2*panX/width,-2*panY/height,status.sdrWhite,float((status.nativeHdr||status.hdrEffective)&&image!=sdrOriginalView),float(rotation),float(status.vsrEffective&&!status.hdrEffective),weight,float(image==originalView?gainDisplay.model:0),float(gainDisplay.gamut),gainWhite,gainDisplay.offsetSdr[0],gainDisplay.offsetSdr[1],gainDisplay.offsetSdr[2],0,gainDisplay.offsetHdr[0],gainDisplay.offsetHdr[1],gainDisplay.offsetHdr[2],0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
+            float displayPeak=nativePeakOverride?nativePeakOverride:status.maxNits;
+            float baseWhite=nativeMiddleGray?nativeMiddleGray/.21586f/80:status.sdrWhite;
+            float gainWhite=displayPeak>0?std::min(baseWhite,displayPeak/80):baseWhite;
+            float weight=1;if(gainDisplay.model&&displayPeak>0&&gainDisplay.maximum>gainDisplay.minimum)weight=std::clamp((std::log2(std::max(displayPeak/(gainWhite*80),1.0f))-std::log2(gainDisplay.minimum))/(std::log2(gainDisplay.maximum)-std::log2(gainDisplay.minimum)),0.0f,1.0f);
+            bool absolute= status.nativeHdr==1&&image==originalView&&!holdOriginal;
+            float exposure=absolute&&nativeMiddleGray?nativeMiddleGray/(203*.21586f):1;
+            float peak=absolute&&nativePeakOverride?nativePeakOverride/80:0;
+            float values[]={w*fit*zoom/width,h*fit*zoom/height,2*panX/width,-2*panY/height,status.sdrWhite,float((status.nativeHdr||status.hdrEffective)&&image!=sdrOriginalView),float(rotation),float(status.vsrEffective&&!status.hdrEffective),weight,float(image==originalView?gainDisplay.model:0),float(gainDisplay.gamut),gainWhite,gainDisplay.offsetSdr[0],gainDisplay.offsetSdr[1],gainDisplay.offsetSdr[2],0,gainDisplay.offsetHdr[0],gainDisplay.offsetHdr[1],gainDisplay.offsetHdr[2],0,exposure,peak,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
             context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(ps.Get(),nullptr,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->PSSetConstantBuffers(0,1,&c);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);ID3D11ShaderResourceView* resources[]={image.Get(),gainBaseView?gainBaseView.Get():sdrOriginalView.Get()};context->PSSetShaderResources(0,2,resources);context->Draw(6,0);}
         }if(frosted)sceneStamp=nextStamp;else sceneStamp={};
         if(frosted)glass->composite(context.Get(),target.Get(),sampler.Get(),status.sdrWhite,compositionDpi,refresh);
@@ -584,6 +602,7 @@ API HRESULT __cdecl LumaPrepareEffects(void* r,int hdr,int vsr,int original,UINT
 // never initialize NGX, upload a frame, or evaluate an enhancement here.
 API HRESULT __cdecl LumaSetOriginal(void* r,int original){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.holdOriginal=original!=0;x.selectImage();});}
 API HRESULT __cdecl LumaHdrTuning(void* r,UINT middleGray,UINT peak){if(!r)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);x.middleGrayOverride=middleGray?std::clamp(middleGray,10u,100u):0;x.peakOverride=peak?std::clamp(peak,400u,2000u):0;});}
+API HRESULT __cdecl LumaNativeHdrTuning(void* r,float middleGray,float peak){if(!r||!std::isfinite(middleGray)||!std::isfinite(peak)||middleGray<0||peak<0)return E_INVALIDARG;return safe([&]{auto& x=*static_cast<Renderer*>(r);float gray=middleGray?std::clamp(middleGray,10.0f,300.0f):0,p=peak?std::clamp(peak,80.0f,10000.0f):0;if(gray!=x.nativeMiddleGray||p!=x.nativePeakOverride){x.nativeMiddleGray=gray;x.nativePeakOverride=p;x.sceneStamp={};}});}
 API HRESULT __cdecl LumaReadSurface(void* r,uint16_t* rgba,UINT pixels){if(!r||!rgba)return E_POINTER;return safe([&]{auto& x=*static_cast<Renderer*>(r);if(uint64_t(pixels)<uint64_t(x.width)*x.height)throw Failure{E_INVALIDARG};ComPtr<ID3D11Texture2D> source;if(x.swap)check(x.swap->GetBuffer(0,IID_PPV_ARGS(&source)));else source=x.offscreen;D3D11_TEXTURE2D_DESC desc{};source->GetDesc(&desc);desc.Usage=D3D11_USAGE_STAGING;desc.BindFlags=0;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;ComPtr<ID3D11Texture2D> staging;check(x.device->CreateTexture2D(&desc,nullptr,&staging));x.context->CopyResource(staging.Get(),source.Get());D3D11_MAPPED_SUBRESOURCE mapped{};check(x.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped));for(UINT y=0;y<x.height;y++)memcpy(rgba+size_t(y)*x.width*4,static_cast<uint8_t*>(mapped.pData)+size_t(y)*mapped.RowPitch,size_t(x.width)*8);x.context->Unmap(staging.Get(),0);});}
 // For validation: read a real FP16 render target back, never an 8-bit screenshot.
 API HRESULT __cdecl LumaReadPixel(void* r,UINT x,UINT y,uint16_t* rgba){if(!r||!rgba)return E_POINTER;return safe([&]{auto& a=*static_cast<Renderer*>(r);if(!a.offscreen||x>=a.width||y>=a.height)throw Failure{E_INVALIDARG};D3D11_TEXTURE2D_DESC d{};a.offscreen->GetDesc(&d);d.BindFlags=0;d.Usage=D3D11_USAGE_STAGING;d.CPUAccessFlags=D3D11_CPU_ACCESS_READ;ComPtr<ID3D11Texture2D> staging;check(a.device->CreateTexture2D(&d,nullptr,&staging));a.context->CopyResource(staging.Get(),a.offscreen.Get());D3D11_MAPPED_SUBRESOURCE m{};check(a.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&m));memcpy(rgba,static_cast<uint8_t*>(m.pData)+size_t(y)*m.RowPitch+x*8,8);a.context->Unmap(staging.Get(),0);});}
