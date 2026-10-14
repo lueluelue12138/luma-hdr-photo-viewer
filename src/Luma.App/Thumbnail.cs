@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Dispatching;
 using Windows.Storage;
 using Windows.Storage.FileProperties;
 using Windows.Storage.Streams;
@@ -142,11 +143,21 @@ public sealed class Thumbnail : Grid
             {
                 try
                 {
-                    var writable=new WriteableBitmap((int)sdr.info.Width,(int)sdr.info.Height);
-                    // Pool buckets can be larger than the decoded frame.
-                    // Copy only valid pixels, then return the staging buffer.
-                    using(var stream=writable.PixelBuffer.AsStream())stream.Write(sdr.pixels,0,checked((int)sdr.info.Bytes));
-                    writable.Invalidate();bitmap=writable;size=sdr.info.Width*(long)sdr.info.Height*4;
+                    var completed=new TaskCompletionSource<ImageSource>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    // Several covers can finish decoding together. Admit each
+                    // XAML bitmap/upload at low priority so queued input and
+                    // window/layout work run before the optional thumbnail.
+                    if(!DispatcherQueue.GetForCurrentThread().TryEnqueue(DispatcherQueuePriority.Low,()=>
+                    {
+                        try
+                        {
+                            var writable=new WriteableBitmap((int)sdr.info.Width,(int)sdr.info.Height);
+                            using(var stream=writable.PixelBuffer.AsStream())stream.Write(sdr.pixels,0,checked((int)sdr.info.Bytes));
+                            writable.Invalidate();completed.TrySetResult(writable);
+                        }
+                        catch(Exception ex){completed.TrySetException(ex);}
+                    }))throw new OperationCanceledException();
+                    bitmap=await completed.Task;size=sdr.info.Width*(long)sdr.info.Height*4;
                 }
                 finally{Pixels.Return(sdr.pixels);}
             }

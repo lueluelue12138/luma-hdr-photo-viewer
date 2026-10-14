@@ -9,6 +9,18 @@ namespace Luma.App;
 public sealed partial class MainWindow
 {
     private Func<Task>? verificationBeforeScan;
+    internal async Task<bool> VerificationSettingsPageAsync()
+    {
+        bool deferred=settingsPanel is null;var theme=Root.RequestedTheme;
+        Nav.SelectedItem=Nav.SettingsItem;
+        if(settingsPanel is null||!ReferenceEquals(SettingsHost.Content,settingsPanel)||SettingsHost.Visibility!=Microsoft.UI.Xaml.Visibility.Visible)
+            throw new InvalidOperationException("Deferred settings did not create its real controls");
+        int expected=theme switch{Microsoft.UI.Xaml.ElementTheme.Light=>1,Microsoft.UI.Xaml.ElementTheme.Dark=>2,_=>0};
+        if(settingsPanel.SelectedThemeIndex!=expected)throw new InvalidOperationException("Deferred theme selection did not preserve the app theme");
+        Nav.SelectedItem=AlbumsItem;await ReloadAsync();Nav.SelectedItem=Nav.SettingsItem;
+        if(SettingsHost.Visibility!=Microsoft.UI.Xaml.Visibility.Visible||Root.RequestedTheme!=theme)throw new InvalidOperationException("Settings reopening lost its theme or layout");
+        Nav.SelectedItem=AlbumsItem;await ReloadAsync();return deferred;
+    }
     private IEnumerable<Button> VerificationRealizedCards()
     {
         // Inspect only realized children. Querying every index in a long album

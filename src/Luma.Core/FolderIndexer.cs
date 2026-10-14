@@ -10,11 +10,13 @@ public sealed class FolderIndexer(LibraryStore store) : IDisposable
     public event Action<long>? FolderChanged;
     public async Task<ScanResult> RefreshAsync(Album album, CancellationToken cancellation = default)
     {
-        await scanGate.WaitAsync(cancellation);
+        // This is a storage service, not a UI operation. Its continuations
+        // (path comparisons, watcher setup and result counting) stay off XAML.
+        await scanGate.WaitAsync(cancellation).ConfigureAwait(false);
         try
         {
-            if (!await Task.Run(()=>Directory.Exists(album.Folder),cancellation)) { Forget(album.Id);await store.ApplyScanAsync(album.Id, [], false, true); return new(album.Id,0,0,0,true); }
-            var old = (await store.PhotosAsync(PhotoScope.Album, album.Id)).ToDictionary(p=>p.Path,StringComparer.OrdinalIgnoreCase);
+            if (!await Task.Run(()=>Directory.Exists(album.Folder),cancellation).ConfigureAwait(false)) { Forget(album.Id);await store.ApplyScanAsync(album.Id, [], false, true).ConfigureAwait(false); return new(album.Id,0,0,0,true); }
+            var old = (await store.PhotosAsync(PhotoScope.Album, album.Id).ConfigureAwait(false)).ToDictionary(p=>p.Path,StringComparer.OrdinalIgnoreCase);
             var files = new List<Photo>(); string? error=null;
             await Task.Run(() =>
             {
@@ -34,11 +36,21 @@ public sealed class FolderIndexer(LibraryStore store) : IDisposable
                     }
                     catch(Exception ex) when(ex is UnauthorizedAccessException or IOException) { error=ex.Message; }
                 }
-            },cancellation);
+            },cancellation).ConfigureAwait(false);
             cancellation.ThrowIfCancellationRequested();
-            await store.ApplyScanAsync(album.Id, files, error is null, false);
+            int added=0,updated=0;
+            foreach(var p in files)
+                if(!old.TryGetValue(p.Path,out var previous))added++;
+                else if(previous.Name!=p.Name||previous.Modified!=p.Modified||previous.Size!=p.Size)updated++;
+            int missing=error is null?old.Count-files.Count(p=>old.ContainsKey(p.Path)):0;
+            // A normal startup still checks the filesystem and arms its watcher,
+            // but unchanged albums need no transaction or per-photo upserts.
+            // Re-read offline status: callers can hold an older Album record.
+            bool unchanged=error is null&&added==0&&updated==0&&missing==0;
+            bool alreadyOnline=unchanged&&(await store.AlbumsAsync().ConfigureAwait(false)).Any(a=>a.Id==album.Id&&!a.Offline);
+            if(!alreadyOnline)await store.ApplyScanAsync(album.Id, files, error is null, false).ConfigureAwait(false);
             Watch(album);
-            return new(album.Id,files.Count(p=>!old.ContainsKey(p.Path)),files.Count(p=>old.TryGetValue(p.Path,out var o)&&(o.Modified!=p.Modified||o.Size!=p.Size)),error is null ? old.Keys.Except(files.Select(p=>p.Path),StringComparer.OrdinalIgnoreCase).Count() : 0,false,error);
+            return new(album.Id,added,updated,missing,false,error);
         }
         finally { scanGate.Release(); }
     }

@@ -18,9 +18,11 @@ public sealed partial class MainWindow : Window
     private CancellationTokenSource? searchCancellation;private readonly CancellationTokenSource lifetime=new();
     private readonly List<ViewerWindow> viewers=[];
     private int responsiveBand=-1;
+    private SettingsPanel? settingsPanel;
     private bool refreshAllPending;
     private readonly HashSet<long> refreshAlbumsPending=[];
     private Task refreshTask=Task.CompletedTask;
+    internal Task StartupRefresh {get;private set;}=Task.CompletedTask;
     internal TaskCompletionSource VerificationReady {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal async Task<object> VerificationGalleryAsync(string folder)
     {
@@ -83,10 +85,23 @@ public sealed partial class MainWindow : Window
     private async void Loaded(object sender,RoutedEventArgs e)
     {
         if(closed)return;
-        Root.Loaded-=Loaded;await WindowLayout.RevealAsync(this,Root);if(closed)return;ThemeBox.SelectedIndex=Root.RequestedTheme switch{ElementTheme.Light=>1,ElementTheme.Dark=>2,_=>0};ready=true;Nav.SelectedItem=AlbumsItem;await ReloadAsync();VerificationReady.TrySetResult();
+        Root.Loaded-=Loaded;
+        // Selecting the initial page must not launch a second async reload and
+        // entrance animation while the first cover/layout is being prepared.
+        Nav.SelectedItem=AlbumsItem;ready=true;await ReloadAsync();if(closed)return;
+        // Prepare the real gallery layout before releasing the native cloak.
+        // A visible empty shell followed by creating all its cards competes
+        // with the first title-bar drag and the entrance animation.
+        ScanProgress.IsActive=true;ScanProgress.Visibility=Visibility.Visible;
+        await WindowLayout.RevealAsync(this,Root);if(closed)return;VerificationReady.TrySetResult();
         var cli=Environment.GetCommandLineArgs();int import=Array.IndexOf(cli,"--import");
         if(import>=0&&import+1<cli.Length&&await Task.Run(()=>Directory.Exists(cli[import+1])))await ImportAsync(cli[import+1]);
-        else _=RefreshAllAsync();
+        else
+        {
+            var started=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);StartupRefresh=started.Task;
+            if(!DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,async()=>
+            {try{await RefreshAllAsync();started.TrySetResult();}catch(Exception ex){started.TrySetException(ex);}}))started.TrySetCanceled();
+        }
     }
     private async Task ReloadAsync()
     {
@@ -113,10 +128,21 @@ public sealed partial class MainWindow : Window
     private async void NavigationChanged(NavigationView sender,NavigationViewSelectionChangedEventArgs args)
     {
         if(!ready)return;
-        if(args.IsSettingsSelected){page="settings";Gallery.Visibility=Visibility.Collapsed;SettingsPage.Visibility=Visibility.Visible;Motion.Enter(SettingsPage);return;}
+        if(args.IsSettingsSelected)
+        {
+            page="settings";ready=false;
+            if(settingsPanel is null)
+            {
+                settingsPanel=new SettingsPanel();settingsPanel.ThemeSelectionChanged+=ThemeChanged;
+                settingsPanel.DefaultAppsRequested+=DefaultAppsClick;settingsPanel.DataFolderRequested+=DataFolderClick;
+                SettingsHost.Content=settingsPanel;
+            }
+            settingsPanel.SelectedThemeIndex=Root.RequestedTheme switch{ElementTheme.Light=>1,ElementTheme.Dark=>2,_=>0};ready=true;
+            Gallery.Visibility=Visibility.Collapsed;SettingsHost.Visibility=Visibility.Visible;Motion.Enter(SettingsHost);return;
+        }
         if(args.SelectedItem is not NavigationViewItem item)return;
         if(item.Tag is long id){page="album";albumId=id;sort=albums.FirstOrDefault(a=>a.Id==id)?.Sort??"name";SortBox.SelectedIndex=sort switch{"newest"=>1,"oldest"=>2,_=>0};}else{page=item.Tag?.ToString()??"all";albumId=0;}
-        Gallery.Visibility=Visibility.Visible;SettingsPage.Visibility=Visibility.Collapsed;await ReloadAsync();Motion.Enter(Gallery);
+        Gallery.Visibility=Visibility.Visible;SettingsHost.Visibility=Visibility.Collapsed;await ReloadAsync();Motion.Enter(Gallery);
     }
     private async void SearchChanged(AutoSuggestBox sender,AutoSuggestBoxTextChangedEventArgs args)
     {
@@ -155,10 +181,11 @@ public sealed partial class MainWindow : Window
             {
                 bool all=refreshAllPending;var ids=refreshAlbumsPending.ToArray();refreshAllPending=false;refreshAlbumsPending.Clear();
                 var snapshot=await App.Store.AlbumsAsync();
+                bool reload=!snapshot.SequenceEqual(albums);
                 if(verificationBeforeScan is {} pause)await pause();
                 foreach(var a in snapshot.Where(a=>all||ids.Contains(a.Id)))
-                {ScanText.Text=$"正在刷新 {a.Name}…";var r=await App.Indexer.RefreshAsync(a,lifetime.Token);if(r.Added>0||r.Updated>0||r.Missing>0||r.Offline!=a.Offline)Thumbnail.InvalidateFolder(a.Folder);if(r.Error is not null)App.Log(r.Error);}
-                if(!closed){ScanText.Text="";await ReloadAsync();}
+                {ScanText.Text=$"正在刷新 {a.Name}…";var r=await App.Indexer.RefreshAsync(a,lifetime.Token);if(r.Added>0||r.Updated>0||r.Missing>0||r.Offline!=a.Offline){reload=true;Thumbnail.InvalidateFolder(a.Folder);}if(r.Error is not null)App.Log(r.Error);}
+                if(!closed){ScanText.Text="";if(reload)await ReloadAsync();}
             }while(!closed&&(refreshAllPending||refreshAlbumsPending.Count>0));
         }
         catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.ToString());ScanText.Text="刷新失败，可稍后重试";}
@@ -195,7 +222,7 @@ public sealed partial class MainWindow : Window
     }
     private void Add(MenuFlyout menu,string text,Func<Task> action){var i=new MenuFlyoutItem{Text=text};i.Click+=async(_,_)=>{try{await action();}catch(Exception ex){await ErrorAsync("操作未完成",ex.Message);}};menu.Items.Add(i);}
     private static void OpenFolder(string folder)=>Process.Start(new ProcessStartInfo("explorer.exe",$"\"{folder}\""){UseShellExecute=true});
-    private async void ThemeChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;var theme=(ThemeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"system";await App.Store.SetSettingAsync("theme",theme);App.Theme=await App.ThemeAsync();Root.RequestedTheme=App.Theme;foreach(var v in viewers)v.ApplyTheme(Root.RequestedTheme);}
+    private async void ThemeChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;var theme=((sender as ComboBox)?.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"system";await App.Store.SetSettingAsync("theme",theme);App.Theme=await App.ThemeAsync();Root.RequestedTheme=App.Theme;foreach(var v in viewers)v.ApplyTheme(Root.RequestedTheme);}
     private async void DefaultAppsClick(object sender,RoutedEventArgs e)
     {
         try

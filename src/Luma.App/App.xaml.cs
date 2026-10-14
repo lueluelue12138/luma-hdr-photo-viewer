@@ -29,6 +29,11 @@ public partial class App : Application
             Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();await ViewerPreferences.LoadAsync();
             Log($"Launch {Environment.ProcessId}");
             string? file=LaunchArguments.PhotoPath(cli);
+            if(test>=0&&cli.Contains("--verify-gallery-startup"))
+            {
+                using var probe=new GalleryStartupVerification();
+                window=new MainWindow();window.Activate();await probe.RunAsync((MainWindow)window);return;
+            }
             if(test>=0&&cli.Contains("--verify-thumbnail-disk-cache"))
             {
                 window=new MainWindow();window.Activate();await ThumbnailDiskCacheVerification.RunAsync((MainWindow)window);return;
