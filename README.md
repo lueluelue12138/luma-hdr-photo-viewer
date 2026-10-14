@@ -2,7 +2,7 @@
 
 **重新看看你喜欢的照片，让普通照片也有 HDR 的光影。**
 
-![Luma 产品展示：深色相册与照片预览、悬浮毛玻璃、独立 RTX HDR 与 VSR 控制](docs/images/luma-product-showcase.png)
+![Luma 产品展示：浅色相册与照片预览、悬浮毛玻璃、独立 RTX HDR 与 VSR 控制](docs/images/luma-product-showcase.webp)
 
 <sub>AI 生成的产品展示示意，示例风景为虚构，界面细节以实际版本为准。</sub>
 

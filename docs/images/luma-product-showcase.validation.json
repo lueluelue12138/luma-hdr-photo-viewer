@@ -1,0 +1,25 @@
+{
+  "source": "Owner-approved light coastal product illustration, 2026-10-14",
+  "source_png_sha256": "9ecbd3e063c18776d178df8a3f03dd3b2129b1935d22d48d2bf26c7bc6493a59",
+  "source_png_bytes": 2320056,
+  "asset": "luma-product-showcase.webp",
+  "asset_sha256": "633ec34e4b2121a158b86d915af0db5ca349c869e2392747d41749d231ee51b5",
+  "asset_bytes": 1556588,
+  "dimensions": [
+    1672,
+    941
+  ],
+  "encoding": "WebP lossless; Pillow 11.3.0 / libwebp 1.5.0",
+  "parameters": {
+    "lossless": true,
+    "quality": 100,
+    "method": 6,
+    "exact": true
+  },
+  "rgba_pixels_identical_to_source": true,
+  "saving_percent": 32.91,
+  "resized": false,
+  "ai_redrawn_during_compression": false,
+  "previous_png_bytes": 2238450,
+  "previous_history_rewritten": false
+}
