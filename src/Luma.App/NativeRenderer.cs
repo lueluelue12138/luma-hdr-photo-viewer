@@ -16,7 +16,7 @@ internal struct RenderStatus
     public int Nvidia,HdrActive,Fp16,NativeHdr;public float MaxNits,SdrWhite;public ulong GpuBytes;public int HdrEffective,VsrEffective,SdkAvailable,HdrAvailable,VsrAvailable;public uint NgxResult,HdrEvaluations,VsrEvaluations;
     [MarshalAs(UnmanagedType.ByValTStr,SizeConst=256)]public string HdrMessage;
     [MarshalAs(UnmanagedType.ByValTStr,SizeConst=256)]public string VsrMessage;
-    public string HdrReason => NativeHdr!=0 ? "原生 HDR 图片，跳过 SDR 增强" : HdrEffective!=0 ? HdrMessage : HdrActive==0 ? "当前显示器未启用 Windows HDR" : HdrMessage;
+    public string HdrReason => NativeHdr==2 ? "照片自带 HDR 增益图，直接还原光影，无需 RTX HDR" : NativeHdr!=0 ? "原生 HDR 图片，跳过 SDR 增强" : HdrEffective!=0 ? HdrMessage : HdrActive==0 ? "当前显示器未启用 Windows HDR" : HdrMessage;
 }
 internal static class Native
 {
@@ -24,6 +24,7 @@ internal static class Native
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern IntPtr LumaError();
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaDecode(string path,out FrameInfo info,out IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaDecodeSized(string path,uint maxEdge,out FrameInfo info,out IntPtr frame);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaDecodeThumbnail(string path,uint maxEdge,out FrameInfo info,out IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern void LumaFreeFrame(IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCopySdrBgra(IntPtr frame,[Out]byte[] pixels,ulong bytes);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCreate(IntPtr panel,IntPtr hwnd,out IntPtr renderer);

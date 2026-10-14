@@ -29,6 +29,12 @@ public partial class App : Application
             Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();await ViewerPreferences.LoadAsync();
             Log($"Launch {Environment.ProcessId}");
             string? file=LaunchArguments.PhotoPath(cli);
+            if(test>=0&&cli.Contains("--verify-hdr-formats"))
+            {
+                int source=Array.IndexOf(cli,"--hdr-format-source");
+                string folder=source>=0&&source+1<cli.Length?Path.GetFullPath(cli[source+1]):throw new ArgumentException("HDR verification requires its fixture folder");
+                window=new MainWindow();window.Activate();await HdrFormatVerification.RunAsync((MainWindow)window,folder,file);return;
+            }
             if(test>=0&&cli.Contains("--verify-gallery-startup"))
             {
                 using var probe=new GalleryStartupVerification();

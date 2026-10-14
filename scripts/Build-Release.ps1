@@ -37,7 +37,7 @@ if($LASTEXITCODE -ne 0){throw 'Release provenance requires a Git commit.'}
 $sourceDirty=[bool](& git -C $root status --porcelain=v1 --untracked-files=all)
 if($LASTEXITCODE -ne 0){throw 'Cannot verify release source status.'}
 if($Distribution -and $sourceDirty){throw 'Distribution requires a clean committed source tree.'}
-$metadata=@{schema=1;version=$releaseVersion;fileVersion=$fileVersion;variant=$Variant;commit=$gitCommit;sourceDirty=$sourceDirty;repository=$RepositoryUrl;architecture='x64';minimumWindows='Windows 11';rtxHdr=($Variant -eq 'rtx');rtxVsr=($Variant -eq 'rtx');nativeHdrFormats=@('jxr','wdp','hdp');signed=$false}
+$metadata=@{schema=1;version=$releaseVersion;fileVersion=$fileVersion;variant=$Variant;commit=$gitCommit;sourceDirty=$sourceDirty;repository=$RepositoryUrl;architecture='x64';minimumWindows='Windows 11';rtxHdr=($Variant -eq 'rtx');rtxVsr=($Variant -eq 'rtx');nativeHdrFormats=@('jxr','wdp','hdp','jpeg-gain-map');gainMapCodec='libultrahdr 2.0.2';signed=$false}
 if($Variant -eq 'rtx'){
     $runtimeHashes=@{}
     foreach($name in $nvidiaFiles){$runtimeHashes[$name]=(Get-FileHash -LiteralPath (Join-Path $payload $name) -Algorithm SHA256).Hash.ToLowerInvariant()}

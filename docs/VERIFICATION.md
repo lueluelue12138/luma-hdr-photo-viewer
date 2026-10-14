@@ -1,5 +1,29 @@
 # Luma 本机验证记录
 
+## 原生 HDR 照片格式（0.1.18，2026-10-14）
+
+调研及范围见 [HDR 格式说明](HDR-FORMATS.md)。本轮新增 Google 参考库解析的 XMP / ISO / Apple 增益图 JPEG，经按显示尺寸的 WIC 双图解码、官方 gain-map 运算、203/80 参考白转换与 P3/Rec.2020→线性 Rec.709 后进入现有 FP16 / scRGB。兼容 SDR 底图同时保留并计入预算，用于 SDR 屏幕和缓存空格对照；原生 HDR 不运行 NVIDIA SDR→HDR 或 VSR。图库小卡片另有 SDR 底图解码入口，浮点 JXR 缩略图继续交由 Windows，避免为缩略图做完整 HDR 解码。
+
+最终依赖为固定 libultrahdr 2.0.2 提交与当前稳定 libjpeg-turbo 3.2.0 官方发行源码；输入 SHA256 和 NASM SIMD 构建工具均固定，未修改上游源码。standard 与 RTX 都可显示原生 HDR，后者仍保留原有增强能力；没有安装系统编解码扩展、增加未支持格式关联、修改默认查看器或推送任何发布。原生 DLL 由既有 349696 字节增加到约 1.2 MB，约增加 0.8 MiB；消费者包保留四份原始 codec 许可/声明，不含源代码、构建工具、参考 EXE 或照片样本。
+
+`tests/verify_hdr_formats.py` 使用独立参考 EXE 的完整 C API 解码作为比较，同时用恒定 4 倍增益灰色测试验证解析和亮度比例。XMP 测试有 MPF 与 Container Directory，ISO 测试由官方编码器生成；两份 Apple JPEG 保留在忽略的工具目录，没有加入公开源代码。两个 native 构建均通过，报告在 `artifacts/hdr-formats/hdr-formats-standard.json` 和 `hdr-formats-rtx.json`。
+
+| 样本 | 本机观测 / 结果 |
+| --- | --- |
+| XMP-only JPEG | HDR 2 类型，高光 4.6314 scRGB；采样与独立参考一致，符合解析增益 × 203/80 的解析公式 |
+| ISO 21496-1 JPEG | 高光 10.1302；与参考采样通道平均误差 0.00739，最大 0.05947 scRGB |
+| 两份 Apple JPEG | 高光约 9.627 / 18.964；平均通道误差 0.00616 / 0.00759，最大约 0.563 / 0.660 scRGB，集中于彩色边缘。WIC RGB 与参考 YCbCr 采用不同解码/色度插值路径，未声称逐像素一致或所有 ICC 均已认证 |
+| 48 MP 合成 JPEG | 8000×6000 → 2048×1536，约 253–290 ms，HDR + SDR 帧 62914560 字节；没有先创建 48 MP HDR 输出。不是真实相机随机纹理的性能基线 |
+| 6 张用户 Windows JXR | 原生浮点高光约 6.0–12.68，真实 FP16 读回差异小于 0.03；首张 4K 文件 2048 长边约 439–459 ms，其他文件约 282–1016 ms。实际包括长文件名和不同窗口尺寸，没有复制/修改原文件 |
+
+四种 JPEG 分别完成 40 次真实 GPU HDR / SDR 底图切换，回到 HDR 后 FP16 像素保持一致，没有额外 SDK 调用。缩小预览保留原始尺寸；缩略图返回 SDR BGRA；EXIF 旋转、普通 JPEG 不误认 HDR、截断增益图错误返回及空句柄检查通过。使用无 NVIDIA 初始化的真实 D3D11/FP16 渲染器验证，与 RTX 模型无关。
+
+最终 WinUI `--verify-hdr-formats` 在独立数据目录实际翻过 XMP、ISO、两份 Apple、普通 JPEG 与用户 JXR，状态与帧类型一致、FP16 有效；即使请求两个增强开关，原生 HDR 的两种调用增量仍为 0，缓存对照没有新处理任务。报告 `artifacts/hdr-formats/windows-final/hdr-format-windows.json`。Computer Use 实际打开 JXR，确认完整适配、原生 HDR 来源文字和禁用的两个增强开关；截图只用于窗口/控件观察，不将 SDR 截图的过曝作为屏幕 HDR 亮度证据。
+
+Release 构建、27 项图库/索引核心检查、常见缩略图像素与透明度/ICC/EXIF 检查通过。原有真实 TrueHDR-only、独立与组合 VSR、40 次缓存对照、FP16 高光和 SDK-free 路径也通过。最终应用的交互回归 `viewer-interaction-20261014-152518/viewer-interaction.json` 完整通过：40 次缓存 HDR 对照没有新增 AI/处理任务，调用中位约 0.04 ms、最大 0.13 ms；普通小 JPEG 的随机 / 预读首帧中位约 8.5 / 4 ms。24 次图库尺寸合成回调最大仍约 80.7 ms，这不是本轮格式解码的性能证明，也不代表已有图库布局待办已解决。
+
+最终候选在 `artifacts/Luma-hdr-formats/Luma.App.exe`，502 个文件共 203210468 字节；原生 DLL 1187328 字节，对旧 349696 字节增加 837632 字节（约 0.80 MiB）。所有 codec 许可/声明来自原始输入，消费者目录无参考 EXE、源码、静态库或照片。本轮未重新生成 EXE 安装包，也没有推送 / 发布。仍未覆盖所有手机源文件、HEIC / AVIF、全部 HDR 曲线/ICC、低峰值显示器自适应与完整安装升级；这些范围保留在 TODO，不作能力承诺。设置页版本文字改为读取程序集，并准确显示新增格式范围。
+
 ## 主页启动期间的窗口响应（2026-10-14）
 
 用户反馈主页启动后短时间拖动卡顿、随后恢复，预览窗口正常。此前图库压力测试在初始加载及自动刷新后才开始探测，不能覆盖该时段。本轮新增 `--verify-gallery-startup` 和只读 SQLite backup 的脚本，在构造窗口之前启动 UI 回调探测，区分隐藏的初始布局、已显示窗口的自动刷新与稳定阶段；每次进程执行 100 次原生 AppWindow 移动。正式数据库、照片、缓存和默认关联没有被写入，测试数据库和缩略图缓存均位于独立 artifacts 目录。

@@ -7,7 +7,7 @@ namespace Luma.App;
 // need not create templates/text/buttons belonging to an invisible page.
 public sealed partial class SettingsPanel : UserControl
 {
-    public SettingsPanel()=>InitializeComponent();
+    public SettingsPanel(){InitializeComponent();VersionText.Text=$"Luma {typeof(App).Assembly.GetName().Version?.ToString(3)} · Windows 原生图库";}
     internal int SelectedThemeIndex {get=>ThemeBox.SelectedIndex;set=>ThemeBox.SelectedIndex=value;}
     internal event SelectionChangedEventHandler? ThemeSelectionChanged;
     internal event RoutedEventHandler? DefaultAppsRequested;

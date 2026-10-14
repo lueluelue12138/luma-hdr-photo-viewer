@@ -129,7 +129,7 @@ public sealed class Thumbnail : Grid
                         var stamp=ThumbnailDiskCache.SourceStamp(path);
                         if(UseDiskCache&&ThumbnailDiskCache.Read(path,edge,stamp,Pixels) is {} cached)return cached;
                         Interlocked.Increment(ref wicLoads);
-                        Native.Check(Native.LumaDecodeSized(path,edge,out var info,out var pointer));
+                        Native.Check(Native.LumaDecodeThumbnail(path,edge,out var info,out var pointer));
                         using var frame=new DecodedFrame(pointer,info);
                         if(info.NativeHdr!=0)return null; // preserve Windows' HDR thumbnail provider
                         var pixels=Pixels.Rent(checked((int)info.Bytes));

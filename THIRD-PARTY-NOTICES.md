@@ -10,9 +10,17 @@ Luma's MIT license applies to its original source and project artwork only, incl
 | Microsoft.Data.Sqlite / Microsoft.Data.Sqlite.Core | 8.0.31 | MIT |
 | SQLitePCLRaw components | 2.1.12 | Apache-2.0 for managed wrappers; SQLite public domain; package native dependency notices apply |
 | NVIDIA RTX™ Video SDK | 1.1.0 | NVIDIA proprietary license supplied in NVIDIA_RTX_Video_SDK_License.pdf |
+| libultrahdr | 2.0.2, commit e5f5a022fe96fc4dc2ee35c19f733a50df807abe | MIT / Apache-2.0; [official source](https://github.com/google/libultrahdr/tree/e5f5a022fe96fc4dc2ee35c19f733a50df807abe); original license and Adobe gain-map notice preserved in `licenses` |
+| libjpeg-turbo | 3.2.0 | IJG / BSD-style / zlib terms; [official source release](https://github.com/libjpeg-turbo/libjpeg-turbo/releases/tag/3.2.0); original LICENSE.md and README.ijg preserved in `licenses` |
 | WIC / Direct3D / DXGI / Windows system codecs | Operating system | Windows system components, not relicensed by Luma |
 
 This software contains source code provided by NVIDIA Corporation.
+
+This software is based in part on the work of the Independent JPEG Group.
+
+This product includes Gain Map technology under license by Adobe.
+
+The JPEG gain-map codec is statically linked into Luma.Native.dll and is available in both standard and RTX builds. These original upstream sources are downloaded with pinned SHA256 checks and are not modified. HEIF/libheif, HEVC, AV1 and OpenGL dependencies are disabled; the application does not bundle them. NASM 2.16.03 is a pinned build-only tool for JPEG SIMD assembly; neither NASM nor codec source/test fixtures is included in consumer packages.
 
 NVIDIA RTX™ Video SDK supplies the TrueHDR and VSR features. `nvsdk_ngx_s.lib` is linked into the original renderer; only the SDK's release `nvngx_truehdr.dll` and `nvngx_vsr.dll` are copied into the complete RTX application. The SDK source, libraries, archive, developer tools and documentation are excluded from this public source repository and from consumer packages. CI reads the maintainer's original SDK archive from a private repository through a dedicated read-only deploy key. The unchanged original license PDF and `licenses/NVIDIA-runtime-terms.rtf` accompany RTX packages; the installer makes the original PDF available before acceptance. These components are not sublicensed as MIT or distributed as a standalone SDK.
 

@@ -13,7 +13,10 @@ $env:INCLUDE="$vc\include;$sdk\Include\$sdkVersion\ucrt;$sdk\Include\$sdkVersion
 $env:LIB="$vc\lib\x64;$sdk\Lib\$sdkVersion\ucrt\x64;$sdk\Lib\$sdkVersion\um\x64"
 $out=if($OutputDirectory){[System.IO.Path]::GetFullPath($OutputDirectory)}else{Join-Path $root 'src\Luma.Native\bin'}
 New-Item -ItemType Directory $out -Force | Out-Null
+$hdrCodecs=& "$PSScriptRoot\Build-HdrCodecs.ps1" -VisualStudioPath $vsPath
+$env:INCLUDE+=";$($hdrCodecs.Source);$($hdrCodecs.Source)\lib\include;$($hdrCodecs.JpegInclude)"
 $args=@('/nologo','/std:c++20','/utf-8','/EHsc','/W4','/LD','/MT','/O2',"/Fo$out\Luma.Native.obj",(Join-Path $root 'src\Luma.Native\Luma.Native.cpp'),'/link',"/OUT:$out\Luma.Native.dll","/IMPLIB:$out\Luma.Native.lib")
+$args+=@($hdrCodecs.Library,$hdrCodecs.JpegLibrary)
 $nvidia=Join-Path $root 'external\nvidia\sdk'
 $useNvidia=!$WithoutNvidia -and (Test-Path "$nvidia\include\nvsdk_ngx_helpers_truehdr.h")
 if($RequireNvidia -and !$useNvidia){throw 'The licensed NVIDIA RTX Video SDK is required for this build. It is not stored in the public repository.'}
@@ -30,9 +33,17 @@ if($TestFixtures){
     if($LASTEXITCODE -ne 0){throw 'HDR fixture builder failed.'}
     & "$out\HdrFixture.exe" "$root\artifacts\native-tests\linear-hdr.jxr"
     if($LASTEXITCODE -ne 0){throw 'HDR fixture generation failed.'}
+    & "$vc\bin\Hostx64\x64\cl.exe" /nologo /std:c++20 /utf-8 /EHsc /MT /O2 "$root\tests\GainMapFixture.cpp" "/Fo$out\GainMapFixture.obj" /link "/OUT:$out\GainMapFixture.exe" $hdrCodecs.Library $hdrCodecs.JpegLibrary
+    if($LASTEXITCODE -ne 0){throw 'Gain map reference fixture builder failed.'}
 }
 & "$vc\bin\Hostx64\x64\cl.exe" @args
 if($LASTEXITCODE -ne 0){throw 'Native renderer build failed.'}
+$codecLicenses=Join-Path $out 'licenses'
+New-Item -ItemType Directory $codecLicenses -Force | Out-Null
+Copy-Item "$($hdrCodecs.Source)\LICENSE" "$codecLicenses\libultrahdr-LICENSE.txt" -Force
+Copy-Item "$($hdrCodecs.Source)\adobe-hdr-gain-map-license\NOTICE" "$codecLicenses\Adobe-gain-map-NOTICE.txt" -Force
+Copy-Item "$($hdrCodecs.JpegSource)\LICENSE.md" "$codecLicenses\libjpeg-turbo-LICENSE.txt" -Force
+Copy-Item "$($hdrCodecs.JpegSource)\README.ijg" "$codecLicenses\libjpeg-turbo-README.ijg.txt" -Force
 if($useNvidia){
     Copy-Item "$nvidia\bin\Windows\x64\rel\nvngx_truehdr.dll","$nvidia\bin\Windows\x64\rel\nvngx_vsr.dll" $out -Force
     Copy-Item "$nvidia\NVIDIA_RTX_Video_SDK_License.pdf" $out -Force

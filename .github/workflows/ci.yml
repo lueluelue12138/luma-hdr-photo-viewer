@@ -58,6 +58,8 @@ jobs:
           $env:LUMA_NATIVE_TEST_DLL = "$PWD/artifacts/ci-native/Luma.Native.dll"
           python tests/verify_native.py
           if ($LASTEXITCODE -ne 0) { throw 'Native checks failed.' }
+          python tests/verify_hdr_formats.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native gain-map format checks failed.' }
           # Hosted CI verifies WIC/D3D11/FP16 fallback. It has no RTX GPU and
           # must never claim that it has verified NVIDIA AI enhancement.
 

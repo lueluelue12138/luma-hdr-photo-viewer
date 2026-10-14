@@ -379,20 +379,23 @@ public sealed partial class ViewerWindow : Window
         try
         {
             var s=probe?renderer.Status():renderer.CachedStatus;bool photoReady=currentFrame is not null;bool busy=renderer.Busy||(!photoReady&&Loading.IsActive);updatingEnhancements=true;
-            HdrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):hdrRequested?s.HdrReason:s.HdrAvailable!=0?"TrueHDR 可用，未开启":s.HdrReason;
-            VsrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):vsrRequested?s.VsrMessage:s.VsrAvailable!=0?"VSR 可用，默认关闭":s.VsrMessage;
+            HdrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):s.NativeHdr!=0||hdrRequested?s.HdrReason:s.HdrAvailable!=0?"TrueHDR 可用，未开启":s.HdrReason;
+            VsrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):s.NativeHdr!=0?"原生 HDR 保留原始细节，暂不应用 VSR":vsrRequested?s.VsrMessage:s.VsrAvailable!=0?"VSR 可用，默认关闭":s.VsrMessage;
             HdrSwitch.IsOn=hdrRequested;VsrSwitch.IsOn=vsrRequested;
             HdrSwitch.IsEnabled=photoReady&&s.HdrAvailable!=0&&s.HdrActive!=0&&s.NativeHdr==0;
             VsrSwitch.IsEnabled=photoReady&&s.VsrAvailable!=0&&s.NativeHdr==0;
-            HdrSwitch.OnContent=!photoReady?(Loading.IsActive?"加载中":"未生效"):busy?"处理中":originalHeld?"查看原图":s.HdrEffective!=0?"已生效":"未生效";
-            VsrSwitch.OnContent=!photoReady?(Loading.IsActive?"加载中":"未生效"):busy?"处理中":originalHeld?"查看原图":s.VsrEffective!=0?"已生效":"未生效";
+            HdrPreset.IsEnabled=photoReady&&s.NativeHdr==0;
+            OriginalButton.Content=s.NativeHdr==2?"按住查看 SDR 底图（空格）":"按住查看原图（空格）";
+            HdrSwitch.OnContent=!photoReady?(Loading.IsActive?"加载中":"未生效"):s.NativeHdr!=0?"无需增强":busy?"处理中":originalHeld?"查看原图":s.HdrEffective!=0?"已生效":"未生效";
+            VsrSwitch.OnContent=!photoReady?(Loading.IsActive?"加载中":"未生效"):s.NativeHdr!=0?"不适用":busy?"处理中":originalHeld?"查看原图":s.VsrEffective!=0?"已生效":"未生效";
             HdrSwitch.OffContent=HdrSwitch.IsEnabled?"已关闭":"不可用";
             VsrSwitch.OffContent=VsrSwitch.IsEnabled?"已关闭":"不可用";
             double peak=AutoPeakSwitch.IsOn?Math.Floor(Math.Clamp(s.MaxNits>=400?s.MaxNits:1000,400,2000)):PeakSlider.Value;
             double gray=AutoBrightnessSwitch.IsOn?Math.Floor(Math.Clamp(s.SdrWhite*80*.21586,50,100)):MiddleGraySlider.Value;
             if(AutoPeakSwitch.IsOn)PeakSlider.Value=peak;if(AutoBrightnessSwitch.IsOn)MiddleGraySlider.Value=gray;
-            DisplayText.Text=$"{s.Gpu}\nWindows HDR：{(s.HdrActive!=0?"已开启":"未开启")}\nFP16 / scRGB\nSDR 白色：{s.SdrWhite*80:0} nits\n增强峰值 / 中间灰：{peak:0} / {gray:0} nits\nHDR / VSR 调用：{s.HdrEvaluations} / {s.VsrEvaluations}\n图片与画布显存：{s.GpuBytes/1048576.0:0} MB";
-            StatusText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"照片未加载"):busy&&(hdrRequested||vsrRequested)?"正在处理显示增强…":s.NativeHdr!=0?(s.HdrActive!=0?"原生 HDR · scRGB":"HDR 原图 · 当前屏幕 SDR"):originalHeld?"原图 · 未应用增强":s.HdrEffective!=0?(s.VsrEffective!=0?"RTX HDR + VSR 已生效":"RTX HDR 已生效"):s.VsrEffective!=0?"VSR 已生效 · SDR":"SDR · 原图";
+            string brightness=s.NativeHdr!=0?$"屏幕峰值：{s.MaxNits:0} nits\n{(s.NativeHdr==2?"增益图参考白：203 nits":"线性 scRGB 原图")}":$"增强峰值 / 中间灰：{peak:0} / {gray:0} nits";
+            DisplayText.Text=$"{s.Gpu}\nWindows HDR：{(s.HdrActive!=0?"已开启":"未开启")}\nFP16 / scRGB\nSDR 白色：{s.SdrWhite*80:0} nits\n{brightness}\nHDR / VSR 调用：{s.HdrEvaluations} / {s.VsrEvaluations}\n图片与画布显存：{s.GpuBytes/1048576.0:0} MB";
+            StatusText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"照片未加载"):s.NativeHdr==2?(originalHeld?"SDR 底图 · 对照":s.HdrActive!=0?"原生 HDR · 增益图 JPEG":"SDR 底图 · 当前屏幕 SDR"):s.NativeHdr!=0?(s.HdrActive!=0?"原生 HDR · scRGB":"HDR 原图 · 当前屏幕 SDR"):busy&&(hdrRequested||vsrRequested)?"正在处理显示增强…":originalHeld?"原图 · 未应用增强":s.HdrEffective!=0?(s.VsrEffective!=0?"RTX HDR + VSR 已生效":"RTX HDR 已生效"):s.VsrEffective!=0?"VSR 已生效 · SDR":"SDR · 原图";
             updatingEnhancements=false;
             var next=(s.HdrActive,s.SdrWhite,s.MaxNits);bool changed=displayState.HasValue&&displayState.Value!=next;displayState=next;
             if(changed&&hdrRequested&&!busy)_=ApplyEffectsAsync();

@@ -106,12 +106,18 @@
 
 ## 后续产品功能
 
+- [x] 0.1.18 扩展原生 HDR 照片：固定 Google libultrahdr 2.0.2 与 libjpeg-turbo 3.2.0，支持 Android / XMP、ISO 21496-1 及 Apple 增益图 JPEG；两份 Apple 样本、解析/线性 scRGB 与实际 FP16 读回、旋转、损坏增益图拒绝、SDR 底图对照和 SDK-free / RTX 构建通过。4800 万像素合成图先按显示尺寸重建，2048×1536 解码约 253–290 ms，帧含 SDR 底图为 60 MiB，不代表真实手机文件普遍速度。缩略图单独解码 SDR 底图，CPU/GPU 预算包含原生 HDR 对照纹理；不会重复执行 RTX HDR / VSR。
+- [x] 实测用户 Captures 中 6 张 Windows HDR JXR：全部保持浮点原生 HDR，高光约 6.0–12.68 scRGB，FP16 GPU 读回一致，不触发 HDR/VSR；包括用户指出的文件及长文件名截屏，原文件元数据未改动。增加 JPEG XR codec 级缩小解码；首张 4K 截屏的 2048 长边约 0.44–0.46 秒，另一个样本仍约 1.02 秒，不声称全部瞬时打开。真实 WinUI 混合格式翻图与 Computer Use 检查通过。
+- [ ] 下一阶段优先支持 Apple HEIC：旧 Apple 与 ISO Adaptive HDR 增益图、PQ / HLG、ICC / NCLX、方向和缺少系统 HEIF/HEVC 扩展的提示；取得实际不同代际 iPhone 样本后再同步注册扩展名。当前 Apple **JPEG** 支持不能代表 iPhone **HEIC** 原文件已支持。
+- [ ] HEIC 后补充 AVIF 的 PQ / HLG 与增益图；优先精简解码依赖和许可，不捆绑无用编码器或整套视频工具。JPEG XL / OpenEXR / RAW 暂不进入主要照片预览迭代。
+- [ ] 根据显示器实际 headroom 调整增益图重建或呈现，补充低峰值 HDR、跨屏、SDR / HDR 开关变化的实际画面验证；当前恢复完整源 HDR 意图并提供 SDR 底图，不声称所有显示器的观感与裁切均已解决。
+- [ ] 收集多个品牌 Android 手机的原始 Ultra HDR，以及 Apple 分享/编辑后的 JPEG 样本，检查 ISO / XMP 优先级、未知 ICC、HDR 基底、稀有 gain-map 元数据和 Windows HDR 缩略图服务；当前合成样本及两份上游 Apple JPEG 不是完整设备认证。调研、已实现边界与验证见 `docs/HDR-FORMATS.md`。
 - [x] 使用 Windows App SDK 桌面原生文件/文件夹选择器；Computer Use 实际完成文件夹选取→建立相册→封面/数量、图库选择 JPG→预览、预览 Ctrl+O→取消→再次打开另一张照片并替换窗口（0.1.9，隔离图库与用户照片副本）。
 - [ ] 完整验收 Windows 默认应用选择流程；本机应用专属 URI 仍落到通用页面，注册与系统枚举已验证，不改写 UserChoice。
 - [ ] 继续测量应用冷启动与新窗口的完整出现过程，补充连续帧/录屏的动画观察。
 - [ ] 跨文件夹虚拟相册。
 - [ ] 扩展图片格式时同步更新实际支持的文件关联，并验证原生 HDR 图片路径。
-- [ ] 扩展主流 HDR 静态图片：优先评估 JPEG / HEIF / AVIF 增益图，再按实际需求补充 JPEG XL、OpenEXR；区分 SDR、增益图与原生 HDR，处理正确色彩空间并避免重复 SDR→HDR 增强。RTX HDR 用于普通照片仍是产品的首要特色。
+- [x] 主流 HDR 首轮调研与 JPEG / JPEG XR 实现完成（0.1.18）；HEIC / AVIF、显示器自适应与更完整设备样本分为本节独立待办，不将未完成的格式写成已支持。RTX HDR 用于普通照片仍是产品的首要特色。
 - [ ] 继续检查高 DPI、小窗口、长文件名、离线文件夹和辅助功能的可读性与交互。
 
 ## 已完成与验证
