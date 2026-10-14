@@ -3,6 +3,9 @@
   <Grid.Resources><SolidColorBrush x:Key="MenuFlyoutPresenterBackground" Color="Transparent"/><Thickness x:Key="ExpanderHeaderPadding">12,0</Thickness>
    <Style x:Key="EnhancementExpander" TargetType="Expander"><Setter Property="MinHeight" Value="36"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="12"/><Setter Property="HorizontalAlignment" Value="Stretch"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
    <Style x:Key="EnhancementAction" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="Height" Value="36"/><Setter Property="CornerRadius" Value="8"/><Setter Property="HorizontalAlignment" Value="Stretch"/><Setter Property="Padding" Value="12,0"/></Style>
+   <Style x:Key="DetailsLabel" TargetType="TextBlock"><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}"/></Style>
+   <Style x:Key="DetailsValue" TargetType="TextBlock"><Setter Property="FontSize" Value="14"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="IsTextSelectionEnabled" Value="True"/></Style>
+   <Style x:Key="DetailsAction" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="Height" Value="58"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="4"/><Setter Property="HorizontalAlignment" Value="Stretch"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}"/></Style>
   </Grid.Resources><Grid.RowDefinitions><RowDefinition x:Name="TitleRow" Height="44"/><RowDefinition Height="*"/></Grid.RowDefinitions>
   <Grid Margin="8,0,148,0"><Grid.ColumnDefinitions><ColumnDefinition Width="40"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Button Click="BackClick" Style="{StaticResource ToolButton}" ToolTipService.ToolTip="图库" AutomationProperties.Name="返回图库"><FontIcon Glyph="&#xE72B;" FontSize="17"/></Button><Grid x:Name="TitleDrag" Grid.Column="1"><TextBlock x:Name="FileTitle" Margin="10,0,0,0" VerticalAlignment="Center" FontSize="14" TextTrimming="CharacterEllipsis"/></Grid></Grid>
   <Grid x:Name="Canvas" Grid.Row="1" Background="Transparent">
@@ -38,7 +41,8 @@
       <Expander x:Name="DeviceExpander" Header="设备与运行状态" Style="{StaticResource EnhancementExpander}"><TextBlock x:Name="DisplayText" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/></Expander>
       <Button x:Name="OriginalButton" Content="按住查看原图（空格）" Style="{StaticResource EnhancementAction}" PointerPressed="OriginalPressed" PointerReleased="OriginalReleased" PointerCanceled="OriginalReleased" PointerCaptureLost="OriginalReleased"/>
      </StackPanel></ScrollViewer></Flyout></Button.Flyout></Button>
-     <Button Style="{StaticResource ToolButton}" ToolTipService.ToolTip="更多" AutomationProperties.Name="更多"><FontIcon Glyph="&#xE712;" FontSize="18"/><Button.Flyout><MenuFlyout Opened="MenuOpened" Closed="MenuClosed"><MenuFlyout.SystemBackdrop><DesktopAcrylicBackdrop/></MenuFlyout.SystemBackdrop><MenuFlyoutItem Text="照片信息（I）" Click="InfoClick"/><MenuFlyoutItem Text="在资源管理器中显示" Click="RevealClick"/><MenuFlyoutItem Text="打开其他照片…（Ctrl+O）" Click="OpenClick"/></MenuFlyout></Button.Flyout></Button>
+     <Button x:Name="InformationButton" Click="InfoClick" Style="{StaticResource ToolButton}" ToolTipService.ToolTip="照片信息（I）" AutomationProperties.Name="照片信息"><FontIcon Glyph="&#xE946;" FontSize="18"/></Button>
+     <Button Style="{StaticResource ToolButton}" ToolTipService.ToolTip="更多" AutomationProperties.Name="更多"><FontIcon Glyph="&#xE712;" FontSize="18"/><Button.Flyout><MenuFlyout Opened="MenuOpened" Closed="MenuClosed"><MenuFlyout.SystemBackdrop><DesktopAcrylicBackdrop/></MenuFlyout.SystemBackdrop><MenuFlyoutItem Text="复制文件路径" Click="CopyPathClick"/><MenuFlyoutItem Text="在资源管理器中显示" Click="RevealClick"/><MenuFlyoutItem Text="打开其他照片…（Ctrl+O）" Click="OpenClick"/></MenuFlyout></Button.Flyout></Button>
     </StackPanel>
    </Border>
    <Border x:Name="BottomPanel" HorizontalAlignment="Center" VerticalAlignment="Bottom" MaxWidth="920" Margin="36,0,36,28" CornerRadius="13" Background="{ThemeResource FloatingBrush}" BorderBrush="#33FFFFFF" BorderThickness="1" Translation="0,0,16" Padding="8" PointerEntered="PanelEntered" PointerExited="PanelExited">
@@ -60,7 +64,38 @@
      <TextBlock x:Name="PositionText" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="12"/>
     </Grid>
    </Border>
-   <Border x:Name="InfoPanel" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Top" Width="282" Margin="16,82,20,0" CornerRadius="12" Background="{ThemeResource FloatingBrush}" Padding="18"><StackPanel Spacing="12"><Grid><TextBlock Text="照片信息" FontWeight="SemiBold"/><Button Click="CloseInfoClick" HorizontalAlignment="Right" Style="{StaticResource ToolButton}" Height="24" Width="24" AutomationProperties.Name="关闭照片信息"><FontIcon Glyph="&#xE711;" FontSize="12"/></Button></Grid><TextBlock x:Name="InfoText" FontSize="13" LineHeight="19" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></StackPanel></Border>
+   <Border x:Name="InfoPanel" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Top" Width="340" Margin="16,82,20,0" CornerRadius="12" Background="{ThemeResource FloatingBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="1" Padding="16" PointerEntered="PanelEntered" PointerExited="PanelExited">
+    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <Grid Margin="0,0,0,12"><TextBlock Text="照片信息" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/><Button Click="CloseInfoClick" HorizontalAlignment="Right" Style="{StaticResource ToolButton}" Height="30" Width="30" AutomationProperties.Name="关闭照片信息" ToolTipService.ToolTip="关闭（Esc）"><FontIcon Glyph="&#xE711;" FontSize="14"/></Button></Grid>
+     <Grid Grid.Row="1" ColumnSpacing="6" Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+      <Button Click="CopyPathClick" Style="{StaticResource DetailsAction}" AutomationProperties.Name="复制文件路径"><StackPanel Spacing="5"><FontIcon Glyph="&#xE8C8;" FontSize="16"/><TextBlock Text="复制路径" FontSize="12"/></StackPanel></Button>
+      <Button Grid.Column="1" Click="CopyDetailsClick" Style="{StaticResource DetailsAction}" AutomationProperties.Name="复制照片详情"><StackPanel Spacing="5"><FontIcon Glyph="&#xE8A5;" FontSize="16"/><TextBlock Text="复制详情" FontSize="12"/></StackPanel></Button>
+      <Button Grid.Column="2" Click="RevealClick" Style="{StaticResource DetailsAction}" AutomationProperties.Name="打开文件位置"><StackPanel Spacing="5"><FontIcon Glyph="&#xE8B7;" FontSize="16"/><TextBlock Text="打开位置" FontSize="12"/></StackPanel></Button>
+     </Grid>
+     <ScrollViewer x:Name="InfoScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,12,0">
+      <StackPanel Spacing="16">
+       <TextBlock x:Name="InfoReadStatus" Style="{StaticResource DetailsLabel}" TextWrapping="Wrap"/>
+       <StackPanel Spacing="4"><TextBlock Text="文件名" Style="{StaticResource DetailsLabel}"/><TextBlock x:Name="InfoFileName" Style="{StaticResource DetailsValue}" FontWeight="SemiBold"/></StackPanel>
+       <StackPanel Spacing="4"><TextBlock Text="尺寸与大小" Style="{StaticResource DetailsLabel}"/><TextBlock x:Name="InfoDimensions" Style="{StaticResource DetailsValue}"/><TextBlock x:Name="InfoSize" Style="{StaticResource DetailsValue}"/><TextBlock x:Name="InfoResolution" Style="{StaticResource DetailsLabel}" TextWrapping="Wrap"/></StackPanel>
+       <StackPanel x:Name="InfoDates" Spacing="4"><TextBlock Text="日期与时间" Style="{StaticResource DetailsLabel}"/><TextBlock x:Name="InfoDateText" Style="{StaticResource DetailsValue}"/></StackPanel>
+       <StackPanel x:Name="InfoCameraSection" Spacing="4" Visibility="Collapsed"><TextBlock Text="设备与拍摄" Style="{StaticResource DetailsLabel}"/><TextBlock x:Name="InfoCamera" Style="{StaticResource DetailsValue}" FontWeight="SemiBold"/><TextBlock x:Name="InfoLens" Style="{StaticResource DetailsValue}"/><TextBlock x:Name="InfoExposure" Style="{StaticResource DetailsValue}"/></StackPanel>
+       <StackPanel Spacing="4"><TextBlock Text="色彩与显示" Style="{StaticResource DetailsLabel}"/><TextBlock x:Name="InfoHdr" Style="{StaticResource DetailsValue}"/><TextBlock x:Name="InfoColor" Style="{StaticResource DetailsLabel}" TextWrapping="Wrap"/><TextBlock x:Name="InfoViewing" Style="{StaticResource DetailsLabel}" TextWrapping="Wrap"/></StackPanel>
+       <StackPanel x:Name="InfoGpsSection" Spacing="4" Visibility="Collapsed"><TextBlock Text="拍摄位置（经纬度）" Style="{StaticResource DetailsLabel}"/><TextBlock x:Name="InfoGps" Style="{StaticResource DetailsValue}"/></StackPanel>
+       <StackPanel Spacing="4"><TextBlock Text="文件位置" Style="{StaticResource DetailsLabel}"/><TextBlock x:Name="InfoFilePath" Style="{StaticResource DetailsValue}"/></StackPanel>
+       <Expander x:Name="InfoMore" Header="其他拍摄信息" Style="{StaticResource EnhancementExpander}" IsExpanded="False"><StackPanel Spacing="12">
+        <TextBox x:Name="InfoSearch" PlaceholderText="搜索信息或参数" AutomationProperties.Name="搜索照片信息" Loaded="InfoSearchLoaded" TextChanged="InfoSearchChanged"/>
+        <TextBlock x:Name="InfoEmptySearch" Text="没有匹配的信息" Style="{StaticResource DetailsLabel}" Visibility="Collapsed"/>
+        <ItemsControl x:Name="InfoMetadataGroups"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Spacing="8" Margin="0,0,0,16">
+         <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"/>
+         <ItemsControl ItemsSource="{Binding Rows}"><ItemsControl.ItemTemplate><DataTemplate><Grid ColumnSpacing="10" Margin="0,0,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+          <TextBlock Text="{Binding Label}" Style="{StaticResource DetailsLabel}" TextWrapping="Wrap"/><TextBlock Grid.Column="1" Text="{Binding Value}" Style="{StaticResource DetailsValue}" FontSize="13"/>
+         </Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+        </StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+       </StackPanel></Expander>
+      </StackPanel>
+     </ScrollViewer>
+    </Grid>
+   </Border>
    <Border x:Name="StatusBadge" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="20,14,20,0" CornerRadius="10" Background="{ThemeResource FloatingBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="1" Padding="12,8" IsHitTestVisible="False"><TextBlock x:Name="StatusText" Text="SDR · 原图" Foreground="{ThemeResource TextFillColorPrimaryBrush}" FontSize="12"/></Border>
    <local:LoadingIndicator x:Name="Loading" IsActive="False" Width="40" Height="40" Visibility="Collapsed"/>
    <Border x:Name="ErrorPanel" Visibility="Collapsed" MaxWidth="460" HorizontalAlignment="Center" VerticalAlignment="Center" Background="{ThemeResource FloatingBrush}" CornerRadius="12" Padding="24"><StackPanel Spacing="12"><FontIcon Glyph="&#xE7BA;"/><TextBlock Text="无法打开这张照片" FontWeight="SemiBold" FontSize="18" HorizontalAlignment="Center"/><TextBlock x:Name="ErrorText" TextWrapping="Wrap" TextAlignment="Center"/><Button Content="打开其他照片…" Click="OpenClick" HorizontalAlignment="Center"/></StackPanel></Border>

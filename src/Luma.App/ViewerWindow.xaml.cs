@@ -203,7 +203,7 @@ public sealed partial class ViewerWindow : Window
         viewTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-viewStarted).TotalMilliseconds/180,0,1);double ease=1-Math.Pow(1-t,3);renderedZoom=viewStartZoom+(zoom-viewStartZoom)*ease;renderedPanX=viewStartX+(panX-viewStartX)*ease;renderedPanY=viewStartY+(panY-viewStartY)*ease;try{renderer?.View(renderedZoom,renderedPanX,renderedPanY,rotation);}catch(COMException ex){viewTimer.Stop();Recover(ex);}if(t>=1)viewTimer.Stop();};
         WindowLayout.SizeForDpi(this,Root,1240,850,owner);AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
         displayTimer.Tick+=async(_,_)=>{displayTimer.Stop();await ProbeDisplayAsync(true);};
-        idleTimer.Tick+=IdleTick;Closed+=(_,_)=>{closed=true;request++;lifetime.Cancel();loadingCancellation?.Cancel();VerificationReady.TrySetCanceled();idleTimer.Stop();displayTimer.Stop();viewTimer.Stop();chromeTimer.Stop();renderer?.Dispose();currentLease?.Dispose();};
+        idleTimer.Tick+=IdleTick;Closed+=(_,_)=>{closed=true;request++;lifetime.Cancel();loadingCancellation?.Cancel();detailsCancellation?.Cancel();detailsCancellation?.Dispose();VerificationReady.TrySetCanceled();idleTimer.Stop();displayTimer.Stop();viewTimer.Stop();chromeTimer.Stop();renderer?.Dispose();currentLease?.Dispose();};
         AppWindow.Changed+=(_,args)=>{if(args.DidPositionChange&&!closed){displayTimer.Stop();displayTimer.Start();}};Activated+=(_,args)=>{if(closed)return;if(args.WindowActivationState==WindowActivationState.Deactivated){dragging=false;InputLayer.ReleasePointerCaptures();SetOriginalHeld(false);}else if(renderer is not null)_=ProbeDisplayAsync(true);};
     }
     public void ApplyTheme(ElementTheme theme){if(!closed)Root.RequestedTheme=theme;}
@@ -464,6 +464,7 @@ public sealed partial class ViewerWindow : Window
             StatusText.Text=!photoReady?(ErrorPanel.Visibility==Visibility.Visible?"照片无法加载":Loading.IsActive?"正在加载照片…":"照片未加载"):s.HasGainMap?(originalHeld?"SDR 底图 · 对照":s.HdrActive!=0?$"原生 HDR · {s.GainMapSource}":"SDR 底图 · 当前屏幕 SDR"):s.NativeHdr!=0?(s.HdrActive!=0?"原生 HDR · scRGB":"HDR 原图 · 当前屏幕 SDR"):busy&&(hdrRequested||vsrRequested)?"正在处理显示增强…":originalHeld?"原图 · 未应用增强":s.HdrEffective!=0?(s.VsrEffective!=0?"RTX HDR + VSR 已生效":"RTX HDR 已生效"):s.VsrEffective!=0?"VSR 已生效 · SDR":"SDR · 原图";
             if(photoReady&&s.NativeHdr==1&&originalHeld)StatusText.Text="HDR 原片 · 对照";
             if(compatibility){HdrReasonText.Text=currentFrame!.Warning;VsrReasonText.Text="先以兼容预览查看，暂不应用显示增强";HdrSwitch.OnContent=VsrSwitch.OnContent="不适用";OriginalButton.Content="当前为兼容预览";OriginalButton.IsEnabled=false;StatusText.Text="兼容预览 · HDR 数据未读取";TuningExplanation.Text="HDR 数据未能解析，兼容预览保留可读取的原始底图，不应用 HDR / VSR。";}
+            UpdateInfo();
             updatingEnhancements=false;
             var next=(s.HdrActive,s.SdrWhite,s.MaxNits);bool changed=displayState.HasValue&&displayState.Value!=next;displayState=next;
             if(changed&&hdrRequested&&!busy)_=ApplyEffectsAsync();
@@ -501,10 +502,7 @@ public sealed partial class ViewerWindow : Window
     private void TuningValueChanged(object sender,Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)=>TuningChanged(sender,new RoutedEventArgs());
     private async void EnhancementToggled(object sender,RoutedEventArgs e){if(updatingEnhancements||renderer is null)return;hdrRequested=HdrSwitch.IsOn;vsrRequested=VsrSwitch.IsOn;RefreshStatus(false);await SavePreferencesAsync();if(closed)return;try{ApplyEffects();}catch(Exception ex){App.Log(ex.Message);HdrReasonText.Text=ex.Message;RefreshStatus();}ShowControls();}
     private async void PresetChanged(object sender,SelectionChangedEventArgs e){if(renderer is null||updatingEnhancements)return;await SavePreferencesAsync();if(closed)return;try{ApplyEffects();}catch(Exception ex){App.Log(ex.Message);}}
-    private void UpdateInfo(){if(current is null)return;var i=currentFrame?.Info;InfoText.Text=$"{current.Name}\n\n{(i is null?"":$"{i.Value.OriginalWidth} × {i.Value.OriginalHeight} 像素")}\n{current.Size/1048576.0:0.00} MB\n缩放 {PixelScale()*100:0}%\n旋转 {rotation*90}°\n{(i?.Downsampled==1?"大图已按内存预算缩小解码\n":"")}\n{current.Path}";}
-    private void InfoClick(object sender,RoutedEventArgs e){InfoPanel.Visibility=InfoPanel.Visibility==Visibility.Visible?Visibility.Collapsed:Visibility.Visible;ShowControls();UpdateInfo();UpdateGlass();}
-    private void CloseInfoClick(object sender,RoutedEventArgs e){InfoPanel.Visibility=Visibility.Collapsed;UpdateGlass();}
-    private void RevealClick(object sender,RoutedEventArgs e){if(current is not null)Process.Start(new ProcessStartInfo("explorer.exe",$"/select,\"{current.Path}\""){UseShellExecute=true});}
+    private void RevealClick(object sender,RoutedEventArgs e){try{if(current is not null)Process.Start(new ProcessStartInfo("explorer.exe",$"/select,\"{current.Path}\""){UseShellExecute=true});}catch(Exception ex){App.Log("Reveal photo: "+ex.Message);InfoReadStatus.Text="暂时无法打开文件位置";InfoReadStatus.Visibility=Visibility.Visible;}}
     private async void OpenClick(object sender,RoutedEventArgs e)
     {
         try{var picker=new FileOpenPicker(AppWindow.Id);foreach(var ext in SupportedFormats.Extensions)picker.FileTypeFilter.Add(ext);var f=await picker.PickSingleFileAsync();if(f is not null){new ViewerWindow(f.Path).Activate();Close();}}catch(Exception ex){Fail(ex);}
@@ -531,6 +529,11 @@ public sealed partial class ViewerWindow : Window
         double badgeTop=(Canvas.ActualWidth-TopPanel.ActualWidth)/2>=StatusBadge.ActualWidth+32?14:TopPanel.ActualHeight+28;
         if(StatusBadge.Margin.Top!=badgeTop)StatusBadge.Margin=new(20,badgeTop,20,0);
         double infoTop=Math.Max(82,badgeTop+StatusBadge.ActualHeight+12);if(InfoPanel.Margin.Top!=infoTop)InfoPanel.Margin=new(16,infoTop,20,0);
+        double infoWidth=Math.Clamp(Canvas.ActualWidth-40,180,340),infoHeight=Math.Max(120,Canvas.ActualHeight-infoTop-20);
+        if(InfoPanel.Width!=infoWidth)InfoPanel.Width=infoWidth;if(InfoPanel.Height!=infoHeight)InfoPanel.Height=infoHeight;
+        bool infoVisible=InfoPanel.Visibility==Visibility.Visible;double filmstripWidth=infoVisible?Math.Clamp(Canvas.ActualWidth-infoWidth-76,180,920):920;
+        if(BottomPanel.MaxWidth!=filmstripWidth)BottomPanel.MaxWidth=filmstripWidth;
+        var alignment=infoVisible?HorizontalAlignment.Left:HorizontalAlignment.Center;if(BottomPanel.HorizontalAlignment!=alignment)BottomPanel.HorizontalAlignment=alignment;
         var rects=new List<GlassRect>();double dpi=Surface.CompositionScaleX;
         if(effects)foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel,StatusBadge})
         {
@@ -592,6 +595,7 @@ public sealed partial class ViewerWindow : Window
     private void OriginalReleased(object sender,PointerRoutedEventArgs e){SetOriginalHeld(false);OriginalButton.ReleasePointerCapture(e.Pointer);ShowControls();}
     private void ViewerKeyDown(object sender,KeyRoutedEventArgs e)
     {
+        if(IsInfoTextEditing(e.OriginalSource)&&e.Key!=VirtualKey.Escape)return;
         keyboardUntil=DateTime.UtcNow.AddSeconds(10);ShowControls();if(menuDepth>0)return;
         bool ctrl=Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
         switch(e.Key)
@@ -602,19 +606,19 @@ public sealed partial class ViewerWindow : Window
             case VirtualKey.R:RotateClick(sender,e);break;case VirtualKey.F:case VirtualKey.F11:ToggleFullScreen();break;
             case VirtualKey.D:if(ctrl)FavoriteClick(sender,e);else return;break;
             case VirtualKey.I:InfoClick(sender,e);break;case VirtualKey.O:if(ctrl)OpenClick(sender,e);else return;break;
-            case VirtualKey.Escape:if(fullScreen)ToggleFullScreen();else if(InfoPanel.Visibility==Visibility.Visible)InfoPanel.Visibility=Visibility.Collapsed;else Close();break;
+            case VirtualKey.Escape:if(InfoPanel.Visibility==Visibility.Visible){ShowInfo(false);InputLayer.Focus(FocusState.Programmatic);}else if(fullScreen)ToggleFullScreen();else Close();break;
             default:return;
         }
         e.Handled=true;
     }
     private void ViewerPreviewKeyDown(object sender,KeyRoutedEventArgs e)
     {
-        if(e.Key!=VirtualKey.Space)return;
+        if(e.Key!=VirtualKey.Space||IsInfoTextEditing(e.OriginalSource))return;
         // Tunnel before Button/ListView class handling. Enter retains its normal
         // control activation semantics; Space is always image comparison.
         keyboardUntil=DateTime.UtcNow.AddSeconds(10);SetOriginalHeld(true);e.Handled=true;TraceComparisonInput("press");
     }
-    private void ViewerPreviewKeyUp(object sender,KeyRoutedEventArgs e){if(e.Key==VirtualKey.Space){SetOriginalHeld(false);e.Handled=true;TraceComparisonInput("release");}}
+    private void ViewerPreviewKeyUp(object sender,KeyRoutedEventArgs e){if(e.Key==VirtualKey.Space&&(originalHeld||!IsInfoTextEditing(e.OriginalSource))){SetOriginalHeld(false);e.Handled=true;TraceComparisonInput("release");}}
     private void TraceComparisonInput(string action)
     {
         // Opt-in local validation only: verifies real input delivery rather than

@@ -40,4 +40,11 @@ await store.ApplyScanAsync(id,[],false,true);Assert((await store.PhotosAsync(Pho
 indexer.Forget(id);await store.RemoveAlbumAsync(id);Assert(File.Exists(photo.Path),"removing album preserves originals");Assert((await store.PhotosAsync(PhotoScope.Favorites)).Count==1,"removed album preserves favorite history");
 await store.SetSettingAsync("theme","dark");Assert(await store.GetSettingAsync("theme")=="dark","settings round trip");
 Assert((await store.PhotosAsync(PhotoScope.All,search:"%" )).Count==0,"search escapes wildcard input");
+Assert(PhotoMetadataFormatting.Format("System.Photo.ExposureTime",.00025)=="1/4000 秒"&&PhotoMetadataFormatting.Format("System.Photo.ExposureTime",2.5)=="2.5 秒","photo metadata shutter seconds and reciprocal formatting");
+Assert(PhotoMetadataFormatting.Format("System.Photo.ExposureBias",0)=="0 EV"&&PhotoMetadataFormatting.Format("System.Photo.WhiteBalance",0)=="自动","photo metadata preserves meaningful zero values");
+Assert(PhotoMetadataFormatting.Format("System.Photo.FNumber",3.5)=="f/3.5"&&PhotoMetadataFormatting.Format("System.Photo.FocalLength",48)=="48 mm","photo metadata units distinguish f-number from APEX");
+Assert(PhotoMetadataFormatting.Format("System.Photo.ExposureTime",double.NaN) is null&&PhotoMetadataFormatting.Format("System.Photo.ISOSpeed",0) is null,"invalid metadata values cannot pretend to be capture settings");
+Assert(PhotoMetadataFormatting.Rows(new Dictionary<string,object>()).Count==0,"missing EXIF stays absent");
+var metadataRows=PhotoMetadataFormatting.Rows(new Dictionary<string,object>{{"System.Photo.ISOSpeed",160},{"System.Photo.ExposureBias",0},{"System.Photo.LensModel","Fixture Lens"},{"System.Image.ColorSpace",65535}});
+Assert(metadataRows.Count==4&&PhotoMetadataFormatting.Filter(metadataRows,"ISO").Single().Value=="ISO 160"&&PhotoMetadataFormatting.Filter(metadataRows,"missing").Count==0,"photo metadata search and uncalibrated colour remain honest");
 Console.WriteLine($"{checks} core checks passed. Artifacts: {root}");
