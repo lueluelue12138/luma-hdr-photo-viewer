@@ -41,6 +41,10 @@
    <Border Style="{StaticResource SettingCard}"><StackPanel Spacing="12">
     <TextBlock x:Name="VersionText" FontWeight="SemiBold"/>
     <TextBlock Text="一个美观、轻便的 Windows 原生照片查看器，让自己的回忆也能在 HDR 屏幕上发光。免费、开源，照片保留在原文件夹。" Style="{StaticResource Hint}"/>
+    <StackPanel Orientation="Horizontal" Spacing="20">
+     <HyperlinkButton Content="GitHub 项目 ↗" NavigateUri="https://github.com/lueluelue12138/luma-hdr-photo-viewer" Padding="0,6" ToolTipService.ToolTip="查看项目介绍、源码与问题反馈" AutomationProperties.Name="在浏览器中打开 Luma 的 GitHub 项目"/>
+     <HyperlinkButton Content="版本发布 ↗" NavigateUri="https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases" Padding="0,6" ToolTipService.ToolTip="查看 GitHub Releases 发布记录与可用下载" AutomationProperties.Name="在浏览器中打开 Luma 的版本发布页面"/>
+    </StackPanel>
     <Expander Header="支持的格式与使用须知" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="12"><TextBlock Text="普通图片：JPEG、PNG、BMP、GIF、TIFF、ICO。GIF / 多页 TIFF 当前显示第一帧。" Style="{StaticResource Hint}"/><TextBlock Text="原生 HDR：Android Ultra HDR / ISO / Apple 增益图 JPEG，Apple / ISO 增益图 HEIC、PQ HEIC，以及线性 HDR JPEG XR。HEIC 需要 Windows HEIF / HEVC 扩展；AVIF HDR 暂未支持。" Style="{StaticResource Hint}"/><TextBlock Text="没有 RTX 也能看普通照片与已支持的原生 HDR 照片。实际 HDR 输出仍需要开启 HDR 的屏幕；不可用时请查看照片“显示增强”中的状态。" Style="{StaticResource Hint}"/></StackPanel></Expander>
     <Button Content="打开本地数据目录" Style="{StaticResource GalleryAction}" Click="DataFolderClick"/>
     <TextBlock Text="This software contains source code provided by NVIDIA Corporation.&#xA;NVIDIA RTX™ Video SDK 组件及文档适用独立许可，应用目录中附有原文。" FontSize="12" Style="{StaticResource Hint}"/>
