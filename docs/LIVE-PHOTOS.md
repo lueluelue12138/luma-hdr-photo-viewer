@@ -1,107 +1,69 @@
-# Live Photos / 动态照片与 RTX HDR 可行性调研
+# Live / 动态照片与 RTX HDR
 
-调研日期：2026-10-15，基于 Luma 0.1.23 源码、平台规范与已有 NVIDIA RTX Video SDK 1.1.0 接口。**这是技术方案，当前应用尚未实现 Live 播放，也未对动态片段做 RTX HDR 或帧率实测。** 商店账户注册延后，不影响此项研发。
+首轮实现：2026-10-15，0.1.24 源码与本地候选。当前公开下载仍是 0.1.23；本轮没有创建标签或公开 Release。
 
-## 结论
+## 怎么用
 
-主流动态照片预览可做；动态部分通常是短视频，可以研究复用 RTX Video HDR 进行实时增强。基础播放属于中等工作量，做成当前看图体验中的低延迟、正确色彩、完整音画同步与 HDR 无缝切换，属于较大的一轮功能开发。它需要新增视频管线，不能只增加几个图片扩展名。
+打开完整动态照片，静态画面出现后，顶部会显示 **LIVE**。点击或按 **L** 播放，再按一次停止；**Esc** 先停止实况。默认静音，可点击原声按钮开启声音。播完、切图、窗口失焦或关闭时停止，回到缓存中的静态照片。
 
-建议定位：**让回忆动起来，也让普通实况照片用上 HDR 屏幕。** 技术上有依据，但现阶段不宣传已经支持，更不声称“全球独家”。
+**空格继续用于原图对照。** 播放时按住空格，视频继续前进，只暂停 RTX HDR 增强；松开继续增强。静态照片自带 HDR 时，停止播放会回到原生 HDR 查看路径。
 
-## 先支持什么
+视频按需打开，不在导入相册或悬停缩略图时启动。未找到完整视频时仍按普通照片查看；编码器缺失、视频损坏或暂不支持的视频 HDR 编码不会阻止静态照片显示。
 
-| 类型 | 需要识别的结构 | 建议范围 / 风险 |
-| --- | --- | --- |
-| iPhone Live Photos | 原始 HEIC / JPEG 与配套 MOV；图片和视频元数据中的关联标识、静态帧时点 | 第一优先。图片仍走现有查看路径；从完整导出中配对资源。不能只靠文件名相同就认定配对成功；只有照片而没有 MOV 时，无法恢复原始动态 |
-| Android 标准 Motion Photo | 图片中的 XMP 容器目录指向内嵌 MP4 / MOV；现代规范支持 JPEG，也定义 HEIC / AVIF 容器 | 第一优先 JPEG。Ultra HDR 增益图与视频可能同时存在，必须正确区分位置；AVIF 不因增加 Live 支持就自动成为 Luma 已支持格式 |
-| Samsung Motion Photo | 新格式与标准容器、旧 Samsung trailer / SEF 变体 | 以实际样本分支支持，不能承诺一个通用偏移算法兼容全部代际 |
-| 旧 Google MicroVideo | 旧 XMP 偏移 / 长度 | 作为独立兼容分支。现代 Motion Photo 1.0 明确弃用这些字段，不能用旧偏移覆盖现代容器描述 |
-| 小米 / OPPO / vivo / 荣耀等 | 厂商、系统版本、分享 / 导出方式可能改变封装 | 收集原文件逐项验证；不能以“都是安卓”推定完全相同。导出后已丢失视频的静态 JPG 只能显示静态 |
-| `.livp` 导出封装 | 某些工具的图片 + 视频打包形式 | 次优先，先验证实际 ZIP / 项目内容与配对，不把它当成 iPhone 相册底层唯一格式；限制展开预算并阻止路径越界 |
+## 首轮支持范围
 
-Apple 官方说明 Live Photo 由静态图与短片组成，通过 content identifier 关联，并有表示静态照片时点的元数据。视频可能使用不同编码，不能只按 MOV 后缀判定 HEVC。参考 [Apple Live Photo 元数据](https://developer.apple.com/documentation/avfoundation/avcapturephotosettings/livephotomoviemetadata)、[Apple WWDC16 结构与播放说明](https://developer.apple.com/videos/play/wwdc2016/501/)、[Apple 视频编码设置](https://developer.apple.com/documentation/avfoundation/avcapturephotosettings/livephotovideocodectype)。
+| 资源 | 当前行为 |
+| --- | --- |
+| iPhone HEIC / JPEG + MOV | 核对 Apple 图片与视频里的 content identifier；同名但标识不同不会误配。真实 HEIC + HEVC MOV 已验证，JPEG 配对有构造元数据测试，尚待真机 JPEG 配对样本 |
+| Android Motion Photo JPEG | 读取现代 XMP 容器和内嵌 MP4，支持增益图与视频同时存在；Google、Pixel、小米真实样本已验证 |
+| Motion Photo HEIC | 读取 HEIF 元数据 / mpvd 视频范围；Google 与 Samsung One UI 6 HEIC 已验证 |
+| Samsung JPEG | One UI 5 / 6 样本的原始 SEF 尾部与 sefd atom 分别处理；保留照片原件 |
+| 旧 Google MicroVideo | 独立兼容分支；现代标志与容器优先，显式关闭不能被旧字段覆盖；构造测试通过，尚待旧真机样本 |
+| 原生 HDR 视频、Dolby Vision、.livp、AVIF Motion Photo、其他厂商变体 | 尚未完成。识别到 PQ / HLG / Dolby Vision 时明确保留静态照片，不压成 SDR 后冒充原生 HDR 视频 |
 
-Android 的 [Motion Photo 1.0 规范](https://developer.android.com/media/platform/motion-photo-format) 给出了容器、增益图和视频布局。实现时需校验真实视频边界、长度及元数据，而不是仅凭 MotionPhoto 标志；JPEG 与 HEIC 的封装也不能共用简单“寻找 JPEG 结尾”算法。厂商兼容可参考 [ExifTool 原作者维护的 Samsung 解析器](https://github.com/exiftool/exiftool/blob/master/lib/Image/ExifTool/Samsung.pm)，其行为是兼容线索，不等同于所有厂商的官方格式保证。
+视频使用 Windows 媒体组件解码；HEVC 视频可能需要 **Windows HEVC 视频扩展**。HEIC 照片仍依赖 Windows HEIF / HEVC 扩展。本轮没有增加 FFmpeg、外部播放器、NuGet 包或新的安装前置。
 
-## Live 与 HDR 是两个维度
+首次播放最多接受 60 秒、8192 单边 / 1600 万像素的视频；内嵌片段限制 256 MiB，元数据限制 4 MiB。Apple 候选配对有数量上限，超大目录中的重命名视频可能无法自动找到。保留原始配对文件最可靠。
 
-**Live 表示有动态内容，HDR 表示亮度 / 色彩编码；二者不能互相推导。** 对封面照片和视频分别识别：
+## Live 和 HDR 分开判断
 
-| 静态部分 | 视频部分 | 正确策略 |
-| --- | --- | --- |
-| SDR | SDR | 静态图可使用 RTX HDR；动态片段逐帧使用 RTX HDR 的新路径 |
-| 原生 HDR | SDR | 静态图保留原生 HDR；动态片段可使用 RTX HDR，重点验收由静入动时亮度 / 颜色不突变 |
-| SDR 或原生 HDR | 原生 HDR（PQ / HLG 等） | 视频需要独立的原生 HDR 解码、色彩与显示映射；不能先压成 SDR，再把 RTX 增强当原生还原 |
-| 任意 | 编码器缺失 / 视频损坏 / 资源缺失 | 静态封面仍可查看，明确解释动态部分不可用，不能把整张照片判为打不开 |
+Live 说明有动态内容，HDR 说明亮度 / 色彩数据，二者不是一回事。静态增益图只还原静态照片，不能直接套在所有视频帧上。
 
-Android 规范允许视频本身是 SDR 或 PQ / HLG HDR，因此单个增益图不能直接套用到所有视频帧。Apple / Android 的 HDR 视频、Dolby Vision 及特殊元数据要按实际编码与可用基础层分别验证；首轮不承诺完整 Dolby Vision 动态元数据还原。
+维护者提供的小米文件：14,202,351 字节，照片 3072×4096，原生 HDR 增益图实际解码成功；内嵌视频范围 10,397,382 + 3,804,969 字节，Windows 解码后为 1088×1440。本轮视频元数据未识别出原生 HDR，按 SDR 逐帧应用 RTX HDR，实际 SDK 调用与变化的 FP16 像素读回通过。原文件 SHA256 前后相同，未上传或加入 Git。
 
-## RTX HDR 接入路线
+动态 SDR 可以选择 RTX HDR；VSR 在播放期间暂停，避免隐式增加负载。RTX HDR 需要兼容显卡、驱动、包含 NVIDIA SDK 的构建和已开启 HDR 的屏幕。没有 RTX 也可走普通 SDR 视频显示路径；本机当前的动态集成测试使用 RTX 5070 Ti Laptop，未把其他 GPU 的表现视为已验证。
 
-[NVIDIA 官方 RTX Video SDK](https://developer.nvidia.com/rtx-video-sdk) 原本面向视频增强，包含实时 SDR→HDR。Luma 已有 D3D11、TrueHDR 与 FP16 / scRGB 呈现，因此方向合理，无需为了 Live 再引入另一套 NVIDIA SDK。**现有静态图片增强成功，不能证明动态播放已经流畅或正确。**
+## 实现与性能边界
 
-建议管线：
+Windows MediaPlayer 的 frame-server 模式负责解封装、解码、时间轴与音频；帧直接写入 D3D11 GPU 表面，再经过 Luma 现有 TrueHDR 与 FP16 / scRGB 呈现。内嵌视频通过只读、有边界的流访问，无需解压临时 MP4，也不逐帧复制 CPU 像素。
 
-```text
-照片资源探测 / 图片与视频配对
-          ↓（静态封面先显示，视频按需打开）
-Windows Media Foundation 解封装与视频解码
-          ↓
-GPU 色彩转换 + 正确的旋转 / 裁切 / 时间戳
-          ├─ SDR → 现有 TrueHDR SDK 的视频接入 → FP16
-          └─ 原生 HDR → 单独的 PQ / HLG 等映射 → FP16
-          ↓
-复用 Luma 的 scRGB 呈现、缩放、工具栏和主题
+每个播放实例仅允许一个待处理帧，忙时合并通知，不堆积任务。视频纹理和 SDK feature 复用，静态照片保留缓存；播放时隐藏的静态 renderer 不随缩放或浮层变化重绘。工具栏 / 缩略图玻璃随视频刷新；弹出菜单使用交互时的画面快照，避免每帧 GPU 读回。
+
+本机小米 / iPhone 测试中，自有 GPU 纹理在循环播放前后分别保持 80,065,440 / 99,234,720 字节。单帧提交耗时与 UI 回调延迟见 [验证记录](VERIFICATION.md)，它们不是物理帧间隔或 GPU 总耗时。通知合并数量不等于视频丢帧率，不据此宣传稳定 60 FPS。
+
+**首次点击仍有约 1.2–1.9 秒的媒体 / GPU / SDK 初始化成本**，准备期间保留静态图，重播、结束与取消均已回归。精确音画同步、首帧视觉过渡、长时间功耗、跨屏与高刷新率仍需专项验收。当前不承诺任意厂商、任意分享版本都保留 Live 数据。
+
+## 样本来源与复现
+
+样本只保存在忽略的 `artifacts/live-photos/` 下，未打包进产品或提交 Git。本机完整来源、固定 commit、文件大小与 SHA256 见 `samples.json`；维护者原件单独保存。公开可下载不等于获准随产品重新分发。
+
+- [Google 官方 libmotionphoto 测试资源](https://github.com/google/libmotionphoto/tree/12fb3cb8d1649a5621c55dcf99e416d32e4c4ab3/lib/core/motion_photo/testdata)：JPEG、HEIC 与纯静态反例。
+- [Immich 测试资源](https://github.com/immich-app/test-assets/tree/ec56cc6c1d76c45bc9615dc6ea232470a2b0a3a1/formats/motionphoto)：Pixel 6 Pro / 8a、Samsung One UI 5 / 6 JPEG / HEIC。
+- [Kingfisher 作者测试资源](https://github.com/onevcat/Kingfisher-TestImages/tree/6b292374307c973005ebe279cfb77d5a91110c14/LivePhotos)：完整 Apple HEIC + MOV 配对。
+
+```powershell
+./.tools/dotnet/dotnet.exe run --project tests/Luma.Tests -c Release
+python tests/verify_live_photo.py '<完整动态照片路径>' --app artifacts/Luma-live-final/Luma.App.exe
 ```
 
-优先评估 Windows Media Foundation 与 D3D11 解码，避免首轮捆绑整套 FFmpeg / 外部视频播放器。[微软支持的容器](https://learn.microsoft.com/windows/win32/medfound/supported-media-formats-in-media-foundation) 包括 MOV / MP4，[Source Reader 可关联 D3D 管理器](https://learn.microsoft.com/windows/win32/medfound/mf-source-reader-d3d-manager)。这仍不保证每个 MOV 变体、编码 / Profile 都可解码；HEVC / AV1 可用性须依实际系统扩展和硬件验证，不能承诺完全没有额外组件。
+集成测试使用独立图库，验证 SDK / FP16、视频变化、空格对应的对照状态、音轨与静音开关、循环纹理预算、静态缓存恢复、准备中取消、自然结束、重播与播放中关闭。声音开关状态测试不代替人工听感与音画同步测试。
 
-不能把视频简单覆盖到独立 `MediaPlayerElement` 后，就认定视频已走 Luma 的 TrueHDR / FP16 路径。最终 HDR 增强路径要能取得解码帧并送入 SDK，检查实际调用和高范围输出。音频需要独立调度与同步；不得用 UI 线程计时器当视频时钟。
+## 参考与待扩展
 
-## 现有代码能复用多少
+- [Android Motion Photo 规范](https://developer.android.com/media/platform/motion-photo-format)
+- [Apple Live Photo 元数据](https://developer.apple.com/documentation/avfoundation/avcapturephotosettings/livephotomoviemetadata)
+- [Microsoft MediaPlayer / frame-server](https://learn.microsoft.com/en-us/windows/apps/develop/media-playback/play-audio-and-video-with-mediaplayer)
+- [Microsoft 视频传递函数](https://learn.microsoft.com/en-us/windows/win32/api/mfobjects/ne-mfobjects-mfvideotransferfunction)
+- [NVIDIA RTX Video SDK](https://developer.nvidia.com/rtx-video-sdk)
 
-- `src/Luma.Native/Luma.Native.cpp`：已有 TrueHDR 的 D3D11 输入、FP16 输出、显示器 / 白色 / 峰值、视图和玻璃渲染，可复用基础设施。
-- 但 `Renderer::use(Frame&)` 现在从 CPU 像素上传，生成 mip，重置视图、原图 / 增强缓存和玻璃场景；这是“切换照片”接口，不能直接拿来逐帧播放。
-- `src/Luma.App/NativeRenderer.cs` 现在适合后台执行离散看图任务；逐帧 `Task.Run`、读状态、回 UI 或每帧等待 GPU，都可能引入排队 / 卡顿，需要独立的持续播放提交机制。
-- 现有静态原图 / HDR 对照依赖缓存两份结果。视频对照也应让时间轴持续前进，选择同一时间点的原始 / 增强帧，不能每次切换都重开解码器或重跑整段视频。
-- 现有 `.heic/.jpg` 入口可以沿用；新增识别不应把所有 MOV / MP4 都混入照片列表。普通视频播放器、转换和导出不作为首轮目标。
-
-## 性能必须先守住
-
-1. 相册仍只加载静态缩略图；不在导入 3000 张照片时启动成千上百个解码器，不为检测 Live 全盘反复扫描。
-2. 静态图先出现；仅当前预览窗口按需准备短片。初期只允许一个窗口主动播放，切图 / 关闭 / 最小化立即停止或取消过时任务。
-3. 优先同 GPU 设备上的硬件解码与纹理传递，避免 GPU→CPU→GPU 来回拷贝。复用有限纹理和 SDK 会话，限制队列长度；GPU 忙时优先保持交互响应，不能无限积压旧帧。
-4. 不缓存整段解码后的 FP16 视频。**容量估算**：1920×1080、RGBA FP16 每帧约 15.82 MiB；3 秒 × 30 fps 的 90 帧，光输出就约 1.39 GiB，尚未计入解码、SDK、玻璃和原始视频资源。使用有限帧缓冲与时间窗口，不把此算式当实际显存测量。
-5. 30 fps / 60 fps 对应每帧总预算约 33.3 / 16.7 ms，只是目标约束，不是已达成结果。静态图片历史处理耗时不能直接推算持续播放帧率；需统计 GPU 时间、调度、丢帧、音画偏差、首帧和长时间循环资源。
-6. 动态背景下的 Gaussian 玻璃会增加逐帧工作量；应单独测量，避免沿用静态缓存导致播放时模糊背景停住，或每帧全分辨率重新模糊拖慢播放。
-
-## 交互建议
-
-显示 LIVE 标记与独立播放按钮；按住标记播放、松开回到静态主照片，另提供可重复播放的明确入口。默认不在图库 / 鼠标悬停时自动播放，声音默认静音并提供显式控制。视频与静态封面的不同裁切、方向、分辨率和色彩是过渡验收重点，不能靠叠加任意淡入淡出掩盖。
-
-**空格保持当前最高优先级的 HDR / 原图对照，不借给播放 / 暂停。** 点击图片显示 / 隐藏工具栏、拖拽平移等既有操作也要保留。播放快捷键可使用独立按键，例如 `L`，实施前统一说明。
-
-## 分阶段落地
-
-| 阶段 | 范围 | 完成证据 |
-| --- | --- | --- |
-| A：资源与解码原型 | iPhone 完整 HEIC/JPEG+MOV、标准 Android JPEG Motion Photo；有界读取、严格配对、孤立资源回退；解码少量真实片段 | 样本来源 / hash / 元数据、视频范围与静态封面保持不变；缺失 / 损坏 / 同名误配均覆盖 |
-| B：基础 Live 预览 | 当前窗口按需播放、方向 / 裁切 / 静态回归、音频控制与同步、连续快速切图取消 | 真实窗口与录屏，首帧 / 帧间隔 / 音画同步 / CPU/GPU/RAM/显存；3000 张普通相册回归不退化 |
-| C：SDR Live + RTX HDR | 固定帧缓冲 / SDK 复用、SDR 逐帧增强、空格同时间轴对照、跨模式平滑过渡 | 实际 SDK 调用、FP16 读回、动态测试片段逐帧正确性、持续播放与循环丢帧 / 资源稳定性 |
-| D：扩展兼容与原生 HDR 视频 | PQ / HLG、更多品牌和旧封装、`.livp`、缺少扩展提示与降级 | 真机与导出样本矩阵；每个兼容分支实测后才列入支持清单 |
-
-B 可用于验证播放体验，但不等同于 C 的 RTX HDR 成功。封面已是 HDR 的视频也要单独分类；开发中遇到原生 HDR 片段时，应明确当前回退行为，不能悄悄当 SDR 走 TrueHDR。
-
-C 首先只开启 TrueHDR，VSR 继续默认关闭；是否同时做视频超分，待单独的帧率与显存评估，不把它隐式绑到 Live 播放。
-
-## 是否独有
-
-在本次定向检索中，已经看到 [JarkViewer](https://github.com/jark006/JarkViewer) 声明支持 Live / Motion Photos，[HDRImageViewer](https://github.com/linyusenzz/HDRImageViewer) 声明支持 HDR 静态封面与原生媒体层播放，并计划继续接入 HDR 视频 renderer。以上是对项目作者文档的核对，没有在本机安装验收竞品。
-
-因此“支持 Live 图”或“同时能看 HDR 图”本身不是已证明的独家；**跨品牌 Live 图的动态片段 RTX HDR、快速切换和美观的一体体验**可以成为 Luma 的差异点。本轮没有足够证据证明没有其他实现，不使用“全球首个 / 唯一”宣传。
-
-## 本轮验证边界与后续样本
-
-已核对平台规范、竞品原始文档、SDK 头文件和 Luma 现有路径；没有把第三方源码 / 测试照片引入仓库，没有新加运行时依赖，没有执行 Live 解码 / 播放 / RTX HDR 实验，不给出实测帧率或安装包增量。
-
-实施前准备：完整 iPhone 配对资源、标准 / 旧 Google Motion Photo、Samsung 与至少两家其他 Android 真机原文件，以及 SDR / 原生 HDR / Ultra HDR 封面组合。另需错误关联、重命名、缺失 MOV、已剥离视频、损坏偏移、纵向旋转、无音轨 / 带音轨、慢磁盘和缺少编码器的样本。文件只读测试、记录来源及 hash，私人照片不进 Git 或消费者包；公开样本的可下载性和许可证需在实际下载时再核对。
+后续按真实样本扩展原生 HDR 视频、.livp、更多厂商，以及图片 / 视频旋转裁切与主照片时点的细节。先保证流畅和正确显示，不声称“全球独家”。

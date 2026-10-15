@@ -6,6 +6,8 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 
 本机便携版：`C:\workspace\Luma\artifacts\Luma\Luma.App.exe`。整个文件夹必须一起保留，不能只复制 EXE。
 
+这是固定的日常开发测试入口，每轮验证通过后同步最新构建，关于页面可查看版本。`artifacts/Luma-*` 等带功能名的目录用于隔离实验 / 验证，不作为日常入口。若固定开发版正在运行，先关闭它再更新文件，保留上一份可用构建。默认 `./scripts/Build.ps1 -Publish -RequireNvidia` 也输出到此位置。
+
 - 直接启动进入图库；导入文件夹建立相册，照片保留在原位置。
 - 将照片或文件夹拖入图库，或点击顶部的“打开照片”按钮。
 - 在“设置 → 在 Windows 中选择 Luma”中将便携版添加到开始菜单并注册为可选图片查看器，由用户在 Windows 设置中选择默认格式。移动便携版后需再次注册。本机应用专属跳转仍打开通用默认应用页；若应用列表未显示 Luma，可按 `.jpg`、`.png` 等扩展名选择。系统查看器枚举已识别 Luma，完整默认应用选择流程尚未验收。
@@ -13,6 +15,8 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 - 本地数据位于 `%LOCALAPPDATA%\Luma`；数据库为 `library.db`，异常日志为 `luma.log`，NVIDIA 日志为 `ngx`。
 
 ## 已实现
+
+0.1.24 增加按需 Live / Motion Photo 播放与 SDR 视频逐帧 RTX HDR，默认静音、L 播放 / 停止，空格保持原图对照。使用 Windows MediaPlayer frame-server 与现有 D3D11 / FP16，不新增播放器依赖；格式、实际样本与未完成的原生 HDR 视频范围见 `LIVE-PHOTOS.md`。
 
 0.1.23 重排用户设置与 HDR 入门：提供 Windows 显示设置和 HDR 校准应用 / 商店入口，显示当前窗口屏幕的系统 HDR 状态、报告峰值、SDR 白色与全屏亮度。独立原生查询不初始化 D3D / NGX，页面首次进入才构造，移动后 350 ms 防抖、返回激活刷新，隐藏后停止。README 以真实使用动机展开；用户说明见 `HDR-SETUP.md`，验证命令为 `tests/verify_settings.py --app <exe>` 与 `LUMA_NATIVE_TEST_DLL=<dll>` 下的 `tests/verify_display_info.py`；报告与真实 / 注入边界见 `VERIFICATION.md`。
 

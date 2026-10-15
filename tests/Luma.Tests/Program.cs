@@ -47,4 +47,5 @@ Assert(PhotoMetadataFormatting.Format("System.Photo.ExposureTime",double.NaN) is
 Assert(PhotoMetadataFormatting.Rows(new Dictionary<string,object>()).Count==0,"missing EXIF stays absent");
 var metadataRows=PhotoMetadataFormatting.Rows(new Dictionary<string,object>{{"System.Photo.ISOSpeed",160},{"System.Photo.ExposureBias",0},{"System.Photo.LensModel","Fixture Lens"},{"System.Image.ColorSpace",65535}});
 Assert(metadataRows.Count==4&&PhotoMetadataFormatting.Filter(metadataRows,"ISO").Single().Value=="ISO 160"&&PhotoMetadataFormatting.Filter(metadataRows,"missing").Count==0,"photo metadata search and uncalibrated colour remain honest");
+LivePhotoTests.Run(root,Assert);
 Console.WriteLine($"{checks} core checks passed. Artifacts: {root}");

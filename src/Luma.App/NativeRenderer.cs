@@ -33,6 +33,9 @@ internal static class Native
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCreate(IntPtr panel,IntPtr hwnd,out IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCreateFast(IntPtr panel,IntPtr hwnd,out IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaInitEffects(IntPtr renderer);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCreateVideoSurface(IntPtr renderer,uint width,uint height,out IntPtr surface);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaPresentVideoFrame(IntPtr renderer,int hdr,int original,uint preset,uint middleGray,uint peak);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaReadSurface(IntPtr renderer,[Out]ushort[] rgba,uint pixels);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern void LumaDestroy(IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaResetForReuse(IntPtr renderer);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaBindWindow(IntPtr renderer,IntPtr hwnd);
@@ -218,6 +221,44 @@ internal sealed class NativeRenderer : IDisposable
         ScheduleFlush();
     }
     public Task InitializeEffectsAsync(CancellationToken token)=>RunAsync(()=>Native.Check(Native.LumaInitEffects(handle)),token);
+    internal async Task<Windows.Graphics.DirectX.Direct3D11.IDirect3DSurface> CreateVideoSurfaceAsync(uint width,uint height,CancellationToken token)
+    {
+        IntPtr surface=IntPtr.Zero;
+        try{await RunAsync(()=>Native.Check(Native.LumaCreateVideoSurface(handle,width,height,out surface)),token);return WinRT.MarshalInterface<Windows.Graphics.DirectX.Direct3D11.IDirect3DSurface>.FromAbi(surface);}
+        finally{if(surface!=IntPtr.Zero)Marshal.Release(surface);}
+    }
+    private long lastVideoNotice;
+    internal async Task<(double Peak,ulong Fingerprint)> VerificationSurfaceAsync(uint width,uint height,CancellationToken token)
+    {
+        await access.WaitAsync(token);
+        try
+        {
+            ushort[] pixels=new ushort[checked((int)(width*height*4))];
+            await Task.Run(()=>Native.Check(Native.LumaReadSurface(handle,pixels,(uint)(pixels.Length/4))),token);
+            double peak=0;ulong fingerprint=14695981039346656037;
+            for(int i=0;i<pixels.Length;i+=4){for(int c=0;c<3;c++)peak=Math.Max(peak,(double)BitConverter.UInt16BitsToHalf(pixels[i+c]));fingerprint=unchecked((fingerprint^pixels[i])*1099511628211);}
+            return (peak,fingerprint);
+        }
+        finally{access.Release();}
+    }
+    internal async Task<bool> VideoFrameAsync(Action copy,LiveRenderOptions options,CancellationToken token)
+    {
+        // At most one frame is in flight; busy UI work drops a video frame
+        // instead of accumulating tasks behind a renderer lock.
+        if(disposed||token.IsCancellationRequested||!access.Wait(0))return false;
+        RenderStatus next=default;RenderMetrics metrics=default;
+        try
+        {
+            await Task.Run(()=>{token.ThrowIfCancellationRequested();copy();Native.Check(Native.LumaPresentVideoFrame(handle,options.Hdr?1:0,options.Original?1:0,(uint)options.Preset,options.MiddleGray,options.Peak));Native.Check(Native.LumaCopyStatus(handle,out next));Native.Check(Native.LumaGetRenderMetrics(handle,out metrics));},token);
+        }
+        finally{access.Release();}
+        if(System.Diagnostics.Stopwatch.GetElapsedTime(lastVideoNotice).TotalMilliseconds>=150)
+        {
+            lastVideoNotice=System.Diagnostics.Stopwatch.GetTimestamp();
+            dispatcher.TryEnqueue(()=>{if(!disposed){snapshot=next;Metrics=metrics;Presented?.Invoke();ScheduleFlush();}});
+        }
+        return true;
+    }
     public async Task EffectsAsync(bool hdr,bool vsr,int preset,uint middleGray,uint peak,CancellationToken token)
     {
         await RunAsync(()=>{Native.Check(Native.LumaHdrTuning(handle,middleGray,peak));Native.Check(Native.LumaPrepareEffects(handle,hdr?1:0,vsr?1:0,0,(uint)preset));},token);

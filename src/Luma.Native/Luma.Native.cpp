@@ -2,6 +2,8 @@
 #define NOMINMAX
 #include <windows.h>
 #include <d3d11.h>
+#include <d3d10.h>
+#include <windows.graphics.directx.direct3d11.interop.h>
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
 #include <d2d1_1.h>
@@ -248,6 +250,7 @@ float4 PS(Vertex v):SV_TARGET {
 }
 float4 PSInput(Vertex v):SV_TARGET {
  float3 color=photo.Sample(linearSampler,v.uv).rgb;
+ if(gammaInput>0.5)return float4(saturate(color),1);
  float3 srgb=lerp(color*12.92,1.055*pow(max(color,0),1/2.4)-0.055,step(0.0031308,color));
  return float4(saturate(srgb),1);
 }
@@ -270,7 +273,7 @@ struct Renderer {
     NVSDK_NGX_Parameter* hdrParams=nullptr;NVSDK_NGX_Parameter* vsrParams=nullptr;NVSDK_NGX_Handle* hdrFeature=nullptr;NVSDK_NGX_Handle* vsrFeature=nullptr;bool ngxInitialized=false;
 #endif
     uint32_t width=1,height=1,iw=1,ih=1,processWidth=1,processHeight=1;float zoom=1,panX=0,panY=0;int rotation=0;unsigned currentPreset=1,middleGrayOverride=0,peakOverride=0;Status status{};uint64_t textureBudget=1024ull*1024*1024;
-    bool effectsInitialized=false;float nativeMiddleGray=0,nativePeakOverride=0;
+    bool effectsInitialized=false,videoSource=false;float nativeMiddleGray=0,nativePeakOverride=0;
     RenderMetrics metrics{};
     TextureMetrics textureMetrics{};
     float cachedCompositionDpi=0;
@@ -349,7 +352,7 @@ struct Renderer {
         originalTexture.Reset();sdrOriginalView.Reset();sdrOriginalTexture.Reset();gainBaseView.Reset();gainBaseTexture.Reset();gainDisplay={};sdkInput.Reset();hdrTexture.Reset();vsrTexture.Reset();
         target.Reset();offscreen.Reset();swap.Reset();glass->releaseSurfaces();context->Flush();
         hwnd=nullptr;width=height=iw=ih=processWidth=processHeight=1;vsrWidth=vsrHeight=0;
-        requestedHdr=requestedVsr=holdOriginal=hdrCached=vsrCached=sdkInputReady=sourceAlpha=false;
+        requestedHdr=requestedVsr=holdOriginal=hdrCached=vsrCached=sdkInputReady=sourceAlpha=videoSource=false;
         zoom=1;panX=panY=0;rotation=0;compositionDpi=1;cachedCompositionDpi=0;sceneStamp={};
         currentPreset=1;middleGrayOverride=peakOverride=cachedPeak=0;nativeMiddleGray=nativePeakOverride=0;metrics={};textureMetrics={};
         status.nativeHdr=status.hdrEffective=status.vsrEffective=0;status.hdrEvaluations=status.vsrEvaluations=0;
@@ -432,7 +435,7 @@ struct Renderer {
         for(auto texture:{originalTexture.Get(),sdrOriginalTexture.Get(),gainBaseTexture.Get(),sdkInput.Get(),hdrTexture.Get(),vsrTexture.Get()})bytes+=textureBytes(texture);
         if(glass)bytes+=glass->bytes();status.gpuBytes=bytes;
     }
-    void use(Frame& f){auto started=std::chrono::steady_clock::now();context->ClearState();sceneStamp={};zoom=1;panX=panY=0;rotation=0;D3D11_TEXTURE2D_DESC d{};d.Width=f.info.width;d.Height=f.info.height;d.MipLevels=0;d.ArraySize=1;d.Format=f.info.nativeHdr?DXGI_FORMAT_R32G32B32A32_FLOAT:DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;d.MiscFlags=D3D11_RESOURCE_MISC_GENERATE_MIPS;
+    void use(Frame& f){videoSource=false;auto started=std::chrono::steady_clock::now();context->ClearState();sceneStamp={};zoom=1;panX=panY=0;rotation=0;D3D11_TEXTURE2D_DESC d{};d.Width=f.info.width;d.Height=f.info.height;d.MipLevels=0;d.ArraySize=1;d.Format=f.info.nativeHdr?DXGI_FORMAT_R32G32B32A32_FLOAT:DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;d.MiscFlags=D3D11_RESOURCE_MISC_GENERATE_MIPS;
         if(!matches(originalTexture.Get(),d.Width,d.Height,d.Format)){ComPtr<ID3D11Texture2D> tex;ComPtr<ID3D11ShaderResourceView> view;check(device->CreateTexture2D(&d,nullptr,&tex));check(device->CreateShaderResourceView(tex.Get(),nullptr,&view));textureMetrics.originalAllocations++;originalTexture=tex;originalView=view;}
         context->UpdateSubresource(originalTexture.Get(),0,nullptr,f.pixels.data(),f.info.width*(f.info.nativeHdr?16:4),0);context->GenerateMips(originalView.Get());image=originalView;iw=f.info.width;ih=f.info.height;status.nativeHdr=f.info.nativeHdr;
         if(!f.sdrPixels.empty()){
@@ -497,8 +500,8 @@ struct Renderer {
         if(!status.sdkAvailable||!originalTexture){selectImage();if(present)draw();return;}
         // Ordinary GPU resampling prepares large photos for the SDK; it never invokes VSR.
         if(!sdkInputReady){if(!sdkInput){D3D11_TEXTURE2D_DESC d{};d.Width=processWidth;d.Height=processHeight;d.ArraySize=d.MipLevels=1;d.Format=DXGI_FORMAT_R8G8B8A8_UNORM;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;check(device->CreateTexture2D(&d,nullptr,&sdkInput));textureMetrics.inputAllocations++;}
-            if(processWidth==iw&&processHeight==ih)context->CopySubresourceRegion(sdkInput.Get(),0,0,0,0,originalTexture.Get(),0,nullptr);
-            else{context->ClearState();ComPtr<ID3D11RenderTargetView> outputView;check(device->CreateRenderTargetView(sdkInput.Get(),nullptr,&outputView));auto t=outputView.Get();context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT viewport{0,0,float(processWidth),float(processHeight),0,1};context->RSSetViewports(1,&viewport);float values[24]={1,1,0,0,1,0,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(inputPs.Get(),nullptr,0);auto i=originalView.Get();context->PSSetShaderResources(0,1,&i);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);context->Draw(6,0);context->ClearState();}
+            if(!videoSource&&processWidth==iw&&processHeight==ih)context->CopySubresourceRegion(sdkInput.Get(),0,0,0,0,originalTexture.Get(),0,nullptr);
+            else{context->ClearState();ComPtr<ID3D11RenderTargetView> outputView;check(device->CreateRenderTargetView(sdkInput.Get(),nullptr,&outputView));auto t=outputView.Get();context->OMSetRenderTargets(1,&t,nullptr);D3D11_VIEWPORT viewport{0,0,float(processWidth),float(processHeight),0,1};context->RSSetViewports(1,&viewport);float values[24]={1,1,0,0,1,0,0,videoSource?1.0f:0.0f};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->PSSetConstantBuffers(0,1,&c);context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(inputPs.Get(),nullptr,0);auto i=originalView.Get();context->PSSetShaderResources(0,1,&i);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);context->Draw(6,0);context->ClearState();}
             sdkInputReady=true;
         }
         auto output=[&](DXGI_FORMAT format,UINT w,UINT h,ComPtr<ID3D11Texture2D>& texture,ComPtr<ID3D11ShaderResourceView>& view){if(matches(texture.Get(),w,h,format))return;if(texture){if(format==DXGI_FORMAT_R16G16B16A16_FLOAT&&hdrFeature){NVSDK_NGX_D3D11_ReleaseFeature(hdrFeature);hdrFeature=nullptr;}else if(format!=DXGI_FORMAT_R16G16B16A16_FLOAT&&vsrFeature){NVSDK_NGX_D3D11_ReleaseFeature(vsrFeature);vsrFeature=nullptr;}}D3D11_TEXTURE2D_DESC d{};d.Width=w;d.Height=h;d.ArraySize=d.MipLevels=1;d.Format=format;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_UNORDERED_ACCESS;ComPtr<ID3D11Texture2D> next;ComPtr<ID3D11ShaderResourceView> nextView;check(device->CreateTexture2D(&d,nullptr,&next));check(device->CreateShaderResourceView(next.Get(),nullptr,&nextView));texture=next;view=nextView;if(format==DXGI_FORMAT_R16G16B16A16_FLOAT)textureMetrics.hdrAllocations++;else textureMetrics.vsrAllocations++;};
@@ -538,7 +541,7 @@ struct Renderer {
             bool absolute= status.nativeHdr==1&&image==originalView&&!holdOriginal;
             float exposure=absolute&&nativeMiddleGray?nativeMiddleGray/(203*.21586f):1;
             float peak=absolute&&nativePeakOverride?nativePeakOverride/80:0;
-            float values[]={w*fit*zoom/width,h*fit*zoom/height,2*panX/width,-2*panY/height,status.sdrWhite,float((status.nativeHdr||status.hdrEffective)&&image!=sdrOriginalView),float(rotation),float(status.vsrEffective&&!status.hdrEffective),weight,float(image==originalView?gainDisplay.model:0),float(gainDisplay.gamut),gainWhite,gainDisplay.offsetSdr[0],gainDisplay.offsetSdr[1],gainDisplay.offsetSdr[2],0,gainDisplay.offsetHdr[0],gainDisplay.offsetHdr[1],gainDisplay.offsetHdr[2],0,exposure,peak,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
+            float values[]={w*fit*zoom/width,h*fit*zoom/height,2*panX/width,-2*panY/height,status.sdrWhite,float((status.nativeHdr||status.hdrEffective)&&image!=sdrOriginalView),float(rotation),float((status.vsrEffective&&!status.hdrEffective)||(videoSource&&image==originalView)),weight,float(image==originalView?gainDisplay.model:0),float(gainDisplay.gamut),gainWhite,gainDisplay.offsetSdr[0],gainDisplay.offsetSdr[1],gainDisplay.offsetSdr[2],0,gainDisplay.offsetHdr[0],gainDisplay.offsetHdr[1],gainDisplay.offsetHdr[2],0,exposure,peak,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);
             context->IASetInputLayout(nullptr);context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);context->VSSetShader(vs.Get(),nullptr,0);context->PSSetShader(ps.Get(),nullptr,0);auto c=constants.Get();context->VSSetConstantBuffers(0,1,&c);context->PSSetConstantBuffers(0,1,&c);auto s=sampler.Get();context->PSSetSamplers(0,1,&s);ID3D11ShaderResourceView* resources[]={image.Get(),gainBaseView?gainBaseView.Get():sdrOriginalView.Get()};context->PSSetShaderResources(0,2,resources);context->Draw(6,0);}
         }if(frosted)sceneStamp=nextStamp;else sceneStamp={};
         if(frosted)glass->composite(context.Get(),target.Get(),sampler.Get(),status.sdrWhite,compositionDpi,refresh);
@@ -547,6 +550,7 @@ struct Renderer {
     }
 };
 #define API extern "C" __declspec(dllexport)
+#include "LiveVideo.h"
 API HRESULT __cdecl LumaGetDisplayInfo(HWND hwnd,DisplayInfo* result){if(!result)return E_POINTER;*result={};return safe([&]{*result=queryDisplayInfo(hwnd);});}
 API const wchar_t* __cdecl LumaError(){return lastError.c_str();}
 API HRESULT __cdecl LumaDecode(const wchar_t* path,FrameInfo* info,void** result){if(!path||!info||!result)return E_POINTER;*result=nullptr;return safe([&]{auto f=decode(path);*info=f->info;*result=f.release();});}

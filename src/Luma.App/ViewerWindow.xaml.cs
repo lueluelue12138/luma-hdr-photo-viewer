@@ -1,4 +1,4 @@
-using Luma.Core;
+﻿using Luma.Core;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -43,7 +43,7 @@ public sealed partial class ViewerWindow : Window
         }
         ApplyNativeTuning();
     }
-    private void ApplyNativeTuning()=>renderer?.NativeTuning(nativeTuningMode&&!AutoBrightnessSwitch.IsOn?(float)MiddleGraySlider.Value:0,nativeTuningMode&&!AutoPeakSwitch.IsOn?(float)PeakSlider.Value:0);
+    private void ApplyNativeTuning(){if(livePlayback is null)renderer?.NativeTuning(nativeTuningMode&&!AutoBrightnessSwitch.IsOn?(float)MiddleGraySlider.Value:0,nativeTuningMode&&!AutoPeakSwitch.IsOn?(float)PeakSlider.Value:0);}
     private CancellationTokenSource? tuningCancellation,enhancementCancellation;
     private (int Hdr,float White,float Peak)? displayState;
     private readonly DispatcherTimer viewTimer=new(){Interval=TimeSpan.FromMilliseconds(16)};
@@ -95,7 +95,7 @@ public sealed partial class ViewerWindow : Window
     internal Task VerificationDetailAsync()=>EnsureFullResolutionAsync();
     internal void VerificationPan(double x,double y){panX=x;panY=y;UpdateView();}
     private uint PreviewEdge=>(uint)Math.Clamp(Math.Ceiling(Math.Max(Surface.ActualWidth*Surface.CompositionScaleX,Surface.ActualHeight*Surface.CompositionScaleY)/256)*256,1024,4096);
-    internal async Task VerificationDisposeAsync(){try{await rendererInitialization;}catch(OperationCanceledException){}if(renderer is not null)await renderer.DisposedAsync;}
+    internal async Task VerificationDisposeAsync(){try{await rendererInitialization;await liveStarting;await liveRetirement;}catch(OperationCanceledException){}if(renderer is not null)await renderer.DisposedAsync;}
     internal RenderStatus VerificationStatus=>renderer?.Status()??default;
     internal int VerificationWorkerJobs=>renderer?.WorkerJobs??0;
     internal bool VerificationDeviceReused=>renderer?.DeviceReused??false;
@@ -200,11 +200,11 @@ public sealed partial class ViewerWindow : Window
         WindowLayout.Configure(this,Root);
         chromeTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-chromeStarted).TotalMilliseconds/(chromeTarget>chromeStart?180:240),0,1);chromeOpacity=chromeStart+(chromeTarget-chromeStart)*(1-Math.Pow(1-t,3));ApplyChrome();if(t>=1)chromeTimer.Stop();};
         foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel,StatusBadge})panel.SizeChanged+=(_,_)=>ScheduleGlass();Root.ActualThemeChanged+=(_,_)=>ScheduleGlass();Root.LayoutUpdated+=(_,_)=>{if(filmstripScroller is null)UpdateFilmstripBar();ScheduleGlass();};
-        viewTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-viewStarted).TotalMilliseconds/180,0,1);double ease=1-Math.Pow(1-t,3);renderedZoom=viewStartZoom+(zoom-viewStartZoom)*ease;renderedPanX=viewStartX+(panX-viewStartX)*ease;renderedPanY=viewStartY+(panY-viewStartY)*ease;try{renderer?.View(renderedZoom,renderedPanX,renderedPanY,rotation);}catch(COMException ex){viewTimer.Stop();Recover(ex);}if(t>=1)viewTimer.Stop();};
+        viewTimer.Tick+=(_,_)=>{double t=Math.Clamp((DateTime.UtcNow-viewStarted).TotalMilliseconds/180,0,1);double ease=1-Math.Pow(1-t,3);renderedZoom=viewStartZoom+(zoom-viewStartZoom)*ease;renderedPanX=viewStartX+(panX-viewStartX)*ease;renderedPanY=viewStartY+(panY-viewStartY)*ease;try{DisplayRenderer?.View(renderedZoom,renderedPanX,renderedPanY,rotation);}catch(COMException ex){viewTimer.Stop();Recover(ex);}if(t>=1)viewTimer.Stop();};
         WindowLayout.SizeForDpi(this,Root,1240,850,owner);AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
         displayTimer.Tick+=async(_,_)=>{displayTimer.Stop();await ProbeDisplayAsync(true);};
-        idleTimer.Tick+=IdleTick;Closed+=(_,_)=>{closed=true;request++;lifetime.Cancel();loadingCancellation?.Cancel();detailsCancellation?.Cancel();detailsCancellation?.Dispose();VerificationReady.TrySetCanceled();idleTimer.Stop();displayTimer.Stop();viewTimer.Stop();chromeTimer.Stop();renderer?.Dispose();currentLease?.Dispose();};
-        AppWindow.Changed+=(_,args)=>{if(args.DidPositionChange&&!closed){displayTimer.Stop();displayTimer.Start();}};Activated+=(_,args)=>{if(closed)return;if(args.WindowActivationState==WindowActivationState.Deactivated){dragging=false;InputLayer.ReleasePointerCaptures();SetOriginalHeld(false);}else if(renderer is not null)_=ProbeDisplayAsync(true);};
+        idleTimer.Tick+=IdleTick;Closed+=(_,_)=>{closed=true;StopLive(false);request++;lifetime.Cancel();loadingCancellation?.Cancel();detailsCancellation?.Cancel();detailsCancellation?.Dispose();VerificationReady.TrySetCanceled();idleTimer.Stop();displayTimer.Stop();viewTimer.Stop();chromeTimer.Stop();renderer?.Dispose();currentLease?.Dispose();};
+        AppWindow.Changed+=(_,args)=>{if(args.DidPositionChange&&!closed){displayTimer.Stop();displayTimer.Start();}};Activated+=(_,args)=>{if(closed)return;if(args.WindowActivationState==WindowActivationState.Deactivated){dragging=false;InputLayer.ReleasePointerCaptures();SetOriginalHeld(false);StopLive();}else if(renderer is not null)_=ProbeDisplayAsync(true);};
     }
     public void ApplyTheme(ElementTheme theme){if(!closed)Root.RequestedTheme=theme;}
     private async void SurfaceLoaded(object sender,RoutedEventArgs e)
@@ -237,7 +237,7 @@ public sealed partial class ViewerWindow : Window
     {
         if(closed||sequence.Count==0||selected<0||selected>=sequence.Count)return;
         if(renderer is null){index=selected;return;}
-        index=selected;current=sequence[index];int generation=++request;enhancementCancellation?.Cancel();loadingCancellation?.Cancel();loadingCancellation?.Dispose();loadingCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=loadingCancellation.Token;
+        StopLive(false);liveAsset=null;liveWarning=null;LiveButton.Visibility=Visibility.Collapsed;index=selected;current=sequence[index];int generation=++request;enhancementCancellation?.Cancel();loadingCancellation?.Cancel();loadingCancellation?.Dispose();loadingCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=loadingCancellation.Token;
         var timing=Stopwatch.StartNew();uint previewEdge=PreviewEdge;
         viewTimer.Stop();zoom=1;panX=panY=0;rotation=0;FileTitle.Text=current.Name;Title=$"{current.Name} — Luma";ErrorPanel.Visibility=Visibility.Collapsed;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;_ = ShowLoadingAfterDelayAsync(generation,token);ShowControls();UpdatePosition();UpdateInfo();
         try
@@ -250,7 +250,7 @@ public sealed partial class ViewerWindow : Window
             try{await renderer!.ShowAsync(lease.Frame,token);if(closed||generation!=request){lease.Dispose();return;}}catch{lease.Dispose();throw;}
             photo=photo with{Size=lease.SourceLength,Modified=lease.SourceModified};current=photo;
             currentLease?.Dispose();currentLease=lease;displayedRequest=generation;UpdateView();UpdateGlass();cache.Trim(photo.Path);Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;
-            FirstFrameMilliseconds=timing.ElapsedMilliseconds;FirstFrameReady.TrySetResult();App.Log($"Photo first frame: {photo.Name}; {FirstFrameMilliseconds} ms; {lease.Frame.Info.Width}x{lease.Frame.Info.Height}; original {lease.Frame.Info.OriginalWidth}x{lease.Frame.Info.OriginalHeight}");
+            FirstFrameMilliseconds=timing.ElapsedMilliseconds;FirstFrameReady.TrySetResult();liveDetection=DetectLiveAsync(photo.Path,generation,token);App.Log($"Photo first frame: {photo.Name}; {FirstFrameMilliseconds} ms; {lease.Frame.Info.Width}x{lease.Frame.Info.Height}; original {lease.Frame.Info.OriginalWidth}x{lease.Frame.Info.OriginalHeight}");
             Prefetch();await ApplyEffectsAsync();if(closed||generation!=request)return;
             var stored=await App.Store.IsFavoriteAsync(photo.Path);if(generation!=request)return;current=photo with{Favorite=stored};UpdateFavorite();
             await App.Store.RecordOpenAsync(current);if(closed||generation!=request)return;RefreshStatus();UpdateInfo();VerificationReady.TrySetResult();
@@ -264,7 +264,7 @@ public sealed partial class ViewerWindow : Window
     }
     private Task EnsureFullResolutionAsync()
     {
-        if(currentFrame?.Info.Downsampled!=2||renderer is null||closed)return Task.CompletedTask;
+        if(livePlayback is not null||currentFrame?.Info.Downsampled!=2||renderer is null||closed)return Task.CompletedTask;
         if(fullResolutionRequest==request&&!fullResolution.IsCompleted)return fullResolution;
         fullResolutionRequest=request;return fullResolution=LoadFullResolutionAsync(request,current!.Path,renderer,loadingCancellation?.Token??lifetime.Token);
     }
@@ -353,16 +353,17 @@ public sealed partial class ViewerWindow : Window
     private void UpdateView(bool animate=false)
     {
         ClampPan();
-        try{viewTimer.Stop();if(animate&&Motion.Enabled){viewStartZoom=renderedZoom;viewStartX=renderedPanX;viewStartY=renderedPanY;viewStarted=DateTime.UtcNow;viewTimer.Start();}else{renderedZoom=zoom;renderedPanX=panX;renderedPanY=panY;renderer?.View(zoom,panX,panY,rotation);}var actual=PixelScale();FitButton.Content=Math.Abs(zoom-1)<0.001?"适合窗口":$"{actual*100:0}%";UpdateInfo();RequestDetail();}catch(COMException ex){Recover(ex);}
+        try{viewTimer.Stop();if(animate&&Motion.Enabled){viewStartZoom=renderedZoom;viewStartX=renderedPanX;viewStartY=renderedPanY;viewStarted=DateTime.UtcNow;viewTimer.Start();}else{renderedZoom=zoom;renderedPanX=panX;renderedPanY=panY;DisplayRenderer?.View(zoom,panX,panY,rotation);}var actual=PixelScale();FitButton.Content=Math.Abs(zoom-1)<0.001?"适合窗口":$"{actual*100:0}%";UpdateInfo();RequestDetail();}catch(COMException ex){Recover(ex);}
     }
     private void ClampPan()
     {
         if(currentFrame is null||zoom<=1){panX=panY=0;return;}
-        var i=currentFrame.Info;double w=rotation%2==0?i.OriginalWidth:i.OriginalHeight,h=rotation%2==0?i.OriginalHeight:i.OriginalWidth,scale=FitScale()*zoom;
+        var (w,h)=VisibleDimensions();double scale=FitScale()*zoom;
         double maxX=Math.Max(0,(w*scale-Surface.ActualWidth*Surface.CompositionScaleX)/2),maxY=Math.Max(0,(h*scale-Surface.ActualHeight*Surface.CompositionScaleY)/2);
         panX=Math.Clamp(panX,-maxX,maxX);panY=Math.Clamp(panY,-maxY,maxY);
     }
-    private double FitScale(){if(currentFrame is null)return 1;var i=currentFrame.Info;double w=rotation%2==0?i.OriginalWidth:i.OriginalHeight,h=rotation%2==0?i.OriginalHeight:i.OriginalWidth;return Math.Min(Surface.ActualWidth*Surface.CompositionScaleX/w,Surface.ActualHeight*Surface.CompositionScaleY/h);}
+    private (double Width,double Height) VisibleDimensions(){double w=livePlayback?.Width??currentFrame?.Info.OriginalWidth??1,h=livePlayback?.Height??currentFrame?.Info.OriginalHeight??1;return rotation%2==0?(w,h):(h,w);}
+    private double FitScale(){var (w,h)=VisibleDimensions();return Math.Min(Surface.ActualWidth*Surface.CompositionScaleX/w,Surface.ActualHeight*Surface.CompositionScaleY/h);}
     private double PixelScale()=>FitScale()*zoom;
     private void ZoomBy(double factor){zoom=Math.Clamp(zoom*factor,0.05,64);ShowControls();UpdateView(true);}
     private void Fit(){zoom=1;panX=panY=0;UpdateView(true);ShowControls();}
@@ -423,11 +424,11 @@ public sealed partial class ViewerWindow : Window
         DispatcherQueue.TryEnqueue(()=>{if(!closed)Motion.Resize(Root,previousWidth,previousHeight);});ShowControls();InputLayer.Focus(FocusState.Programmatic);
     }
     private void BackClick(object sender,RoutedEventArgs e){App.ShowGallery();Close();}
-    private void SurfaceSizeChanged(object sender,SizeChangedEventArgs e){if(closed)return;EnhancementScroll.MaxHeight=Math.Max(160,Canvas.ActualHeight-116);ZoomOutButton.Visibility=ZoomInButton.Visibility=Canvas.ActualWidth<570?Visibility.Collapsed:Visibility.Visible;BottomPanel.MaxWidth=Math.Min(920,Math.Max(240,Canvas.ActualWidth-72));Filmstrip.MaxWidth=Math.Min(820,Math.Max(120,Canvas.ActualWidth-158));if(renderer is null)return;try{renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
-    private void ScaleChanged(SwapChainPanel sender,object args){if(renderer is null||closed)return;try{renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
+    private void SurfaceSizeChanged(object sender,SizeChangedEventArgs e){if(closed)return;EnhancementScroll.MaxHeight=Math.Max(160,Canvas.ActualHeight-116);ZoomOutButton.Visibility=ZoomInButton.Visibility=Canvas.ActualWidth<570?Visibility.Collapsed:Visibility.Visible;BottomPanel.MaxWidth=Math.Min(920,Math.Max(240,Canvas.ActualWidth-72));Filmstrip.MaxWidth=Math.Min(820,Math.Max(120,Canvas.ActualWidth-158));if(renderer is null)return;try{DisplayRenderer!.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
+    private void ScaleChanged(SwapChainPanel sender,object args){if(renderer is null||closed)return;try{DisplayRenderer!.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
     private async void Recover(Exception reason)
     {
-        if(recovering||closed)return;recovering=true;App.Log("Recovering renderer: "+reason.Message);
+        if(recovering||closed)return;StopLive(false);recovering=true;App.Log("Recovering renderer: "+reason.Message);
         try{enhancementCancellation?.Cancel();await CreateRendererAsync();if(closed)return;if(currentFrame is not null){await renderer!.ShowAsync(currentFrame,lifetime.Token);await ApplyEffectsAsync();}else if(current is not null)await DisplayAsync(index);if(!closed){renderer!.View(zoom,panX,panY,rotation);UpdateGlass();RefreshStatus();}}catch(OperationCanceledException){}catch(Exception ex){if(!closed)Fail(ex);}finally{recovering=false;}
     }
     private void RefreshStatus(bool probe=true)
@@ -435,7 +436,7 @@ public sealed partial class ViewerWindow : Window
         if(renderer is null||closed)return;
         try
         {
-            var s=probe?renderer.Status():renderer.CachedStatus;bool photoReady=currentFrame is not null;bool compatibility=currentFrame?.HdrCompatibility==true;bool busy=renderer.Busy||(!photoReady&&Loading.IsActive);updatingEnhancements=true;
+            var display=DisplayRenderer!;var s=probe?display.Status():display.CachedStatus;bool photoReady=currentFrame is not null;bool compatibility=livePlayback is null&&currentFrame?.HdrCompatibility==true;bool busy=display.Busy||(!photoReady&&Loading.IsActive);updatingEnhancements=true;
             HdrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):s.NativeHdr!=0||hdrRequested?s.HdrReason:s.HdrAvailable!=0?"TrueHDR 可用，未开启":s.HdrReason;
             VsrReasonText.Text=!photoReady?(Loading.IsActive?"正在加载照片…":"载入照片后可调整增强"):s.NativeHdr!=0?"原生 HDR 保留原始细节，暂不应用 VSR":vsrRequested?s.VsrMessage:s.VsrAvailable!=0?"VSR 可用，默认关闭":s.VsrMessage;
             HdrSwitch.IsOn=hdrRequested;VsrSwitch.IsOn=vsrRequested;
@@ -463,6 +464,7 @@ public sealed partial class ViewerWindow : Window
             DisplayText.Text=$"{s.Gpu}\nWindows HDR：{(s.HdrActive!=0?"已开启":"未开启")}\nFP16 / scRGB\nSDR 白色：{s.SdrWhite*80:0} nits\n{brightness}\nHDR / VSR 调用：{s.HdrEvaluations} / {s.VsrEvaluations}\n图片与画布显存：{s.GpuBytes/1048576.0:0} MB";
             StatusText.Text=!photoReady?(ErrorPanel.Visibility==Visibility.Visible?"照片无法加载":Loading.IsActive?"正在加载照片…":"照片未加载"):s.HasGainMap?(originalHeld?"SDR 底图 · 对照":s.HdrActive!=0?$"原生 HDR · {s.GainMapSource}":"SDR 底图 · 当前屏幕 SDR"):s.NativeHdr!=0?(s.HdrActive!=0?"原生 HDR · scRGB":"HDR 原图 · 当前屏幕 SDR"):busy&&(hdrRequested||vsrRequested)?"正在处理显示增强…":originalHeld?"原图 · 未应用增强":s.HdrEffective!=0?(s.VsrEffective!=0?"RTX HDR + VSR 已生效":"RTX HDR 已生效"):s.VsrEffective!=0?"VSR 已生效 · SDR":"SDR · 原图";
             if(photoReady&&s.NativeHdr==1&&originalHeld)StatusText.Text="HDR 原片 · 对照";
+            if(livePlayback is not null){StatusText.Text=originalHeld?"LIVE · 原图对照":s.HdrEffective!=0?"LIVE · RTX HDR 已生效":"LIVE · SDR 原片";VsrSwitch.IsEnabled=false;VsrReasonText.Text="Live 播放优先流畅，暂不叠加 VSR";VsrSwitch.OnContent="暂停";}else if(livePreparing)StatusText.Text+=" · Live 准备中";else if(liveWarning is not null)StatusText.Text+=" · Live 暂不可用";
             if(compatibility){HdrReasonText.Text=currentFrame!.Warning;VsrReasonText.Text="先以兼容预览查看，暂不应用显示增强";HdrSwitch.OnContent=VsrSwitch.OnContent="不适用";OriginalButton.Content="当前为兼容预览";OriginalButton.IsEnabled=false;StatusText.Text="兼容预览 · HDR 数据未读取";TuningExplanation.Text="HDR 数据未能解析，兼容预览保留可读取的原始底图，不应用 HDR / VSR。";}
             UpdateInfo();
             updatingEnhancements=false;
@@ -474,6 +476,7 @@ public sealed partial class ViewerWindow : Window
     private async Task ApplyEffectsAsync()
     {
         if(renderer is null||currentFrame is null||closed)return;
+        if(livePlayback is not null){livePlayback.SetOptions(LiveOptions());RefreshStatus(false);return;}
         enhancementCancellation?.Cancel();enhancementCancellation?.Dispose();enhancementCancellation=CancellationTokenSource.CreateLinkedTokenSource(loadingCancellation?.Token??lifetime.Token,lifetime.Token);var token=enhancementCancellation.Token;int generation=request;var active=renderer;
         uint gray=AutoBrightnessSwitch.IsOn?0:(uint)MiddleGraySlider.Value,peak=AutoPeakSwitch.IsOn?0:(uint)PeakSlider.Value;int preset=Math.Max(0,HdrPreset.SelectedIndex);
         try
@@ -524,7 +527,7 @@ public sealed partial class ViewerWindow : Window
     {
         if(renderer is null||closed)return;
         bool effects=uiSettings.AdvancedEffectsEnabled&&!accessibilitySettings.HighContrast;
-        bool ready=renderer.Metrics.BlurBuilds>0;var material=(effects,accessibilitySettings.HighContrast,Root.ActualTheme,ready);
+        bool ready=(LiveSurface.Opacity>0?DisplayRenderer:renderer)!.Metrics.BlurBuilds>0;var material=(effects,accessibilitySettings.HighContrast,Root.ActualTheme,ready);
         if(glassMaterial!=material){glassMaterial=material;var fill=effects&&ready?Colors.Transparent:accessibilitySettings.HighContrast?uiSettings.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background):Root.ActualTheme==ElementTheme.Dark?Color.FromArgb(255,40,40,40):Color.FromArgb(255,247,247,247);foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel,StatusBadge})panel.Background=new SolidColorBrush(fill);}
         double badgeTop=(Canvas.ActualWidth-TopPanel.ActualWidth)/2>=StatusBadge.ActualWidth+32?14:TopPanel.ActualHeight+28;
         if(StatusBadge.Margin.Top!=badgeTop)StatusBadge.Margin=new(20,badgeTop,20,0);
@@ -552,14 +555,16 @@ public sealed partial class ViewerWindow : Window
                 {
                     var p=child.TransformToVisual(Canvas).TransformPoint(new(0,0));var rect=new GlassRect((float)(p.X*dpi),(float)(p.Y*dpi),(float)(child.ActualWidth*dpi),(float)(child.ActualHeight*dpi),12*(float)dpi,1);rects.Add(rect);
                     if(popupImageRects.TryGetValue(child,out var source))AlignPopupImage(child,source,rect);
-                    var status=renderer.Status();var popupMaterial=new PopupMaterial(rect,Root.ActualTheme==ElementTheme.Dark,renderer,request,renderedZoom,renderedPanX,renderedPanY,rotation,status.HdrEffective,status.VsrEffective,status.HdrEvaluations,status.VsrEvaluations,renderer.NativeTuningRevision,originalHeld);
+                    // Popup snapshots refresh on interaction, never at video
+                    // frame rate: each snapshot requires a GPU readback.
+                    var active=DisplayRenderer!;var status=active.Status();var popupMaterial=new PopupMaterial(rect,Root.ActualTheme==ElementTheme.Dark,active,request,renderedZoom,renderedPanX,renderedPanY,rotation,status.HdrEffective,status.VsrEffective,livePlayback is null?status.HdrEvaluations:0,livePlayback is null?status.VsrEvaluations:0,active.NativeTuningRevision,originalHeld);
                     if(!popupMaterials.TryGetValue(child,out var previous)||previous!=popupMaterial){if(previous is null)PopupBackground(child,(Brush)Application.Current.Resources["FloatingBrush"]);popupMaterials[child]=popupMaterial;if(popupRequests.Remove(child,out var obsolete)){obsolete.Cancel();obsolete.Dispose();}var pending=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);popupRequests[child]=pending;var token=pending.Token;DispatcherQueue.TryEnqueue(()=>LoadPopupGlass(child,popupMaterial,token));}
                 }
                 else{popupMaterials.Remove(child);PopupBackground(child,TopPanel.Background);}
             }
             catch(ArgumentException){PopupBackground(child,(Brush)Application.Current.Resources["FloatingBrush"]);}
         }
-        try{renderer.Glass(rects.ToArray(),Root.ActualTheme==ElementTheme.Dark);}catch(COMException ex){Recover(ex);}
+        try{DisplayRenderer!.Glass(rects.ToArray(),Root.ActualTheme==ElementTheme.Dark);}catch(COMException ex){Recover(ex);}
     }
     private void ScheduleGlass()
     {
@@ -578,18 +583,18 @@ public sealed partial class ViewerWindow : Window
     {
         if(closed||renderer is null||displayProbeRunning||(!force&&Stopwatch.GetElapsedTime(lastDisplayProbe).TotalSeconds<2))return;
         displayProbeRunning=true;lastDisplayProbe=Stopwatch.GetTimestamp();
-        try{await renderer.PollDisplayAsync();if(!closed)RefreshStatus(false);}
+        try{await DisplayRenderer!.PollDisplayAsync();if(!closed)RefreshStatus(false);}
         catch(COMException ex){if(!closed)Recover(ex);}
         finally{displayProbeRunning=false;}
     }
     private void RootPointerMoved(object sender,PointerRoutedEventArgs e)=>ShowControls();
     private void PanelEntered(object sender,PointerRoutedEventArgs e){hover=true;ShowControls();}private void PanelExited(object sender,PointerRoutedEventArgs e){hover=false;lastActivity=DateTime.UtcNow;}
     private void MenuOpened(object sender,object e){menuDepth++;ShowControls(true);DispatcherQueue.TryEnqueue(UpdateGlass);}private void MenuClosed(object sender,object e){menuDepth=Math.Max(0,menuDepth-1);ShowControls();DispatcherQueue.TryEnqueue(UpdateGlass);}
-    private async void EnhancementOpened(object sender,object e){MenuOpened(sender,e);RefreshStatus();if(currentFrame?.Info.NativeHdr!=0||currentFrame?.HdrCompatibility==true)return;try{if(renderer is not null){await renderer.InitializeEffectsAsync(lifetime.Token);if(!closed)RefreshStatus();}}catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(Exception ex){App.Log("Enhancement detection: "+ex.Message);}}
+    private async void EnhancementOpened(object sender,object e){MenuOpened(sender,e);RefreshStatus();if(livePlayback is null&&(currentFrame?.Info.NativeHdr!=0||currentFrame?.HdrCompatibility==true))return;try{if(DisplayRenderer is {} active){await active.InitializeEffectsAsync(lifetime.Token);if(!closed)RefreshStatus();}}catch(OperationCanceledException){}catch(ObjectDisposedException){}catch(Exception ex){App.Log("Enhancement detection: "+ex.Message);}}
     private void SetOriginalHeld(bool value)
     {
         if(closed||originalHeld==value)return;originalHeld=value;
-        try{renderer?.HoldOriginal(value);RefreshStatus(false);}catch(COMException ex){Recover(ex);}
+        try{DisplayRenderer?.HoldOriginal(value);if(livePlayback is {} live)live.SetOptions(LiveOptions());RefreshStatus(false);}catch(COMException ex){Recover(ex);}
     }
     private void OriginalPressed(object sender,PointerRoutedEventArgs e){SetOriginalHeld(true);OriginalButton.CapturePointer(e.Pointer);ShowControls();}
     private void OriginalReleased(object sender,PointerRoutedEventArgs e){SetOriginalHeld(false);OriginalButton.ReleasePointerCapture(e.Pointer);ShowControls();}
@@ -605,8 +610,9 @@ public sealed partial class ViewerWindow : Window
             case VirtualKey.Add:case (VirtualKey)187:ZoomBy(1.25);break;case VirtualKey.Subtract:case (VirtualKey)189:ZoomBy(.8);break;
             case VirtualKey.R:RotateClick(sender,e);break;case VirtualKey.F:case VirtualKey.F11:ToggleFullScreen();break;
             case VirtualKey.D:if(ctrl)FavoriteClick(sender,e);else return;break;
+            case VirtualKey.L:LiveClick(sender,e);break;
             case VirtualKey.I:InfoClick(sender,e);break;case VirtualKey.O:if(ctrl)OpenClick(sender,e);else return;break;
-            case VirtualKey.Escape:if(InfoPanel.Visibility==Visibility.Visible){ShowInfo(false);InputLayer.Focus(FocusState.Programmatic);}else if(fullScreen)ToggleFullScreen();else Close();break;
+            case VirtualKey.Escape:if(livePlayback is not null||livePreparing){StopLive();break;}if(InfoPanel.Visibility==Visibility.Visible){ShowInfo(false);InputLayer.Focus(FocusState.Programmatic);}else if(fullScreen)ToggleFullScreen();else Close();break;
             default:return;
         }
         e.Handled=true;

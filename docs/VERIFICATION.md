@@ -1,5 +1,37 @@
 # Luma 本机验证记录
 
+## Live / 动态 RTX HDR 首轮（0.1.24，2026-10-15）
+
+首轮实现并在本机 RTX 5070 Ti Laptop / 已开启 Windows HDR 的显示器验证。0.1.24 为本地候选，公开下载仍为 0.1.23，本轮不创建新标签或 Release。格式、公开样本来源和实现边界见 [LIVE-PHOTOS.md](LIVE-PHOTOS.md)。
+
+- Core 48 项检查通过，其中 14 项新检查覆盖有边界的内嵌视频、现代 / 旧字段优先级、跨包显式关闭、截断 MP4、XML DTD、原生 PQ 标志、Samsung raw SEF 与 sefd、Apple 同名误配 / 重命名正确配对以及取消。JPEG / HEIC / MOV 真实资源另做集成测试，不用构造容器冒充可解码视频。
+- 9 个真实动态资源通过实际 MediaPlayer + TrueHDR + FP16：Google JPEG / HEIC、Pixel 6 Pro / 8a、Samsung One UI 5 / 6 JPEG、One UI 6 HEIC、Apple HEIC + HEVC MOV、维护者小米 HDR + Live JPEG。每项均有多次 SDK 求值、不同时间的 FP16 图像指纹与大于 1 的高亮值；VSR 调用为 0。
+- 维护者小米原件 14,202,351 字节，原始 3072×4096、增益图 nativeHdr=2 实际解码成功，静态画面真实 FP16 读回峰值 18.0（1024 预览，非屏幕实测 nits）；视频 1088×1440。只读前后 SHA256 一致。私人样本与公开测试资源均未加入 Git 或消费者包。
+
+| 样本 | 视频尺寸 | 首帧 ms | 提交 P95 ms | SDK HDR 调用 | 实际 FP16 峰值 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 小米 | 1088×1440 | 1649.5 | 4.29 | 101 | 7.801 |
+| Apple | 1440×1920 | 1525.2 | 2.48 | 103 | 7.488 |
+| Google JPEG | 1024×768 | 1890.7 | 2.42 | 194 | 7.801 |
+| Google HEIC | 1365×768 | 1427.2 | 2.15 | 200 | 7.801 |
+| Pixel 6 Pro | 1440×1088 | 1680.6 | 2.67 | 88 | 7.801 |
+| Pixel 8a | 1088×1440 | 1214.9 | 3.03 | 97 | 7.773 |
+| Samsung One UI 5 JPEG | 1440×1080 | 1871.0 | 2.48 | 107 | 4.145 |
+| Samsung One UI 6 JPEG | 1088×1440 | 1797.5 | 3.16 | 107 | 4.355 |
+| Samsung One UI 6 HEIC | 1088×1440 | 1283.8 | 2.45 | 63 | 6.863 |
+
+上表是单次诊断运行，首帧从开始创建播放实例到首次提交完成，包含媒体 / GPU / SDK 初始化；文件系统缓存未清理。提交耗时包含 CopyFrame / SDK / Present 的 CPU 等待，并非 GPU 全部耗时、物理输入延迟或稳定帧率。SDK 计数不是视频帧率；被合并的 VideoFrameAvailable 通知不作为丢帧率。
+
+所有样本的循环前后自有 GPU 纹理字节相同。小米 / Apple 分别为 80,065,440 / 99,234,720 字节；这不包含播放器、SDK 内部和驱动的全部分配。两者 UI 定时回调超额延迟 P95 约 0.88 / 0.83 ms。原图对照时视频继续前进且新增 SDK 调用为 0；松开恢复增强，默认静音 / 声音开关状态通过。准备中取消、自然结束、重播、播放中关闭、静态 lease 恢复和隐藏 still renderer 不重绘检查通过。
+
+普通看图回归：`verify_native.py` 的 SDR gamma / 色彩、ICC / EXIF、缩放 / 旋转、JXR 线性 FP16、真实 HDR-only / VSR-only / 组合、40 次缓存对照、毛玻璃读回通过。SDK-free 原生构建通过。49 个真实窗口、两次启动与持久 HDR-only 回归通过（`artifacts/viewer-lifecycle-20261015-212118/`）。先前一次用了含原生 HDR / 损坏文件的 native 测试目录，触发仅适用 SDR 夹具的 rapid-navigation 断言；换用明确的全 SDR 夹具后通过，未降低断言。
+
+3043 张、约 58.9 GB 的真实高清相册只读回归通过（`artifacts/gallery-performance-20261015-210707/`）：最多实现 22 张卡片，44 次 WIC 缩略图加载、未变化刷新新增 0 次加载；峰值 private 192,471,040 字节，UI 回调 P95 8.80 ms / 最大 22.23 ms。首次可视缩略图约 1052 ms；这是内部探针且包含共享 UI 调度，不是物理显示测量。全目录成员 / 长度 / 修改时间与 32 个抽样原件 hash 保持不变。
+
+本地完整 RTX 候选构建通过，EXE **61,128,398 字节（58.30 MiB）**，ZIP **85,705,657 字节（81.74 MiB）**，503 个载荷文件逐个解包 SHA256 一致。相比公开 0.1.23 安装器多 18,898 字节，属于成品比较，非功能代码净增量。没有新增运行时包，系统 HEVC / HEIF 需求不变。固定开发入口 `artifacts/Luma/Luma.App.exe` 已同步 0.1.24，501 文件与最终验证目录一致（安装包另含构建来源 / 运行条款文件）。构建保留脏源码候选标记；未创建 Release 或上传安装包。
+
+主要报告：`artifacts/live-photos/matrix.json`、`core-final.log`、`native-regression.log`、`lifecycle-final.log`、`gallery-regression.log`。小米原件解码记录在私有忽略目录。Computer Use 实际尝试两次，窗口列表有结果但窗口绑定报错，未完成真实点击 / 录屏验收；代码级真实 WinUI 窗口检查不替代听感、精确音画同步和视觉过渡验收。这些项目、冷启动播放延迟及原生 HDR 视频 / .livp 已保留在 TODO。
+
 ## 公开 0.1.23 与商店技术准备（2026-10-15）
 
 标签 `v0.1.23` 保持指向已验证的 `f688afc`。完整 [云端发布流程](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38715417474) 成功，消费者四文件与 API digest / SHA256SUMS 一致，503 文件安全解包，原始 NVIDIA DLL/PDF 与输入 SDK SHA256 核对通过。云端消费者包的安装器 61,109,500 字节、ZIP 85,692,027 字节；这是实际公开文件，不与上轮本地构建的精确字节数混用。
