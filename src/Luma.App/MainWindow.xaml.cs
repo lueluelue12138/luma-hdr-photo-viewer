@@ -19,6 +19,19 @@ public sealed partial class MainWindow : Window
     private readonly List<ViewerWindow> viewers=[];
     private int responsiveBand=-1;
     private SettingsPanel? settingsPanel;
+    private DispatcherTimer? settingsDisplayTimer;
+    private void RefreshSettingsDisplay()
+    {
+        settingsDisplayTimer?.Stop();
+        if(!closed&&page=="settings"&&SettingsHost.Visibility==Visibility.Visible)
+            settingsPanel?.RefreshDisplay(WinRT.Interop.WindowNative.GetWindowHandle(this));
+    }
+    private void ScheduleSettingsDisplay()
+    {
+        if(closed||page!="settings")return;
+        if(settingsDisplayTimer is null){settingsDisplayTimer=new(){Interval=TimeSpan.FromMilliseconds(350)};settingsDisplayTimer.Tick+=(_,_)=>RefreshSettingsDisplay();}
+        settingsDisplayTimer.Stop();settingsDisplayTimer.Start();
+    }
     private bool refreshAllPending;
     private readonly HashSet<long> refreshAlbumsPending=[];
     private Task refreshTask=Task.CompletedTask;
@@ -64,8 +77,12 @@ public sealed partial class MainWindow : Window
         WindowLayout.Configure(this,Root);
         App.RegisterGallery(this);
         WindowLayout.SizeForDpi(this,Root,1160,800);AppWindow.TitleBar.PreferredHeightOption=TitleBarHeightOption.Standard;AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
-        Root.Loaded+=Loaded;Root.SizeChanged+=(_,_)=>UpdateResponsiveLayout();Closed+=(_,_)=>{closed=true;lifetime.Cancel();searchCancellation?.Cancel();App.Indexer.FolderChanged-=FolderChanged;};
+        Root.Loaded+=Loaded;Root.SizeChanged+=(_,_)=>UpdateResponsiveLayout();Closed+=(_,_)=>{closed=true;settingsDisplayTimer?.Stop();settingsPanel?.DeactivateDisplay();lifetime.Cancel();searchCancellation?.Cancel();App.Indexer.FolderChanged-=FolderChanged;};
         App.Indexer.FolderChanged+=FolderChanged;
+        // Only query while settings is visible. Activation catches a return
+        // from Windows HDR/calibration; debounce cross-monitor moves.
+        Activated+=(_,e)=>{if(e.WindowActivationState!=WindowActivationState.Deactivated)RefreshSettingsDisplay();};
+        AppWindow.Changed+=(_,e)=>{if(e.DidPositionChange)ScheduleSettingsDisplay();};
     }
     private void UpdateResponsiveLayout()
     {
@@ -138,11 +155,11 @@ public sealed partial class MainWindow : Window
                 SettingsHost.Content=settingsPanel;
             }
             settingsPanel.SelectedThemeIndex=Root.RequestedTheme switch{ElementTheme.Light=>1,ElementTheme.Dark=>2,_=>0};ready=true;
-            Gallery.Visibility=Visibility.Collapsed;SettingsHost.Visibility=Visibility.Visible;Motion.Enter(SettingsHost);return;
+            Gallery.Visibility=Visibility.Collapsed;SettingsHost.Visibility=Visibility.Visible;RefreshSettingsDisplay();Motion.Enter(SettingsHost);return;
         }
         if(args.SelectedItem is not NavigationViewItem item)return;
         if(item.Tag is long id){page="album";albumId=id;sort=albums.FirstOrDefault(a=>a.Id==id)?.Sort??"name";SortBox.SelectedIndex=sort switch{"newest"=>1,"oldest"=>2,_=>0};}else{page=item.Tag?.ToString()??"all";albumId=0;}
-        Gallery.Visibility=Visibility.Visible;SettingsHost.Visibility=Visibility.Collapsed;await ReloadAsync();Motion.Enter(Gallery);
+        settingsDisplayTimer?.Stop();settingsPanel?.DeactivateDisplay();Gallery.Visibility=Visibility.Visible;SettingsHost.Visibility=Visibility.Collapsed;await ReloadAsync();Motion.Enter(Gallery);
     }
     private async void SearchChanged(AutoSuggestBox sender,AutoSuggestBoxTextChangedEventArgs args)
     {

@@ -1,5 +1,19 @@
 # Luma 本机验证记录
 
+## 用户说明、HDR 设置与校准入口（0.1.23，2026-10-15）
+
+设置页改为跟随主题的原生卡片：开启 Windows HDR → 校准屏幕 → 欣赏照片，随后是外观、默认查看器与关于。格式和峰值说明折叠，README 按维护者实际的电影赏帧 / 自己照片的场景重写，新增 [HDR 屏幕准备指南](HDR-SETUP.md)。系统 HDR 通过公开显示设置入口由用户控制，不模拟系统快捷键。
+
+- 最终 RTX 自包含消费者构建 `artifacts/Luma-hdr-setup-final/` 通过；版本 0.1.23，502 个文件共 **203491885 字节**。SDK-free 原生构建也通过；没有新增运行时包或依赖。
+- `tests/verify_settings.py --app artifacts/Luma-hdr-setup-final/Luma.App.exe` 在独立 `--test-library` 中通过，报告 `artifacts/settings-20261015-123113/settings.json`：主页启动不构造设置页、不查询显示器；进入页面首次等待 **75.04 ms**（本次进程 / 桌面的异步等待，非冷启动或普遍性能承诺）；20 次原生窗口位置改变合并为 1 次查询，隐藏设置后的 12 次改变为 0，再次进入读取新数据。
+- 真正运行 WinUI 以浅 / 深色 × 1160 / 600 DIP 宽度检查横向边界、滚动和按钮，导出四张页面及展开校准 / 底部关于的 XAML 图片，全部目视复核。注入 HDR 3675 / SDR / 不可用 / NaN / 无穷 / 负数状态，确认不将屏幕峰值截断到 RTX 上限、不在 HDR 关闭时宣称 HDR 峰值、不残留另一屏幕数据。注入状态不代表连接了对应亮度的物理屏幕。
+- `tests/verify_display_info.py` 对最终 RTX 与 SDK-free DLL 均通过空指针 / 无效 HWND、实际显示器匹配、峰值与 SDR 白色的单位核对。读值与现有渲染器窗口路径相同：当前唯一屏幕 **NE160QDM-NZL / HDR 开启 / 峰值 624 nits / 全屏 624 nits / SDR 白色 480 nits**。最终 RTX 本次原生查询 8 次：首次 **13.43 ms**，中位 **0.273 ms**；它只测查询函数，不包括 UI / 启动，不代表实测面板亮度。报告 `artifacts/display-info-Luma-hdr-setup-final.json` 与 `artifacts/display-info-hdr-setup-standard.json`。设置查询不创建渲染器、D3D 设备、交换链或 NGX，不扫描图库。
+- Computer Use 实际从隔离 Luma 点击“Windows HDR 设置”，确认进入 Windows“系统 → 屏幕”、可见 HDR 入口；实际点击“打开 HDR 校准”，确认已安装的 `MicrosoftCorporationII.WindowsHDRCalibration` 欢迎页，随后关闭本轮打开的校准与隔离 Luma。未修改 HDR 开关、安装软件或保存校准文件，原用户 Luma 继续运行。浅色 / 窄屏采用上述实际 WinUI 布局导出检查；桌面截图只证明页面与入口，不证明物理 HDR 观感。
+- 校准路由的替身检查覆盖：已安装成功不再打开商店、未安装打开准确产品页、激活异常 / 商店不可用转网页、全部失败返回失败。实际安装应用的启动已验证；未安装机器的商店交互没有通过卸载来模拟，补验留在 TODO。商店产品与校准步骤已对照微软文档，来源见准备指南。
+- 最终 RTX `verify_native.py` 真正完成 NVIDIA SDK HDR-only、VSR-only、组合、40 次原图缓存切换及 FP16 GPU 读回（3840×2160 合成照片高光约 7.793 scRGB），原生浮点 JXR / Gaussian 玻璃回归也通过。SDK-free 同一套基础渲染检查通过且 SDK 调用保持为 0；未把它算作 AI 成功。34 项核心 / 索引检查通过。
+
+本轮不改变照片解码、HDR 映射和呈现逻辑；仅新增独立只读显示查询 ABI，现有 `Status` 不变。真实双屏 / 跨 DPI、未安装校准应用机器的商店交互尚需补验。候选：`artifacts/Luma-hdr-setup-final/Luma.App.exe`；完成后按既有授权提交并正常推送，不创建标签 / Release。
+
 ## 照片详情与后台元数据（0.1.22，2026-10-15）
 
 顶部独立信息按钮 / I 快捷键打开可滚动详情；常用文件、日期、像素、相机 / 镜头 / 曝光、EXIF 色彩、实际 HDR 来源和有效 GPS 在前，其他参数分组搜索。复制路径、完整详情与原文件位置使用统一按钮。搜索输入不再误触发 I / R / 方向键等看图快捷键；普通控件的空格对照保留。具体范围及系统字段含义见 [照片详情说明](PHOTO-DETAILS.md)。文件创建时间与拍摄时间明确分开，系统每像素位数不作为 HDR 判断。

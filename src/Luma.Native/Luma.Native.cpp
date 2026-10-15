@@ -83,6 +83,7 @@ ComPtr<ID3DBlob> compiledShader(const char* source,const char* entry,const char*
 #include "Glass.h"
 #include "GainMap.h"
 #include "Heif.h"
+#include "DisplayInfo.h"
 
 std::unique_ptr<Frame> decode(const wchar_t* path,UINT maxEdge=0,bool thumbnail=false,bool compatibility=false) {
     HRESULT init=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
@@ -546,6 +547,7 @@ struct Renderer {
     }
 };
 #define API extern "C" __declspec(dllexport)
+API HRESULT __cdecl LumaGetDisplayInfo(HWND hwnd,DisplayInfo* result){if(!result)return E_POINTER;*result={};return safe([&]{*result=queryDisplayInfo(hwnd);});}
 API const wchar_t* __cdecl LumaError(){return lastError.c_str();}
 API HRESULT __cdecl LumaDecode(const wchar_t* path,FrameInfo* info,void** result){if(!path||!info||!result)return E_POINTER;*result=nullptr;return safe([&]{auto f=decode(path);*info=f->info;*result=f.release();});}
 API HRESULT __cdecl LumaDecodeSized(const wchar_t* path,UINT maxEdge,FrameInfo* info,void** result){if(!path||!info||!result)return E_POINTER;*result=nullptr;return safe([&]{auto f=decode(path,maxEdge);*info=f->info;*result=f.release();});}

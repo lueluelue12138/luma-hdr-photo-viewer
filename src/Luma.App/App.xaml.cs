@@ -29,6 +29,10 @@ public partial class App : Application
             Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();await ViewerPreferences.LoadAsync();
             Log($"Launch {Environment.ProcessId}");
             string? file=LaunchArguments.PhotoPath(cli);
+            if(test>=0&&cli.Contains("--verify-settings"))
+            {
+                window=new MainWindow();window.Activate();await ((MainWindow)window).VerificationSettingsAsync();return;
+            }
             if(test>=0&&cli.Contains("--verify-photo-details"))
             {
                 window=new MainWindow();window.Activate();await PhotoDetailsVerification.RunAsync((MainWindow)window,file);return;
