@@ -10,6 +10,7 @@
 
 - [x] 完成可行性调研并实现 0.1.24 首轮预览，范围与依赖见 [Live Photos](LIVE-PHOTOS.md)。无需新增 FFmpeg / NuGet；SDK-free 原生构建通过。当前公开 Release 仍为 0.1.23。
 - [x] 找到 Google / Immich / Kingfisher 公开样本并记录固定 commit / SHA256；补验维护者小米 HDR + Live 原件。静态增益图成功解码，内嵌视频保留；只读测试，私人照片与样本均未进入 Git / 安装包。
+- [x] 按维护者要求整理可手动导入的 `图片/Luma Live 测试相册`：9 张 Live 照片（小米、iPhone、Google、Pixel、三星）与 1 个 iPhone 配套 MOV，共 50,756,755 字节。副本逐个 SHA256 与原件一致，重命名后的 9 张资源均重新探测成功，Apple 标识配对正确；附本地使用说明与校验清单。报告 `artifacts/live-photos/manual-album.json` / `manual-album-probe.json`，媒体不入 Git。
 - [x] 实现有边界的 JPEG / HEIF XMP 与内嵌视频探测、Apple identifier 配对，兼容三星 raw SEF / sefd。48 项 Core 检查包括 14 项 Live 边界、DTD、取消、误配与旧字段优先级测试；真实 Google / Pixel / Samsung / Apple 与小米资源识别通过。
 - [x] 同窗口按需 LIVE / L 播放，默认静音、独立原声按钮，Esc 停止，切图 / 失焦 / 关闭退回缓存中的静态照片。空格仍优先用于同时间轴原图对照；不在导入 / 悬停时自动播放。
 - [x] SDR 视频接入真实 TrueHDR 与 FP16，单个在途帧、复用纹理 / SDK、隐藏静态图停止重绘，弹出菜单不逐帧读回。实际小米 / iPhone 的 SDK / 动态 FP16、准备中取消、循环预算、原图对照、自然结束 / 重播 / 关闭通过；静态 native / 3043 张真实相册 / 49 窗口回归见 VERIFICATION.md。
