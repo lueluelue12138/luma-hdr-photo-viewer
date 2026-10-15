@@ -8,9 +8,9 @@ Luma 是免费、开源的 Windows 原生照片查看器，支持**原生 HDR �
 
 A native Windows photo viewer with RTX HDR for SDR photos and native HDR image support.
 
-[版本发布](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases) · [HDR 入门](docs/HDR-SETUP.md) · [参与贡献](CONTRIBUTING.md)
+[下载最新版本](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/latest) · [HDR 入门](docs/HDR-SETUP.md) · [参与贡献](CONTRIBUTING.md) · [隐私说明](PRIVACY.md)
 
-**开发中 · 当前版本 `0.1.23` · 尚未发布正式下载版，可自行构建。**
+**当前公开版本 `0.1.23` · Windows 11 x64。** [下载安装包](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/download/v0.1.23/Luma-0.1.23-windows-x64-rtx-setup.exe)（约 58.28 MiB），或在 [Release 页面](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.23) 获取便携版与更新说明。当前包未签名；微软商店版准备中。
 
 ## 为什么做 Luma
 

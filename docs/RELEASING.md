@@ -66,6 +66,8 @@ python tests/verify_installer.py
 
 ## 标签与 Release
 
+`v0.1.23` 已于 2026-10-15 按维护者明确要求公开为首个正式 Release：[下载与说明](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.23)。此前 `v0.1.16` 构建失败、`v0.1.17` 仅有草稿；标签本身不会出现在公开 Releases 列表。新标签仍默认创建草稿，后续公开需维护者明确要求，不把本次发布授权改成永远自动公开。
+
 1. 完成合适验证，提交代码与文档，并核对工具作者及人类共同署名。
 2. 项目版本、MSIX 版本和标签基础版本一致。例如 `0.1.17` / `0.1.17.0` 对应 `v0.1.17` 或 `v0.1.17-beta.1`。
 3. 推送附注标签；工作流构建并上传完整 RTX 包到 Release 草稿。包名、能力和源码提交不匹配会失败，已公开的 Release 不会被覆盖。
@@ -76,6 +78,6 @@ python tests/verify_installer.py
 
 ## Store 路线
 
-保留 `scripts/Package.ps1` 的 MSIX 构建。Store 身份、签名、共享运行库、认证与正式默认应用验收继续待办；本轮不上传 Microsoft Store。
+采用 `scripts/Build-Store.ps1` 的完整 RTX、自包含 MSIX 路线；传统 `Package.ps1` 保留为旧开发工具，不用于商店提交。已有手动 Actions 出包流程、身份模板、包核对、隐私说明、商店文案与审核备注，见 [微软商店准备](MICROSOFT-STORE.md)。本地开发身份 MSIX 已实际出包并核对 504 文件；真实 Partner Center 身份、实际 MSIX 安装 / 更新 / 卸载与 WACK 仍待完成。未上传或提交微软商店。
 
 参考：[GitHub deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)、[标签触发](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)、[Release 草稿](https://docs.github.com/en/rest/releases/releases#create-a-release)、[Inno Setup 当前用户安装](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm)。NVIDIA 条款以维护者实际下载、随包保留的原始许可为准。

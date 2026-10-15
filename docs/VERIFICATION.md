@@ -1,5 +1,13 @@
 # Luma 本机验证记录
 
+## 公开 0.1.23 与商店技术准备（2026-10-15）
+
+标签 `v0.1.23` 保持指向已验证的 `f688afc`。完整 [云端发布流程](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38715417474) 成功，消费者四文件与 API digest / SHA256SUMS 一致，503 文件安全解包，原始 NVIDIA DLL/PDF 与输入 SDK SHA256 核对通过。云端消费者包的安装器 61,109,500 字节、ZIP 85,692,027 字节；这是实际公开文件，不与上轮本地构建的精确字节数混用。
+
+实际云端 `Luma.Native.dll` 在本机完成 SDK HDR-only、独立 / 组合 VSR、40 次缓存对照、线性原生 JXR、FP16 玻璃 / 读回回归；3840×2160 SDR 夹具仅 TrueHDR 输出高光 7.793 scRGB，VSR 调用为 0。云端 EXE 完成 49 个真实窗口 / 两次启动、工具栏交互及持久 HDR-only，报告 `artifacts/viewer-lifecycle-20261015-181017/`，约 38 秒是整轮验证耗时，不是启动延迟。正式 Release 已公开为非草稿、非预发布。
+
+商店路线本轮只准备：独立 staging 的开发身份 MSIX，MakeAppx 架构 / 清单校验与 504 文件逐字节核对通过（87,358,265 字节），13 个关联、logo、原 NVIDIA DLL/PDF/条款、来源和 SHA256 一致。原 EXE 发布载荷不改动；占位身份 / 脏源码的提交防护、PowerShell 语法与三份工作流 actionlint 校验通过。300×300 透明商店 tile 从既有 master 生成并读回一致。真实 Store 身份、包的安装与应用激活、迁移、WACK 和商店认证未执行，不能以静态包检查代替上述结论。
+
 ## 安装包适度精简与覆盖升级（0.1.23，2026-10-15）
 
 完整 RTX 包同轮测量：EXE **60.97 → 58.26 MiB**、ZIP **84.19 → 81.70 MiB**、程序目录 **194.07 → 193.93 MiB**。只调整 LZMA2 / ZIP 无损压缩与主程序 PDB 发布策略，完整 .NET / WinUI / NVIDIA / 语言 / 原生 HDR 能力保留；503 份 ZIP 文件、原 NVIDIA DLL / PDF / 条款、许可及 SHA256 比对通过。已有 245 份运行库 DLL 与基线逐字节一致，其余变化包括应用编译 / 链接元数据与构建信息，未手工剔除框架文件。新增每轮本地 `package-size.json`，不改变四份 Release 上传白名单。详见 [体积拆分、解码器依赖与实验边界](PACKAGE-SIZE.md)。

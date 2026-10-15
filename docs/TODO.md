@@ -2,6 +2,16 @@
 
 持续记录用户反馈、未完成工作和发行准备。新增待办写入本文；完成后勾选并记录验证结果。体积目标和性能目标必须与实测结果区分。
 
+## 首个公开 Release 与微软商店准备（2026-10-15）
+
+- [x] 按维护者明确要求创建 `v0.1.23`（固定 `f688afc`），完整 [RTX 云端流程 38715417474](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38715417474) 构建 / 安装 / 上传通过。四个消费者文件下载后与 GitHub digest / SHA256SUMS 一致，503 文件、原始 NVIDIA DLL/PDF 与许可核对通过。云端消费者 DLL 实际 HDR-only / VSR-only / 组合 / 缓存对照及 FP16 读回通过；云端 EXE 49 个窗口、两次启动与偏好恢复通过（`artifacts/viewer-lifecycle-20261015-181017/`）。
+- [x] 公开 [Luma 0.1.23 正式 Release](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.23)：非草稿、非预发布，安装器 61,109,500 字节（58.28 MiB），ZIP 85,692,027 字节（81.72 MiB）。旧标签未移动，旧 0.1.17 草稿未公开；后续标签仍默认草稿，不自动泛化本次发布授权。README 改为实际下载入口。
+- [x] 准备独立 staging 的 `Build-Store.ps1`、13 关联 / 原始组件 / 字节一致验证和手动 Store Actions 出包（不会上传商店）。实际 MakeAppx 开发包 87,358,265 字节（83.31 MiB），504 文件比对通过；使用开发身份，未签名、未安装、未认证。身份模板明确拒绝占位值；不修改 EXE 发布载荷，不伪造正式 Publisher。
+- [x] 准备 `PRIVACY.md`、`docs/MICROSOFT-STORE.md`、中文商店文案、`runFullTrust` 审核用途说明、截图清单与透明 300×300 商店图标生成脚本。隐私说明区分 Luma 本地功能和第三方组件行为；不声称整个系统永不联网。本地图标与 workflow 静态校验通过，不上传私人照片或把产品示意图当真实截图。
+- [ ] 维护者注册 / 验证微软开发者账户，预留名称，提供 Product identity 的 Name / Publisher / PublisherDisplayName 与确认的显示名称；确认联系方式、市场、价格及年龄分级。
+- [ ] 获取真实身份后运行 Store Actions，完成实际 MSIX 安装、资源管理器文件激活、WindowsApps 只读目录、HDR/VSR、更新 / 卸载及 EXE 共存 / 数据迁移检查。EXE 的数据保留结论不自动套用 MSIX。
+- [ ] 准备有公开授权的真实截图（PNG ≥1366×768），运行 WACK 并保存报告，核对附加许可 / NVIDIA 分发要求后再提交认证；当前仅技术准备，不声称已通过认证或已经上架。
+
 ## 用户说明与 HDR 入门（2026-10-15）
 
 - [x] 在“关于 Luma”添加 GitHub 项目与版本发布页面的原生 HyperlinkButton，可在默认浏览器打开，提供明确提示与辅助功能名称。两个目标页面 HEAD 均返回 200；完整构建与现有设置页 WinUI 深浅 / 宽窄检查通过，底部关于布局已目视复核，报告 `artifacts/settings-20261015-125202/settings.json`。候选 `artifacts/Luma-about-links/Luma.App.exe`；本轮仅本地提交，等待验收后推送。

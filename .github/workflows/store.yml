@@ -1,0 +1,102 @@
+name: Prepare Microsoft Store MSIX (no submission)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+
+concurrency:
+  group: store-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      NVIDIA_SDK_REPOSITORY: ${{ vars.NVIDIA_SDK_REPOSITORY }}
+      NVIDIA_SDK_REVISION: ${{ vars.NVIDIA_SDK_REVISION }}
+      NVIDIA_SDK_SHA256: ${{ vars.NVIDIA_SDK_SHA256 }}
+    steps:
+      - name: Check out requested committed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require real Partner Center identity
+        env:
+          PACKAGE_NAME: ${{ vars.STORE_PACKAGE_NAME }}
+          PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+          DISPLAY_NAME: ${{ vars.STORE_DISPLAY_NAME }}
+          SDK_ACCESS_CONFIGURED: ${{ secrets.NVIDIA_SDK_DEPLOY_KEY != '' }}
+        run: |
+          if ($env:SDK_ACCESS_CONFIGURED -ne 'true' -or $env:NVIDIA_SDK_REPOSITORY -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Configure the read-only private SDK input first.' }
+          if ($env:NVIDIA_SDK_REVISION -notmatch '^[a-fA-F0-9]{40}$' -or $env:NVIDIA_SDK_SHA256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Pin the private SDK commit and archive SHA256.' }
+          foreach ($field in @('PACKAGE_NAME','PUBLISHER','PUBLISHER_DISPLAY_NAME','DISPLAY_NAME')) {
+            $value = [Environment]::GetEnvironmentVariable($field)
+            if (!$value -or $value -match '(?i)REPLACE|PLACEHOLDER|Luma Development') { throw "Configure $field from Partner Center before running this workflow." }
+          }
+          New-Item -ItemType Directory artifacts -Force | Out-Null
+          @{packageName=$env:PACKAGE_NAME;publisher=$env:PUBLISHER;publisherDisplayName=$env:PUBLISHER_DISPLAY_NAME;displayName=$env:DISPLAY_NAME} |
+            ConvertTo-Json | Set-Content artifacts/store-identity.json -Encoding utf8
+
+      - name: Set up tested .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Verify public source and core behavior
+        run: |
+          python tests/check_public_source.py
+          if ($LASTEXITCODE -ne 0) { throw 'Public source boundary check failed.' }
+          dotnet run --project tests/Luma.Tests/Luma.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
+
+      - name: Read pinned private SDK input
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ vars.NVIDIA_SDK_REPOSITORY }}
+          ref: ${{ vars.NVIDIA_SDK_REVISION }}
+          ssh-key: ${{ secrets.NVIDIA_SDK_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: artifacts/private-sdk
+
+      - name: Verify SDK and build complete application
+        run: |
+          ./scripts/Install-NvidiaSdk.ps1 -ArchivePath "$PWD/artifacts/private-sdk/RTX_Video_SDK_v1.1.0.zip"
+          ./scripts/Build-Release.ps1 -Variant rtx -Distribution
+          python tests/verify_release.py --variant rtx
+          if ($LASTEXITCODE -ne 0) { throw 'Complete RTX package verification failed.' }
+
+      - name: Build unsigned MSIX with exact Store identity
+        run: |
+          ./scripts/Build-Store.ps1 -SkipBuild -ForStore -IdentityPath artifacts/store-identity.json -OutputDirectory "$PWD/artifacts/store-submission"
+          python tests/verify_store_package.py artifacts/store-submission --source-payload artifacts/release-payload-rtx --require-store-identity
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX payload verification failed.' }
+
+      - name: Preserve submission candidate only
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Store-MSIX-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            artifacts/store-submission/*.msix
+            artifacts/store-submission/SHA256SUMS.txt
+            artifacts/store-submission/store-build-info.json
