@@ -2,6 +2,17 @@
 
 持续记录用户反馈、未完成工作和发行准备。新增待办写入本文；完成后勾选并记录验证结果。体积目标和性能目标必须与实测结果区分。
 
+## Live / 动态照片与 RTX HDR（2026-10-15）
+
+- [x] 完成首轮可行性调研：[Live Photos 方案](LIVE-PHOTOS.md)。核对 Apple 配对资源 / 标识与视频时点、Android Motion Photo 标准容器、NVIDIA 官方视频增强定位、Windows Media Foundation / D3D11 和现有静态缓存 / 上传接口；基础预览可行，动态 RTX HDR 有接入依据。未实现或验证 Live 播放，不用现有静态 HDR 成功代替动态效果 / 帧率证明。
+- [x] 核对竞品原始文档：JarkViewer 已声明 Live / Motion 支持，HDRImageViewer 已声明 HDR 静态封面与媒体层播放。本轮未安装验收竞品，不宣称“全球独家”；差异方向是动态片段 RTX HDR 与一体化体验。
+- [ ] 按需下载 / 收集完整 iPhone HEIC/JPEG+MOV、标准 / 旧 Google、Samsung 与其他 Android 原文件；分别识别静态与视频的 SDR / 原生 HDR，不把封面增益图直接套到视频，不凭同名误配。只读测试并记录来源 / hash，私人样本不入 Git。
+- [ ] 实现资源探测与 Windows 视频解码原型、静态封面优先和缺失 / 损坏视频回退；首轮避免新增整套 FFmpeg / 播放器依赖，实际系统编码器需求与包体积另测。
+- [ ] 加入当前窗口按需 Live 播放、音频控制 / 同步、旋转 / 裁切 / 主照片时点、快速切图取消；不占用空格 HDR 对照，不在相册扫描 / 缩略图悬停自动启动播放。
+- [ ] 设计持续 D3D11 帧提交、有限纹理 / SDK 会话复用，支持 SDR 视频逐帧 RTX HDR 与同时间轴原图对照；实际 SDK / FP16、首帧 / 帧间隔 / 丢帧 / 显存 / 动态玻璃和 3000 张静态相册性能回归通过后再宣传支持。
+- [ ] 后续补充 PQ / HLG 原生 HDR 动态视频、`.livp` 和更多厂商封装；Windows 系统扩展依赖、降级提示和跨屏效果分别验收。完整 Dolby Vision 动态元数据处理不自动列为已支持。
+- [ ] 微软商店账户注册按维护者安排延后；保留既有准备，先推进其他研发，不虚构正式 Store 身份或提交状态。
+
 ## 首个公开 Release 与微软商店准备（2026-10-15）
 
 - [x] 按维护者明确要求创建 `v0.1.23`（固定 `f688afc`），完整 [RTX 云端流程 38715417474](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38715417474) 构建 / 安装 / 上传通过。四个消费者文件下载后与 GitHub digest / SHA256SUMS 一致，503 文件、原始 NVIDIA DLL/PDF 与许可核对通过。云端消费者 DLL 实际 HDR-only / VSR-only / 组合 / 缓存对照及 FP16 读回通过；云端 EXE 49 个窗口、两次启动与偏好恢复通过（`artifacts/viewer-lifecycle-20261015-181017/`）。
