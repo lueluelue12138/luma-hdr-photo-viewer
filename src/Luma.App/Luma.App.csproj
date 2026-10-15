@@ -7,6 +7,8 @@
     <Platforms>x64</Platforms><PlatformTarget>x64</PlatformTarget><RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained><SelfContained>true</SelfContained><WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
     <EnableMsixTooling>true</EnableMsixTooling><PublishReadyToRun>false</PublishReadyToRun>
+    <!-- Keep symbols in developer build output, out of consumer packages. -->
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
     <LumaNativeDirectory Condition="'$(LumaNativeDirectory)' == ''">$(MSBuildProjectDirectory)\..\Luma.Native\bin</LumaNativeDirectory>
   </PropertyGroup>
   <ItemGroup>

@@ -62,7 +62,9 @@ LicenseFile={#RtxLicenseFile}
 #else
 LicenseFile={#PayloadDir}\LICENSE
 #endif
-Compression=lzma2/normal
+; Keep the offline runtime payload intact; spend build time on compression.
+; ultra64 uses a 64 MiB dictionary (about 67 MiB decompressor memory).
+Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes

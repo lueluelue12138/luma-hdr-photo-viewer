@@ -52,6 +52,18 @@ python tests/verify_installer.py
 
 目前安装包与应用未做代码签名；编译器签名核对不等于应用已签名。完整包为离线自包含，用户不需下载开发 SDK、.NET SDK 或额外配置私有仓库；实际 RTX 功能仍需要兼容 GPU、驱动和开启 HDR 的屏幕。
 
+### 覆盖升级与数据保留
+
+同一 Windows 用户已用 EXE 安装过 Luma 时，直接运行新版安装包即可覆盖升级。安装器保持固定 AppId，并按 Inno 的默认 `UsePreviousAppDir=yes` 找到上次安装位置，包括自定义目录；程序运行中可能提示先关闭窗口。程序一般在 `%LOCALAPPDATA%\Programs\Luma`，图库数据库 / 设置 / 缓存在独立的 `%LOCALAPPDATA%\Luma`，原照片始终保留在原文件夹，升级或卸载都不清空这些用户数据。
+
+0.1.17 → 0.1.23 已在隔离安装身份实际验证：新版不传安装目录仍找到旧目录，两版都能打开同一份图库，相册 / 收藏 / 最近记录 / 主题及 HDR/VSR 偏好保留。可用 `python tests/verify_installer.py --previous-installer <旧版本隔离安装器>` 复验。首次测试安装器仍用 `Build-Release.ps1 -TestInstaller` 生成，不能把真实产品安装器传给隔离测试。
+
+这是“下载新版后运行安装器”的覆盖升级；当前没有应用内自动检查、下载和安装更新。便携版则应退出程序后完整替换程序文件夹，不只替换 EXE。跨 Windows 用户、安装版 / 便携版切换及未来数据库结构迁移需要分别验证。
+
+### 体积与压缩
+
+0.1.23 按适度精简策略使用 `lzma2/ultra64` 安装压缩与 .NET `SmallestSize` ZIP，保留全部运行库和格式支持，不启用 .NET 裁剪。当前本地候选约 EXE 58.26 MiB / ZIP 81.70 MiB / 程序目录 193.93 MiB；每次构建在输出目录生成 `package-size.json` 记录实际字节数，旧 PowerShell 的 ZIP 保留 `Optimal` 回退。详细拆分、解码器依赖、裁剪实验和验证边界见 [包体积审计](PACKAGE-SIZE.md)。
+
 ## 标签与 Release
 
 1. 完成合适验证，提交代码与文档，并核对工具作者及人类共同署名。

@@ -63,11 +63,20 @@ if($LASTEXITCODE -ne 0){throw 'EXE installer compilation failed.'}
 $zip=Join-Path $output "Luma-$releaseVersion-windows-x64-$Variant-portable.zip"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 if(Test-Path -LiteralPath $zip){Remove-Item -LiteralPath $zip -Force}
-[System.IO.Compression.ZipFile]::CreateFromDirectory($payload,$zip,[System.IO.Compression.CompressionLevel]::Optimal,$false)
+$zipCompression=[System.IO.Compression.CompressionLevel]::Optimal
+# .NET 6+ / PowerShell 7 can produce a denser, standard Explorer-compatible ZIP.
+# Windows PowerShell's older framework keeps its supported Optimal fallback.
+if([Enum]::IsDefined([System.IO.Compression.CompressionLevel],'SmallestSize')){
+    $zipCompression=[Enum]::Parse([System.IO.Compression.CompressionLevel],'SmallestSize')
+}
+[System.IO.Compression.ZipFile]::CreateFromDirectory($payload,$zip,$zipCompression,$false)
 $installer=Join-Path $output "Luma-$releaseVersion-windows-x64-$Variant-setup.exe"
 $sums=@($installer,$zip) | ForEach-Object {"$((Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($_))"}
 $sums | Set-Content -LiteralPath (Join-Path $output 'SHA256SUMS.txt') -Encoding ascii
 $metadata | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'build-info.json') -Encoding utf8
+$payloadFiles=Get-ChildItem -LiteralPath $payload -File -Recurse
+[ordered]@{schema=1;version=$releaseVersion;variant=$Variant;payloadFiles=$payloadFiles.Count;payloadBytes=[long]($payloadFiles|Measure-Object Length -Sum).Sum;installerBytes=(Get-Item -LiteralPath $installer).Length;portableZipBytes=(Get-Item -LiteralPath $zip).Length;installerCompression='lzma2/ultra64';zipCompression=$zipCompression.ToString()} |
+    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'package-size.json') -Encoding utf8
 if($TestInstaller){
     $testOutput=Join-Path $root 'artifacts\installer-verification'
     New-Item -ItemType Directory -Path $testOutput -Force | Out-Null
