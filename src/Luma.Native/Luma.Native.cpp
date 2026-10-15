@@ -556,6 +556,14 @@ API const wchar_t* __cdecl LumaError(){return lastError.c_str();}
 API HRESULT __cdecl LumaDecode(const wchar_t* path,FrameInfo* info,void** result){if(!path||!info||!result)return E_POINTER;*result=nullptr;return safe([&]{auto f=decode(path);*info=f->info;*result=f.release();});}
 API HRESULT __cdecl LumaDecodeSized(const wchar_t* path,UINT maxEdge,FrameInfo* info,void** result){if(!path||!info||!result)return E_POINTER;*result=nullptr;return safe([&]{auto f=decode(path,maxEdge);*info=f->info;*result=f.release();});}
 API HRESULT __cdecl LumaDecodeThumbnail(const wchar_t* path,UINT maxEdge,FrameInfo* info,void** result){if(!path||!info||!result)return E_POINTER;*result=nullptr;return safe([&]{auto f=decode(path,maxEdge,true);*info=f->info;*result=f.release();});}
+// Descriptor only: no pixel decode, HDR reconstruction, GPU or SDK startup.
+API HRESULT __cdecl LumaProbeFloatHdr(const wchar_t* path,int* hdr){if(!path||!hdr)return E_POINTER;*hdr=0;return safe([&]{
+    HRESULT init=CoInitializeEx(nullptr,COINIT_MULTITHREADED);struct Uninit{bool yes;~Uninit(){if(yes)CoUninitialize();}} uninit{SUCCEEDED(init)};
+    ComPtr<IWICImagingFactory> wic;check(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&wic)));
+    ComPtr<IWICBitmapDecoder> decoder;check(wic->CreateDecoderFromFilename(path,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&decoder));
+    ComPtr<IWICBitmapFrameDecode> frame;check(decoder->GetFrame(0,&frame));WICPixelFormatGUID f;check(frame->GetPixelFormat(&f));
+    *hdr=IsEqualGUID(f,GUID_WICPixelFormat128bppRGBAFloat)||IsEqualGUID(f,GUID_WICPixelFormat128bppRGBFloat)||IsEqualGUID(f,GUID_WICPixelFormat64bppRGBAHalf)||IsEqualGUID(f,GUID_WICPixelFormat48bppRGBHalf)||IsEqualGUID(f,GUID_WICPixelFormat64bppRGBHalf);
+});}
 // Diagnostic raw HDR pixels, before compositing or display-specific selection.
 API HRESULT __cdecl LumaFramePixel(void* value,UINT x,UINT y,float* rgba){
     if(!value||!rgba)return E_POINTER;return safe([&]{auto& frame=*static_cast<Frame*>(value);if(x>=frame.info.width||y>=frame.info.height||!frame.info.nativeHdr)throw Failure{E_INVALIDARG};memcpy(rgba,frame.pixels.data()+(size_t(y)*frame.info.width+x)*16,16);});

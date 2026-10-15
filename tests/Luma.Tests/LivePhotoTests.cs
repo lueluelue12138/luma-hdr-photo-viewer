@@ -59,5 +59,15 @@ internal static class LivePhotoTests
         using var canceled=new CancellationTokenSource();canceled.Cancel();bool honored=false;
         try{LivePhotoReader.Detect(apple,canceled.Token);}catch(OperationCanceledException){honored=true;}
         assert(honored,"Live detection cancellation is not swallowed as bad metadata");
+        var hdrXml="<x:xmpmeta xmlns:x='adobe:ns:meta/' xmlns:g='http://ns.adobe.com/hdr-gain-map/1.0/' g:Version='1.0'/>";
+        var both=Write("both.jpg",Jpeg(movie,Packet(Xml("C:MotionPhoto='1'",movie.Length)),Packet(hdrXml)));
+        assert(LivePhotoReader.ReadFeatures(both) is {HdrKind:not null,Live:not null},"photo traits independently preserve HDR metadata and Live payload");
+        assert(LivePhotoReader.ReadFeatures(Write("HDR_in_filename.jpg",Jpeg([],Packet(Xml(""))))) is {HdrKind:null,Live:null},"feature labels never infer HDR or Live from file names");
+        assert(LivePhotoReader.ReadFeatures(Write("fake-namespace.jpg",Jpeg([],Packet(hdrXml.Replace("http://ns.adobe.com/hdr-gain-map/1.0/","https://example.invalid/"))))) is {HdrKind:null},"HDR trait requires the actual metadata namespace");
+        byte[] Heif(params byte[][] data)=>Join(Box("ftyp",Text("heic"),new byte[4]),Box("meta",new byte[4],Join(data)));
+        byte[] primary=Box("pitm",new byte[4],new byte[]{0,1});
+        byte[] props=Box("iprp",Box("ipco",Box("colr",Text("nclx"),new byte[]{0,9,0,16,0,9,0})),Box("ipma",new byte[4],U32(1),new byte[]{0,1,1,1}));
+        assert(LivePhotoReader.ReadFeatures(Write("pq.heic",Heif(primary,props))) is {HdrKind:"PQ HEIC",Live:null},"HEIF HDR tag follows the primary item's NCLX transfer function");
+        assert(LivePhotoReader.ReadFeatures(Write("unused-pq.heic",Heif(primary,Box("iprp",Box("ipco",Box("colr",Text("nclx"),new byte[]{0,9,0,16,0,9,0})))))) is {HdrKind:null},"unattached HDR colour property cannot label an SDR primary image");
     }
 }

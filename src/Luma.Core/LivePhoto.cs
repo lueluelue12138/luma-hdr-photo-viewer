@@ -13,7 +13,7 @@ public sealed record LivePhotoAsset(string PhotoPath,string VideoPath,long Offse
 
 // Only the selected photo is probed, after its still preview is visible. Read
 // bounded metadata and seek over media payloads; never decode or scan an album.
-public static class LivePhotoReader
+public static partial class LivePhotoReader
 {
     const int MetadataLimit=4*1024*1024;
     const long VideoLimit=256L*1024*1024;

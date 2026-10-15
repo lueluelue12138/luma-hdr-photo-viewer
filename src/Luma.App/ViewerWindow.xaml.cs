@@ -1,4 +1,4 @@
-﻿using Luma.Core;
+using Luma.Core;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -20,7 +20,7 @@ public sealed partial class ViewerWindow : Window
 {
     private readonly FrameCache cache=FrameCache.Shared;private NativeRenderer? renderer;private FrameLease? currentLease;private int displayedRequest;private DecodedFrame? currentFrame=>current is not null&&displayedRequest==request?currentLease?.Frame:null;
     private List<Photo> sequence=[];private Photo? current;private int index,request,rotation;private bool closed,selecting,fullScreen,dragging,hover,originalHeld;
-    private double zoom=1,panX,panY,startX,startY;private int menuDepth;private DateTime lastActivity=DateTime.UtcNow,keyboardUntil=DateTime.MinValue;
+    private double zoom=1,panX,panY,startX,startY;private bool fillWindow;private int menuDepth;private DateTime lastActivity=DateTime.UtcNow,keyboardUntil=DateTime.MinValue;
     private AppWindowPresenter? windowedPresenter;private Windows.Graphics.RectInt32 windowedBounds;private bool windowedMaximized;
     private CancellationTokenSource? loadingCancellation;private readonly CancellationTokenSource lifetime=new();
     private readonly DispatcherTimer idleTimer=new(){Interval=TimeSpan.FromMilliseconds(500)};
@@ -32,7 +32,7 @@ public sealed partial class ViewerWindow : Window
     private ScrollViewer? filmstripScroller;
     private bool leftNavigationHover,rightNavigationHover;
     private ViewerPreferences tuningOptions=new();private bool nativeTuningMode;
-    private ViewerPreferences CapturePreferences(){var value=tuningOptions with{Hdr=hdrRequested,Vsr=vsrRequested,Preset=Math.Clamp(HdrPreset.SelectedIndex,0,2)};return nativeTuningMode?value with{NativeAutoBrightness=AutoBrightnessSwitch.IsOn,NativeAutoPeak=AutoPeakSwitch.IsOn,NativeMiddleGray=(float)MiddleGraySlider.Value,NativePeak=(float)PeakSlider.Value}:value with{AutoBrightness=AutoBrightnessSwitch.IsOn,AutoPeak=AutoPeakSwitch.IsOn,MiddleGray=(uint)MiddleGraySlider.Value,Peak=(uint)PeakSlider.Value};}
+    private ViewerPreferences CapturePreferences(){var value=tuningOptions with{Hdr=hdrRequested,Vsr=vsrRequested,Preset=Math.Clamp(HdrPreset.SelectedIndex,0,2),LiveMuted=ViewerPreferences.Current.LiveMuted};return nativeTuningMode?value with{NativeAutoBrightness=AutoBrightnessSwitch.IsOn,NativeAutoPeak=AutoPeakSwitch.IsOn,NativeMiddleGray=(float)MiddleGraySlider.Value,NativePeak=(float)PeakSlider.Value}:value with{AutoBrightness=AutoBrightnessSwitch.IsOn,AutoPeak=AutoPeakSwitch.IsOn,MiddleGray=(uint)MiddleGraySlider.Value,Peak=(uint)PeakSlider.Value};}
     private async Task SavePreferencesAsync(){try{tuningOptions=CapturePreferences();await ViewerPreferences.UpdateAsync(tuningOptions);}catch(Exception ex){App.Log("Save viewer preferences: "+ex.Message);}}
     private void ConfigureTuning(bool native)
     {
@@ -138,7 +138,7 @@ public sealed partial class ViewerWindow : Window
         if(index!=selected||filmstripScroller.HorizontalOffset<=before+20)throw new InvalidOperationException($"Filmstrip scroll: index {selected}->{index}, offset {before}->{filmstripScroller.HorizontalOffset}, scheduled {scheduled}, range {filmstripScroller.ScrollableWidth}");
         if(Math.Abs(FilmstripBar.Value-filmstripScroller.HorizontalOffset)>1)throw new InvalidOperationException("Native scrollbar did not track the list offset");
     }
-    internal void VerificationZoom(double value){zoom=value;UpdateView();ShowControls();}
+    internal void VerificationZoom(double value){fillWindow=false;zoom=value;UpdateView();ShowControls();}
     internal async Task VerificationChromeAndMotionAsync()
     {
         void Check(bool value,string reason){if(!value)throw new InvalidOperationException(reason);}
@@ -237,9 +237,9 @@ public sealed partial class ViewerWindow : Window
     {
         if(closed||sequence.Count==0||selected<0||selected>=sequence.Count)return;
         if(renderer is null){index=selected;return;}
-        StopLive(false);liveAsset=null;liveWarning=null;LiveButton.Visibility=Visibility.Collapsed;index=selected;current=sequence[index];int generation=++request;enhancementCancellation?.Cancel();loadingCancellation?.Cancel();loadingCancellation?.Dispose();loadingCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=loadingCancellation.Token;
+        StopLive(false);liveAsset=null;photoFeatures=null;liveWarning=null;UpdateLiveControls();index=selected;current=sequence[index];int generation=++request;enhancementCancellation?.Cancel();loadingCancellation?.Cancel();loadingCancellation?.Dispose();loadingCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=loadingCancellation.Token;
         var timing=Stopwatch.StartNew();uint previewEdge=PreviewEdge;
-        viewTimer.Stop();zoom=1;panX=panY=0;rotation=0;FileTitle.Text=current.Name;Title=$"{current.Name} — Luma";ErrorPanel.Visibility=Visibility.Collapsed;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;_ = ShowLoadingAfterDelayAsync(generation,token);ShowControls();UpdatePosition();UpdateInfo();
+        viewTimer.Stop();fillWindow=false;zoom=1;panX=panY=0;rotation=0;FileTitle.Text=current.Name;Title=$"{current.Name} — Luma";ErrorPanel.Visibility=Visibility.Collapsed;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;_ = ShowLoadingAfterDelayAsync(generation,token);ShowControls();UpdatePosition();UpdateInfo();
         try
         {
             var photo=current;var lease=await cache.GetAsync(photo.Path,token,previewEdge);if(closed||generation!=request){lease.Dispose();return;}
@@ -352,8 +352,9 @@ public sealed partial class ViewerWindow : Window
     }
     private void UpdateView(bool animate=false)
     {
+        if(fillWindow)zoom=FillZoom();
         ClampPan();
-        try{viewTimer.Stop();if(animate&&Motion.Enabled){viewStartZoom=renderedZoom;viewStartX=renderedPanX;viewStartY=renderedPanY;viewStarted=DateTime.UtcNow;viewTimer.Start();}else{renderedZoom=zoom;renderedPanX=panX;renderedPanY=panY;DisplayRenderer?.View(zoom,panX,panY,rotation);}var actual=PixelScale();FitButton.Content=Math.Abs(zoom-1)<0.001?"适合窗口":$"{actual*100:0}%";UpdateInfo();RequestDetail();}catch(COMException ex){Recover(ex);}
+        try{viewTimer.Stop();if(animate&&Motion.Enabled){viewStartZoom=renderedZoom;viewStartX=renderedPanX;viewStartY=renderedPanY;viewStarted=DateTime.UtcNow;viewTimer.Start();}else{renderedZoom=zoom;renderedPanX=panX;renderedPanY=panY;DisplayRenderer?.View(zoom,panX,panY,rotation);}var actual=PixelScale();FitButton.Content=fillWindow?"填满窗口":Math.Abs(zoom-1)<0.001?"适合窗口":$"{actual*100:0}%";UpdateInfo();RequestDetail();}catch(COMException ex){Recover(ex);}
     }
     private void ClampPan()
     {
@@ -365,10 +366,12 @@ public sealed partial class ViewerWindow : Window
     private (double Width,double Height) VisibleDimensions(){double w=livePlayback?.Width??currentFrame?.Info.OriginalWidth??1,h=livePlayback?.Height??currentFrame?.Info.OriginalHeight??1;return rotation%2==0?(w,h):(h,w);}
     private double FitScale(){var (w,h)=VisibleDimensions();return Math.Min(Surface.ActualWidth*Surface.CompositionScaleX/w,Surface.ActualHeight*Surface.CompositionScaleY/h);}
     private double PixelScale()=>FitScale()*zoom;
-    private void ZoomBy(double factor){zoom=Math.Clamp(zoom*factor,0.05,64);ShowControls();UpdateView(true);}
-    private void Fit(){zoom=1;panX=panY=0;UpdateView(true);ShowControls();}
-    private void ActualSize(){zoom=Math.Clamp(1/FitScale(),0.05,64);panX=panY=0;UpdateView(true);ShowControls();}
-    private void FitClick(object sender,RoutedEventArgs e)=>Fit();private void ActualSizeClick(object sender,RoutedEventArgs e)=>ActualSize();
+    private double FillZoom(){var (w,h)=VisibleDimensions();double fit=FitScale();return fit<=0?1:Math.Clamp(Math.Max(Surface.ActualWidth*Surface.CompositionScaleX/w,Surface.ActualHeight*Surface.CompositionScaleY/h)/fit,1,64);}
+    private void ZoomBy(double factor){fillWindow=false;zoom=Math.Clamp(zoom*factor,0.05,64);ShowControls();UpdateView(true);}
+    private void Fit(){fillWindow=false;zoom=1;panX=panY=0;UpdateView(true);ShowControls();}
+    private void Fill(){fillWindow=true;panX=panY=0;UpdateView(true);ShowControls();}
+    private void ActualSize(){fillWindow=false;zoom=Math.Clamp(1/FitScale(),0.05,64);panX=panY=0;UpdateView(true);ShowControls();}
+    private void FitClick(object sender,RoutedEventArgs e)=>Fit();private void FillClick(object sender,RoutedEventArgs e)=>Fill();
     private void ZoomInClick(object sender,RoutedEventArgs e)=>ZoomBy(1.25);private void ZoomOutClick(object sender,RoutedEventArgs e)=>ZoomBy(0.8);
     private void RotateClick(object sender,RoutedEventArgs e){rotation=(rotation+1)%4;panX=panY=0;UpdateView();ShowControls();}
     private void CanvasWheel(object sender,PointerRoutedEventArgs e)
@@ -377,7 +380,7 @@ public sealed partial class ViewerWindow : Window
     }
     private void ZoomAt(double pointerX,double pointerY,int delta)
     {
-        double old=zoom;zoom=Math.Clamp(zoom*Math.Pow(1.0015,delta),0.05,64);double ratio=zoom/old;
+        fillWindow=false;double old=zoom;zoom=Math.Clamp(zoom*Math.Pow(1.0015,delta),0.05,64);double ratio=zoom/old;
         double x=(pointerX-Surface.ActualWidth/2)*Surface.CompositionScaleX,y=(pointerY-Surface.ActualHeight/2)*Surface.CompositionScaleY;
         panX=x-(x-panX)*ratio;panY=y-(y-panY)*ratio;UpdateView(true);
     }
@@ -390,7 +393,7 @@ public sealed partial class ViewerWindow : Window
         viewTimer.Stop();zoom=renderedZoom;panX=renderedPanX;panY=renderedPanY;
         if(zoom<=1)return;dragging=InputLayer.CapturePointer(e.Pointer);startX=p.Position.X;startY=p.Position.Y;e.Handled=dragging;
     }
-    private void CanvasMoved(object sender,PointerRoutedEventArgs e){if(!dragging)return;var p=e.GetCurrentPoint(InputLayer);double dx=p.Position.X-startX,dy=p.Position.Y-startY;if(!panMoved&&Math.Abs(dx)+Math.Abs(dy)<4)return;panMoved=true;panX+=dx*Surface.CompositionScaleX;panY+=dy*Surface.CompositionScaleY;startX=p.Position.X;startY=p.Position.Y;UpdateView();ShowControls();e.Handled=true;}
+    private void CanvasMoved(object sender,PointerRoutedEventArgs e){if(!dragging)return;var p=e.GetCurrentPoint(InputLayer);double dx=p.Position.X-startX,dy=p.Position.Y-startY;if(!panMoved&&Math.Abs(dx)+Math.Abs(dy)<4)return;fillWindow=false;panMoved=true;panX+=dx*Surface.CompositionScaleX;panY+=dy*Surface.CompositionScaleY;startX=p.Position.X;startY=p.Position.Y;UpdateView();ShowControls();e.Handled=true;}
     private void CanvasReleased(object sender,PointerRoutedEventArgs e){dragging=false;InputLayer.ReleasePointerCapture(e.Pointer);e.Handled=true;}
     private void CanvasTapped(object sender,TappedRoutedEventArgs e){if(!panMoved)ToggleControls();e.Handled=true;}
     private void ToggleControls(){manuallyHidden=controlsVisible;controlsVisible=!controlsVisible;lastActivity=DateTime.UtcNow;hover=false;AnimateChrome(controlsVisible);}
@@ -424,7 +427,7 @@ public sealed partial class ViewerWindow : Window
         DispatcherQueue.TryEnqueue(()=>{if(!closed)Motion.Resize(Root,previousWidth,previousHeight);});ShowControls();InputLayer.Focus(FocusState.Programmatic);
     }
     private void BackClick(object sender,RoutedEventArgs e){App.ShowGallery();Close();}
-    private void SurfaceSizeChanged(object sender,SizeChangedEventArgs e){if(closed)return;EnhancementScroll.MaxHeight=Math.Max(160,Canvas.ActualHeight-116);ZoomOutButton.Visibility=ZoomInButton.Visibility=Canvas.ActualWidth<570?Visibility.Collapsed:Visibility.Visible;BottomPanel.MaxWidth=Math.Min(920,Math.Max(240,Canvas.ActualWidth-72));Filmstrip.MaxWidth=Math.Min(820,Math.Max(120,Canvas.ActualWidth-158));if(renderer is null)return;try{DisplayRenderer!.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
+    private void SurfaceSizeChanged(object sender,SizeChangedEventArgs e){if(closed)return;EnhancementScroll.MaxHeight=Math.Max(160,Canvas.ActualHeight-116);ZoomOutButton.Visibility=ZoomInButton.Visibility=Canvas.ActualWidth<570?Visibility.Collapsed:Visibility.Visible;if(renderer is null)return;try{DisplayRenderer!.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
     private void ScaleChanged(SwapChainPanel sender,object args){if(renderer is null||closed)return;try{DisplayRenderer!.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);UpdateView();}catch(COMException ex){Recover(ex);}}
     private async void Recover(Exception reason)
     {
@@ -532,11 +535,19 @@ public sealed partial class ViewerWindow : Window
         double badgeTop=(Canvas.ActualWidth-TopPanel.ActualWidth)/2>=StatusBadge.ActualWidth+32?14:TopPanel.ActualHeight+28;
         if(StatusBadge.Margin.Top!=badgeTop)StatusBadge.Margin=new(20,badgeTop,20,0);
         double infoTop=Math.Max(82,badgeTop+StatusBadge.ActualHeight+12);if(InfoPanel.Margin.Top!=infoTop)InfoPanel.Margin=new(16,infoTop,20,0);
-        double infoWidth=Math.Clamp(Canvas.ActualWidth-40,180,340),infoHeight=Math.Max(120,Canvas.ActualHeight-infoTop-20);
+        double infoWidth=Math.Clamp(Canvas.ActualWidth-40,180,340);
+        bool infoVisible=InfoPanel.Visibility==Visibility.Visible;
+        bool reserveInfo=infoVisible&&Canvas.ActualWidth-infoWidth-100>=240;
+        // On narrow windows put the strip below the details instead of letting
+        // the two overlays cover one another or squeezing the list to zero.
+        double infoHeight=Math.Max(120,Canvas.ActualHeight-infoTop-20-(infoVisible&&!reserveInfo?128:0));
         if(InfoPanel.Width!=infoWidth)InfoPanel.Width=infoWidth;if(InfoPanel.Height!=infoHeight)InfoPanel.Height=infoHeight;
-        bool infoVisible=InfoPanel.Visibility==Visibility.Visible;double filmstripWidth=infoVisible?Math.Clamp(Canvas.ActualWidth-infoWidth-76,180,920):920;
+        double right=reserveInfo?infoWidth+40:36;
+        var filmstripMargin=new Thickness(36,0,right,28);if(BottomPanel.Margin!=filmstripMargin)BottomPanel.Margin=filmstripMargin;
+        double filmstripWidth=Math.Max(0,Math.Min(920,Canvas.ActualWidth-36-right));
         if(BottomPanel.MaxWidth!=filmstripWidth)BottomPanel.MaxWidth=filmstripWidth;
-        var alignment=infoVisible?HorizontalAlignment.Left:HorizontalAlignment.Center;if(BottomPanel.HorizontalAlignment!=alignment)BottomPanel.HorizontalAlignment=alignment;
+        double listWidth=Math.Max(0,filmstripWidth-80);if(Filmstrip.MaxWidth!=listWidth)Filmstrip.MaxWidth=listWidth;
+        if(BottomPanel.HorizontalAlignment!=HorizontalAlignment.Center)BottomPanel.HorizontalAlignment=HorizontalAlignment.Center;
         var rects=new List<GlassRect>();double dpi=Surface.CompositionScaleX;
         if(effects)foreach(var panel in new[]{TopPanel,BottomPanel,InfoPanel,ErrorPanel,StatusBadge})
         {

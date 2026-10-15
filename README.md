@@ -27,9 +27,9 @@ A native Windows photo viewer with RTX HDR for SDR photos and native HDR image s
 - **相册顺着你的习惯。** 文件夹导入、搜索、收藏、最近打开；照片留在原位置，移除相册不会删除原文件。
 - **拍摄细节随手查看。** 顶部信息入口展示日期、相机、镜头、曝光与 HDR 来源，支持搜索和复制 EXIF。
 
-## 让回忆动起来（下一版 0.1.24）
+## 让回忆动起来（开发版）
 
-源码已加入 Live / Motion Photo 预览：完整 iPhone HEIC＋MOV，以及已验证的 Google、Pixel、三星和小米动态照片。点击顶部 **LIVE** 或按 **L** 播放；动态部分为 SDR 时，也能选择 RTX HDR，空格仍用于原图对照。默认静音，可单独开启原声。
+源码已加入 Live / Motion Photo 预览：完整 iPhone HEIC＋MOV，以及已验证的 Google、Pixel、三星和小米动态照片。点击顶部实况图标或按 **L** 播放；动态部分为 SDR 时，也能选择 RTX HDR，空格仍用于原图对照。首次默认静音，之后会记住你的原声设置。
 
 当前公开的 0.1.23 尚不含此功能。更多封装、原生 HDR 视频和 `.livp` 仍在完善，具体范围见 [Live 照片说明](docs/LIVE-PHOTOS.md)。
 

@@ -98,6 +98,9 @@ public sealed partial class MainWindow
             visibleWait.Stop();
             stop.Cancel();await heartbeat;
             if(maxRealized>=count/2)throw new InvalidOperationException("The large gallery is not virtualizing its photo cards");
+            // Only settled visible cards should need optional traits. Fast
+            // scrolling must cancel queued metadata work instead of scanning.
+            operations.Add(new{phase="photo-feature-metadata",reads=PhotoFeaturesCache.Reads,hits=PhotoFeaturesCache.Hits});
             var items=PhotosRepeat.ItemsSource;long unchangedLoads=Thumbnail.ShellLoads+Thumbnail.WicLoads;await RefreshAllAsync();
             if(!ReferenceEquals(items,PhotosRepeat.ItemsSource)||unchangedLoads!=Thumbnail.ShellLoads+Thumbnail.WicLoads)throw new InvalidOperationException("Unchanged large-album refresh discarded its photo/thumbnail cache");
             long diskCacheBytes=await Task.Run(()=>{string cache=Path.Combine(App.DataDirectory,"thumbnail-cache-v1");return Directory.Exists(cache)?Directory.EnumerateFiles(cache,"*.lth").Sum(p=>new FileInfo(p).Length):0;});

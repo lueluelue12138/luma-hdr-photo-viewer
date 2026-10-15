@@ -209,7 +209,7 @@ public sealed partial class MainWindow : Window
         finally{scanning=false;ScanProgress.IsActive=false;ScanProgress.Visibility=Visibility.Collapsed;}
     }
     private void FolderChanged(long id)=>DispatcherQueue.TryEnqueue(async()=>{if(closed)return;var a=albums.FirstOrDefault(a=>a.Id==id);if(a is null)return;try{var result=await App.Indexer.RefreshAsync(a,lifetime.Token);if(result.Added>0||result.Updated>0||result.Missing>0||result.Offline!=a.Offline){Thumbnail.InvalidateFolder(a.Folder);await ReloadAsync();}}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}});
-    private void RefreshClick(object sender,RoutedEventArgs e)=>_=RefreshAllAsync(page=="album"?albumId:0);
+    private void RefreshClick(object sender,RoutedEventArgs e){foreach(var album in albums.Where(a=>page!="album"||a.Id==albumId))PhotoFeaturesCache.InvalidateFolder(album.Folder);_=RefreshAllAsync(page=="album"?albumId:0);}
     private async void SortChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;sort=(SortBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"name";if(page=="album")await App.Store.SetAlbumAsync(albumId,sort:sort);await ReloadAsync();}
     private void AlbumClick(object sender,RoutedEventArgs e){if(((Button)sender).Tag is Album a){var nav=Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(n=>n.Tag is long id&&id==a.Id);Nav.SelectedItem=nav;}}
     private static void HoverCard(object sender,bool over)

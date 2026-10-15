@@ -4,6 +4,7 @@
 - Maintain `docs/TODO.md`: record new user feedback and outstanding work there, and mark completed items with their actual validation evidence.
 - Keep the latest validated local build at `artifacts/Luma/Luma.App.exe` for manual testing. Use separate directories for experiments, and retain the previous usable build when validation fails. Do not replace files while that preview is running.
 - Keep measured results distinct from estimates. Do not claim HDR/VSR success without SDK evaluation and the actual FP16 presentation path.
+- Prefer Apple Human Interface Guidelines for visual hierarchy, restrained materials and motion, while preserving familiar Windows behavior, theme/accessibility support and performance. Use original vector artwork and native controls; reference: https://developer.apple.com/design/human-interface-guidelines/live-photos.
 - Do not publish a repository, push changes, upload to Microsoft Store, or make a public release without an explicit user request.
 
 ## Commit attribution

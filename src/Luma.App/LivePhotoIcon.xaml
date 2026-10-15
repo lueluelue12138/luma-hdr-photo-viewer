@@ -1,0 +1,7 @@
+<UserControl x:Class="Luma.App.LivePhotoIcon" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Foreground="{ThemeResource TextFillColorPrimaryBrush}" IsTabStop="False" IsHitTestVisible="False">
+ <Viewbox><Grid x:Name="Symbol" Width="24" Height="24">
+  <Grid x:Name="OuterRing" Width="24" Height="24"><Path x:Name="Dots" Fill="{x:Bind Foreground, Mode=OneWay}"/></Grid>
+  <Ellipse x:Name="MiddleRing" Width="16" Height="16" Stroke="{x:Bind Foreground, Mode=OneWay}" StrokeThickness="0.9"/>
+  <Ellipse x:Name="InnerRing" Width="8" Height="8" Stroke="{x:Bind Foreground, Mode=OneWay}" StrokeThickness="1.8"/>
+ </Grid></Viewbox>
+</UserControl>

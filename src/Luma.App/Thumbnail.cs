@@ -46,6 +46,7 @@ public sealed class Thumbnail : Grid
     private static event Action<string>? Invalidated;
     internal static void InvalidateFolder(string folder)
     {
+        PhotoFeaturesCache.InvalidateFolder(folder);
         string prefix=Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder))+Path.DirectorySeparatorChar;
         foreach(var entry in Images.Where(p=>p.Key.StartsWith(prefix,StringComparison.OrdinalIgnoreCase)).ToArray()){Images.Remove(entry.Key);cacheBytes-=entry.Value.Bytes;}
         // In-flight loads from the previous scan must not repopulate stale pixels.

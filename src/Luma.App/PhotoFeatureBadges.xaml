@@ -1,0 +1,18 @@
+<UserControl x:Class="Luma.App.PhotoFeatureBadges" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="using:Luma.App" IsTabStop="False">
+ <UserControl.Resources>
+  <Style x:Key="Badge" TargetType="Border">
+   <Setter Property="Background" Value="{ThemeResource FloatingBrush}"/>
+   <Setter Property="BorderBrush" Value="{ThemeResource SurfaceStrokeColorDefaultBrush}"/>
+   <Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="8"/>
+   <Setter Property="Height" Value="24"/><Setter Property="Padding" Value="7,0"/>
+  </Style>
+ </UserControl.Resources>
+ <StackPanel Orientation="Horizontal" Spacing="4">
+  <Border x:Name="hdr" Style="{StaticResource Badge}" ToolTipService.ToolTip="照片含 HDR 元数据，实际显示状态见预览" AutomationProperties.Name="HDR 照片">
+   <TextBlock Text="HDR" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorPrimaryBrush}" VerticalAlignment="Center"/>
+  </Border>
+  <Border x:Name="live" Style="{StaticResource Badge}" ToolTipService.ToolTip="实况照片，含完整动态视频" AutomationProperties.Name="实况照片">
+   <local:LivePhotoIcon Width="17" Height="17"/>
+  </Border>
+ </StackPanel>
+</UserControl>

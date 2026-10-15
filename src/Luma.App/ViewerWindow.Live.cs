@@ -8,6 +8,7 @@ namespace Luma.App;
 public sealed partial class ViewerWindow
 {
     private LivePhotoAsset? liveAsset;
+    private PhotoFeatures? photoFeatures;
     private LivePlayback? livePlayback;
     private CancellationTokenSource? liveCancellation;
     private Task liveDetection=Task.CompletedTask;
@@ -23,10 +24,9 @@ public sealed partial class ViewerWindow
     {
         try
         {
-            var asset=await LivePhotoReader.DetectAsync(path,token);
+            var features=await PhotoFeaturesCache.ReadAsync(path,token);var asset=features.Live;
             if(closed||generation!=request||token.IsCancellationRequested)return;
-            liveAsset=asset;LiveButton.Visibility=asset is null?Visibility.Collapsed:Visibility.Visible;
-            if(asset is not null)ToolTipService.SetToolTip(LiveButton,$"{asset.Kind} · 播放 / 停止（L），空格查看原图");
+            photoFeatures=features;liveAsset=asset;UpdateLiveControls();UpdateInfo();
             UpdateGlass();
         }
         catch(OperationCanceledException){}catch(Exception ex){App.Log("Live detection: "+ex.Message);}
@@ -44,7 +44,7 @@ public sealed partial class ViewerWindow
         livePreparing=true;liveWarning=null;int generation=request,play=++liveGeneration;
         enhancementCancellation?.Cancel();
         liveCancellation?.Dispose();liveCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token,loadingCancellation?.Token??lifetime.Token);
-        var token=liveCancellation.Token;LiveLabel.Text="准备中";LiveIcon.Glyph="\uE71A";LiveButton.SetValue(AutomationProperties.NameProperty,"取消实况准备");
+        var token=liveCancellation.Token;UpdateLiveControls();
         LivePlayback? next=null;
         try
         {
@@ -52,14 +52,14 @@ public sealed partial class ViewerWindow
             if(closed||generation!=request||play!=liveGeneration||token.IsCancellationRequested){next.Stop();return;}
             if(playingLiveWindow?.TryGetTarget(out var playing)==true&&playing!=this)playing.StopLive();
             livePlayback=next;playingLiveWindow=new(this);ConfigureTuning(false);next.SetOptions(LiveOptions());
+            next.Muted=ViewerPreferences.Current.LiveMuted;
             var currentLive=next;
-            next.FirstFrame+=()=>{if(livePlayback!=currentLive||closed)return;Surface.Opacity=0;LiveSurface.Opacity=1;LiveLabel.Text="LIVE";UpdateGlass();RefreshStatus(false);};
+            next.FirstFrame+=()=>{if(livePlayback!=currentLive||closed)return;Surface.Opacity=0;LiveSurface.Opacity=1;UpdateLiveControls();UpdateGlass();RefreshStatus(false);};
             next.Ended+=message=>{if(livePlayback!=currentLive||closed)return;StopLive();if(message is not null)SetLiveWarning(message);};
             next.Renderer.Presented+=()=>{if(livePlayback==currentLive&&!closed){UpdateGlass();RefreshStatus(false);}};
             next.Renderer.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);
             UpdateView();
-            LiveMuteButton.Visibility=Visibility.Visible;LiveMuteIcon.Glyph="\uE74F";ToolTipService.SetToolTip(LiveMuteButton,"开启实况原声");
-            LiveButton.SetValue(AutomationProperties.NameProperty,"停止实况播放");UpdateGlass();next.Play();
+            UpdateLiveControls();UpdateGlass();next.Play();
             App.Log($"Live started: {asset.Kind}; {next.Width}x{next.Height}; {next.Duration:0.###}s; embedded={asset.Embedded}");
         }
         catch(OperationCanceledException){next?.Stop();}
@@ -67,7 +67,7 @@ public sealed partial class ViewerWindow
         finally
         {
             if(next is not null&&next!=livePlayback)await next.Disposed;
-            if(!closed&&generation==request&&play==liveGeneration){livePreparing=false;if(livePlayback is null){LiveLabel.Text="LIVE";LiveIcon.Glyph="\uE768";}RefreshStatus(false);}
+            if(!closed&&generation==request&&play==liveGeneration){livePreparing=false;UpdateLiveControls();RefreshStatus(false);}
         }
     }
     private void SetLiveWarning(string message)
@@ -78,18 +78,39 @@ public sealed partial class ViewerWindow
     {
         liveGeneration++;liveCancellation?.Cancel();livePreparing=false;
         var old=livePlayback;livePlayback=null;
-        Surface.Opacity=1;LiveSurface.Opacity=0;LiveMuteButton.Visibility=Visibility.Collapsed;LiveLabel.Text="LIVE";LiveIcon.Glyph="\uE768";
-        LiveButton.SetValue(AutomationProperties.NameProperty,"播放实况照片");
+        Surface.Opacity=1;LiveSurface.Opacity=0;UpdateLiveControls();
         if(old is not null)
         {
             App.Log($"Live stopped: frames={old.Frames}; coalescedNotifications={old.CoalescedNotifications}");old.Stop();liveRetirement=Task.WhenAll(liveRetirement,old.Disposed);
             if(!closed){renderer?.HoldOriginal(originalHeld);renderer?.Resize(Surface.ActualWidth,Surface.ActualHeight,Surface.CompositionScaleX);ConfigureTuning(currentFrame?.Info.NativeHdr!=0);UpdateView();UpdateGlass();RefreshStatus(false);if(applyStill)_=ApplyEffectsAsync();}
         }
     }
-    private void LiveMuteClick(object sender,RoutedEventArgs e)
+    private Action<string>? verificationLiveControls;
+    private void UpdateLiveControls()
     {
-        if(livePlayback is not {} live)return;live.Muted=!live.Muted;LiveMuteIcon.Glyph=live.Muted?"\uE74F":"\uE767";
-        string label=live.Muted?"开启实况原声":"静音实况";ToolTipService.SetToolTip(LiveMuteButton,label);LiveMuteButton.SetValue(AutomationProperties.NameProperty,label);ShowControls();
+        LiveButton.Visibility=LiveMuteButton.Visibility=liveAsset is null?Visibility.Collapsed:Visibility.Visible;
+        bool playing=livePlayback?.Frames>0;
+        bool preparing=!playing&&(livePreparing||livePlayback is not null);
+        LiveIcon.SetState(preparing,playing);
+        string label=preparing?"正在准备实况，点击取消（L）":playing?"停止实况播放（L）":liveWarning??"播放实况照片（L），空格查看原图";
+        LiveButton.SetValue(AutomationProperties.NameProperty,label);ToolTipService.SetToolTip(LiveButton,label);
+        UpdateLiveMute();verificationLiveControls?.Invoke(preparing?"preparing":playing?"playing":"idle");
+    }
+    private void UpdateLiveMute()
+    {
+        bool muted=livePlayback?.Muted??ViewerPreferences.Current.LiveMuted;
+        LiveMuteIcon.Glyph=muted?"\uE74F":"\uE767";LiveMuteButton.IsEnabled=liveAsset is not null&&livePlayback?.AudioTracks!=0;
+        string label=livePlayback?.AudioTracks==0?"这张实况照片没有音轨":muted?"开启实况原声":"静音实况";ToolTipService.SetToolTip(LiveMuteButton,label);LiveMuteButton.SetValue(AutomationProperties.NameProperty,label);
+    }
+    private async void LiveMuteClick(object sender,RoutedEventArgs e)
+    {
+        try{await SetLiveMutedAsync(!(livePlayback?.Muted??ViewerPreferences.Current.LiveMuted));ShowControls();}
+        catch(Exception ex){App.Log("Save Live sound preference: "+ex.Message);}
+    }
+    private async Task SetLiveMutedAsync(bool muted)
+    {
+        if(livePlayback is {} live){live.Muted=muted;UpdateLiveMute();}
+        await ViewerPreferences.UpdateAsync(ViewerPreferences.Current with{LiveMuted=muted});if(!closed)UpdateLiveMute();
     }
     internal async Task<object> VerificationLiveAsync()
     {
@@ -136,5 +157,44 @@ public sealed partial class ViewerWindow
         await StartLiveAsync();if(livePlayback is not {} live)throw new InvalidOperationException(liveWarning??"Replay failed");live.VerificationLoop=true;
         var watch=System.Diagnostics.Stopwatch.StartNew();while(live.Frames<2){if(watch.Elapsed.TotalSeconds>10)throw new TimeoutException("Live replay timed out");await Task.Delay(25);}
         Close();await liveRetirement;await VerificationDisposeAsync();
+    }
+    internal async Task<object> VerificationLiveAudioAsync(bool write)
+    {
+        await liveDetection;hdrRequested=false;vsrRequested=false;
+        var geometry=new List<(string State,double Width,double X,double SoundX)>();var controlErrors=new List<string>();
+        verificationLiveControls=state=>
+        {
+            Root.UpdateLayout();var p=LiveButton.TransformToVisual(TopPanel).TransformPoint(new(0,0));var sound=LiveMuteButton.TransformToVisual(TopPanel).TransformPoint(new(0,0));
+            if(LiveButton.ActualWidth!=40||LiveButton.ActualHeight!=38||LiveMuteButton.Visibility!=Visibility.Visible)controlErrors.Add("Live controls must keep fixed geometry");
+            geometry.Add((state,TopPanel.ActualWidth,p.X,sound.X));
+            if(geometry.Count>1&&geometry.Any(g=>Math.Abs(g.Width-geometry[0].Width)>.1||Math.Abs(g.X-geometry[0].X)>.1||Math.Abs(g.SoundX-geometry[0].SoundX)>.1))controlErrors.Add("Live state moved the toolbar");
+            int expected=state=="preparing"?1:state=="playing"?2:0;
+            if(LiveIcon.VerificationState!=expected)controlErrors.Add("Live icon state mismatch");
+        };
+        UpdateLiveControls();await StartLiveAsync();
+        var live=livePlayback??throw new InvalidOperationException(liveWarning??"No Live audio player");live.VerificationLoop=true;
+        var watch=System.Diagnostics.Stopwatch.StartNew();while(!geometry.Any(g=>g.State=="playing")){if(watch.Elapsed.TotalSeconds>15)throw new TimeoutException("No playing icon state");await Task.Delay(25);}
+        if(!LiveIcon.VerificationCentered)throw new InvalidOperationException("Live rings / opposite dot pairs must share the same center");
+        if(LiveIcon.VerificationSpinning!=Motion.Enabled)throw new InvalidOperationException("Playing Live icon must spin when system animations are enabled");
+        if(live.Muted!=write||ViewerPreferences.Current.LiveMuted!=write)throw new InvalidOperationException("Live audio initial preference differs from expected persisted state");
+        if(write)
+        {
+            await SetLiveMutedAsync(false);await SavePreferencesAsync();
+            if(live.Muted||ViewerPreferences.Current.LiveMuted)throw new InvalidOperationException("HDR preference saving must preserve the sound setting");
+            StopLive();await liveRetirement;await StartLiveAsync();
+            if(livePlayback?.Muted!=false)throw new InvalidOperationException("Replay reset the sound preference");
+        }
+        // Layout checks below resize the window deliberately; finish the fixed
+        // toolbar assertion before those unrelated layout changes.
+        bool animated=LiveIcon.VerificationAnimating;
+        StopLive();await liveRetirement;verificationLiveControls=null;
+        if(controlErrors.Count>0)throw new InvalidOperationException(string.Join("; ",controlErrors.Distinct()));
+        if(!geometry.Any(g=>g.State=="preparing")||!geometry.Any(g=>g.State=="playing")||LiveIcon.VerificationAnimating||animated!=Motion.Enabled)throw new InvalidOperationException($"Preparing / playing / stop icon transitions missing; playing animated={animated}, system={Motion.Enabled}");
+        await LivePhotoVerification.RenderSymbolAsync(LiveIcon);
+        await StartLiveAsync();await liveDetection;await VerificationOpenInfoAsync();
+        if(liveAsset is null||InfoLiveFeature.Visibility!=Visibility.Visible||!InfoLiveSummary.Text.Contains(liveAsset.Kind))throw new InvalidOperationException("Details must identify the Live file and container");
+        await VerificationRenderInfoAsync(write?"live-details-write.png":"live-details-read.png");
+        var result=new{soundEnabled=livePlayback?.Muted==false,storedSoundEnabled=!ViewerPreferences.Current.LiveMuted,liveDetails=true,fixedToolbarGeometry=geometry.Select(g=>new{g.State,g.Width,g.X,g.SoundX}),animationRespectsSystem=true};
+        StopLive();await liveRetirement;return result;
     }
 }

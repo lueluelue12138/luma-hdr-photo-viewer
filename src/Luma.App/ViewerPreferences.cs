@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Luma.App;
 
-internal sealed record ViewerPreferences(bool Hdr=false,bool Vsr=false,int Preset=1,bool AutoBrightness=true,bool AutoPeak=true,uint MiddleGray=100,uint Peak=1000,bool NativeAutoBrightness=true,bool NativeAutoPeak=true,float NativeMiddleGray=44,float NativePeak=1000)
+internal sealed record ViewerPreferences(bool Hdr=false,bool Vsr=false,int Preset=1,bool AutoBrightness=true,bool AutoPeak=true,uint MiddleGray=100,uint Peak=1000,bool NativeAutoBrightness=true,bool NativeAutoPeak=true,float NativeMiddleGray=44,float NativePeak=1000,bool LiveMuted=true)
 {
     private const string Key="viewer.preferences";
     private static readonly SemaphoreSlim save=new(1);

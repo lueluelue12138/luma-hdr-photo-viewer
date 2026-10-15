@@ -42,6 +42,7 @@ public sealed partial class ViewerWindow
         SetInfoText(InfoDimensions,width>0?$"{width:N0} × {height:N0} 像素 · {width*(double)height/1000000:0.#} MP":"尺寸读取中…");
         SetInfoText(InfoHdr,frame is null?"正在识别图片…":currentFrame!.HdrCompatibility?"兼容预览 · HDR 数据未读取":frame.Value.NativeHdr switch{2=>"原生 HDR · JPEG 增益图",3=>"原生 HDR · Apple HEIC 增益图",4=>"原生 HDR · ISO HEIC 增益图",1=>Path.GetExtension(current.Path).Equals(".heic",StringComparison.OrdinalIgnoreCase)||Path.GetExtension(current.Path).Equals(".heif",StringComparison.OrdinalIgnoreCase)?"原生 HDR · 浮点 HEIC":"原生 HDR · 线性 scRGB",_=>"SDR 图片"});
         SetInfoText(InfoViewing,$"当前显示：{StatusText.Text}\n缩放 {PixelScale()*100:0}% · 查看旋转 {rotation*90}°");
+        UpdateInfoFeatures();
         if(detailsMetadata is null&&detailsLoadRequest!=request){
             detailsCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);detailsLoadRequest=request;
             detailsLoad=LoadInfoAsync(current,request,detailsCancellation.Token);
@@ -82,11 +83,23 @@ public sealed partial class ViewerWindow
     private string BuildDetailsText()
     {
         if(current is null)return "";
-        var summary=$"文件名：{current.Name}\n路径：{current.Path}\n尺寸：{InfoDimensions.Text}\n大小：{InfoSize.Text}\n{InfoDateText.Text}\nHDR 类型：{InfoHdr.Text}";
+        var summary=$"文件名：{current.Name}\n路径：{current.Path}\n尺寸：{InfoDimensions.Text}\n大小：{InfoSize.Text}\n{InfoDateText.Text}\nHDR 类型：{InfoHdr.Text}\n特性：{InfoHdrFeature.Text}{(liveAsset is null?"":" · LIVE")}\n{InfoLiveSummary.Text}";
         if(detailsMetadata?.Latitude is {} lat&&detailsMetadata.Longitude is {} lon)summary+=$"\n位置：{lat.ToString("0.######",CultureInfo.InvariantCulture)}, {lon.ToString("0.######",CultureInfo.InvariantCulture)}";
         return summary+"\n\n"+string.Join("\n",detailsRows.Select(r=>$"{r.Group} / {r.Label}：{r.Value}"));
     }
     private void CopyPathClick(object sender,RoutedEventArgs e){if(current is not null)CopyInfo(current.Path,"文件路径已复制");}
+    private void UpdateInfoFeatures()
+    {
+        if(current is null)return;
+        InfoFormatFeature.Text=Path.GetExtension(current.Path).TrimStart('.').ToUpperInvariant();
+        InfoHdrFeature.Text=currentFrame?.Info.NativeHdr>0?"HDR":photoFeatures?.HdrKind is not null?"HDR 信息":"SDR";
+        ToolTipService.SetToolTip(InfoHdrFeature,currentFrame?.Info.NativeHdr>0?InfoHdr.Text:photoFeatures?.HdrKind??"原始照片为 SDR，RTX HDR 是可选的显示增强");
+        InfoLiveFeature.Visibility=InfoLiveSection.Visibility=liveAsset is null?Visibility.Collapsed:Visibility.Visible;
+        if(liveAsset is not {} asset){InfoLiveSummary.Text="";return;}
+        string storage=asset.Embedded?"内嵌视频":$"配套视频：{Path.GetFileName(asset.VideoPath)}";
+        string playback=asset.NativeVideoHdr?"视频带原生 HDR，暂保留静态照片":livePlayback is {} live?$"播放中 · {live.Width} × {live.Height} · {live.Duration:0.##} 秒 · {(live.AudioTracks>0?"有音轨":"无音轨")}":"点击顶部实况图标或按 L 播放；空格查看未增强画面";
+        SetInfoText(InfoLiveSummary,$"{asset.Kind}\n{storage} · {PhotoMetadataFormatting.Size(asset.Length)}\n{playback}");
+    }
     private void CopyDetailsClick(object sender,RoutedEventArgs e){UpdateInfo();CopyInfo(BuildDetailsText(),"照片详情已复制");}
     private async void CopyInfo(string text,string feedback)
     {
@@ -117,6 +130,50 @@ public sealed partial class ViewerWindow
             layouts.Add(VerificationInfoLayout);
         }
         AppWindow.Resize(saved);await Task.Delay(250);return layouts;
+    }
+    internal async Task<object> VerificationFilmstripDetailsAsync()
+    {
+        var saved=AppWindow.Size;var originalSequence=sequence;var samples=new List<object>();
+        sequence=Enumerable.Repeat(current!,24).ToList();selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=0;selecting=false;
+        foreach(int width in new[]{1240,900,740,600})foreach(bool visible in new[]{true,false})
+        {
+            AppWindow.Resize(new((int)(width*Surface.CompositionScaleX),(int)(800*Surface.CompositionScaleY)));ShowInfo(visible);ShowControls(true);await Task.Delay(280);await VerificationPresentationAsync();UpdateFilmstripBar();
+            var strip=BottomPanel.TransformToVisual(Canvas).TransformPoint(new(0,0));
+            double expected=(BottomPanel.Margin.Left+Canvas.ActualWidth-BottomPanel.Margin.Right)/2;
+            if(Math.Abs(strip.X+BottomPanel.ActualWidth/2-expected)>2||strip.X<0||strip.X+BottomPanel.ActualWidth>Canvas.ActualWidth+1||Filmstrip.ActualWidth>BottomPanel.ActualWidth-76||FilmstripBar.Maximum<=0)
+                throw new InvalidOperationException($"Filmstrip not centered / bounded at {width}, details={visible}: {strip.X}, {BottomPanel.ActualWidth}, list {Filmstrip.ActualWidth}");
+            if(visible)
+            {
+                var info=InfoPanel.TransformToVisual(Canvas).TransformPoint(new(0,0));
+                if(strip.X<info.X+InfoPanel.ActualWidth&&strip.X+BottomPanel.ActualWidth>info.X&&strip.Y<info.Y+InfoPanel.ActualHeight&&strip.Y+BottomPanel.ActualHeight>info.Y)
+                    throw new InvalidOperationException("Details and filmstrip must not overlap");
+            }
+            samples.Add(new{width,details=visible,left=strip.X,stripWidth=BottomPanel.ActualWidth,listWidth=Filmstrip.ActualWidth,expectedCenter=expected,range=FilmstripBar.Maximum});
+        }
+        sequence=originalSequence;selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=index;selecting=false;
+        AppWindow.Resize(saved);ShowInfo(true);await Task.Delay(250);return new{scenario="filmstrip-details-layout",samples};
+    }
+    internal async Task<object> VerificationFillWindowAsync()
+    {
+        var saved=AppWindow.Size;int oldRotation=rotation;var samples=new List<object>();
+        try
+        {
+            FillClick(FitButton,new RoutedEventArgs());
+            foreach(int width in new[]{1240,600})foreach(int turn in new[]{0,1,2,3})
+            {
+                AppWindow.Resize(new((int)(width*Surface.CompositionScaleX),(int)(800*Surface.CompositionScaleY)));rotation=turn;panX=panY=0;UpdateView();await Task.Delay(200);
+                var (w,h)=VisibleDimensions();double vw=Surface.ActualWidth*Surface.CompositionScaleX,vh=Surface.ActualHeight*Surface.CompositionScaleY;
+                double shownWidth=w*PixelScale(),shownHeight=h*PixelScale();
+                if(!fillWindow||!Equals(FitButton.Content,"填满窗口")||shownWidth<vw-.1||shownHeight<vh-.1||Math.Min(Math.Abs(shownWidth-vw),Math.Abs(shownHeight-vh))>.1||panX!=0||panY!=0)
+                    throw new InvalidOperationException("Fill must preserve aspect, cover both edges and fit one dimension after resize / rotation");
+                samples.Add(new{width,rotation,viewportWidth=vw,viewportHeight=vh,shownWidth,shownHeight});
+            }
+            ZoomAt(Surface.ActualWidth/2,Surface.ActualHeight/2,-120);if(fillWindow)throw new InvalidOperationException("Manual zoom must leave automatic fill mode");
+            Fill();FitClick(FitToWindowButton,new RoutedEventArgs());await Task.Delay(220);
+            if(fillWindow||zoom!=1||panX!=0||panY!=0||!Equals(FitButton.Content,"适合窗口"))throw new InvalidOperationException("Dedicated fit button must leave fill mode");
+            return new{scenario="fill-window",samples,manualZoomExits=true,fitRestores=true};
+        }
+        finally{rotation=oldRotation;AppWindow.Resize(saved);Fit();}
     }
     internal async Task VerificationRenderInfoAsync(string file)
     {

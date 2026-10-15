@@ -16,6 +16,8 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 
 ## 已实现
 
+0.1.25 记住实况原声设置，修正信息面板开合时的缩略图栏布局；按可视卡片延迟探测 HDR / Live 元数据（双后台槽、4096 项缓存），不在导入时全量解码或启动视频。图库角标使用亮暗主题的原生 Acrylic，同心圆实况图标复用在图库、工具栏和详情中；固定播放 / 原声按钮的几何尺寸，播放中用 Composition 圆点呼吸与旋转，不触发布局刷新。设计参考 Apple HIG，保留 Windows 操作、系统动画与辅助功能设置。
+
 0.1.24 增加按需 Live / Motion Photo 播放与 SDR 视频逐帧 RTX HDR，默认静音、L 播放 / 停止，空格保持原图对照。使用 Windows MediaPlayer frame-server 与现有 D3D11 / FP16，不新增播放器依赖；格式、实际样本与未完成的原生 HDR 视频范围见 `LIVE-PHOTOS.md`。
 
 0.1.23 重排用户设置与 HDR 入门：提供 Windows 显示设置和 HDR 校准应用 / 商店入口，显示当前窗口屏幕的系统 HDR 状态、报告峰值、SDR 白色与全屏亮度。独立原生查询不初始化 D3D / NGX，页面首次进入才构造，移动后 350 ms 防抖、返回激活刷新，隐藏后停止。README 以真实使用动机展开；用户说明见 `HDR-SETUP.md`，验证命令为 `tests/verify_settings.py --app <exe>` 与 `LUMA_NATIVE_TEST_DLL=<dll>` 下的 `tests/verify_display_info.py`；报告与真实 / 注入边界见 `VERIFICATION.md`。

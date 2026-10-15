@@ -1,12 +1,16 @@
 # Live / 动态照片与 RTX HDR
 
-首轮实现：2026-10-15，0.1.24 源码与本地候选。当前公开下载仍是 0.1.23；本轮没有创建标签或公开 Release。
+首轮实现：2026-10-15；当前源码与本地候选 0.1.25。当前公开下载仍是 0.1.23；本轮没有创建标签或公开 Release。
 
 ## 怎么用
 
-打开完整动态照片，静态画面出现后，顶部会显示 **LIVE**。点击或按 **L** 播放，再按一次停止；**Esc** 先停止实况。默认静音，可点击原声按钮开启声音。播完、切图、窗口失焦或关闭时停止，回到缓存中的静态照片。
+打开完整动态照片，静态画面出现后，顶部会显示同心圆实况图标。点击或按 **L** 播放，再按一次停止；**Esc** 先停止实况。首次默认静音，可点击原声按钮开关声音，之后会记住选择（包括重播、换图和重启）。播放按钮与原声按钮保持固定尺寸；准备时图标轻闪，播放时圆点呼吸并旋转，停止后静止。系统关闭动画时保持静态。播完、切图、窗口失焦或关闭时停止，回到缓存中的静态照片。
+
+缩放菜单提供“适合窗口”（完整显示照片）和“填满窗口”（按原比例铺满，超出部分居中裁切）；后者会随窗口尺寸 / 旋转调整。滚轮或手动拖动后按自定义视角查看，旁边的适应窗口按钮可一键恢复完整画面。键盘 1 / 双击仍可切换 100% 像素视图。
 
 **空格继续用于原图对照。** 播放时按住空格，视频继续前进，只暂停 RTX HDR 增强；松开继续增强。静态照片自带 HDR 时，停止播放会回到原生 HDR 查看路径。
+
+图库卡片用适配亮暗主题的磨砂小角标标出 HDR / 实况；信息面板显示格式、特性、视频封装 / 大小，播放时补充时长、尺寸与有无音轨。HDR 角标代表文件声明含 HDR 元数据，实际解码与显示结果以预览状态为准。
 
 视频按需打开，不在导入相册或悬停缩略图时启动。未找到完整视频时仍按普通照片查看；编码器缺失、视频损坏或暂不支持的视频 HDR 编码不会阻止静态照片显示。
 
@@ -53,6 +57,8 @@ Windows MediaPlayer 的 frame-server 模式负责解封装、解码、时间轴�
 
 ```powershell
 ./.tools/dotnet/dotnet.exe run --project tests/Luma.Tests -c Release
+python tests/verify_live_preferences.py '<内嵌视频的动态照片路径>' --app artifacts/Luma/Luma.App.exe
+python tests/verify_photo_features.py --app artifacts/Luma/Luma.App.exe
 python tests/verify_live_photo.py '<完整动态照片路径>' --app artifacts/Luma-live-final/Luma.App.exe
 ```
 
@@ -61,6 +67,7 @@ python tests/verify_live_photo.py '<完整动态照片路径>' --app artifacts/L
 ## 参考与待扩展
 
 - [Android Motion Photo 规范](https://developer.android.com/media/platform/motion-photo-format)
+- [Apple 实况照片界面指南](https://developer.apple.com/cn/design/human-interface-guidelines/live-photos)
 - [Apple Live Photo 元数据](https://developer.apple.com/documentation/avfoundation/avcapturephotosettings/livephotomoviemetadata)
 - [Microsoft MediaPlayer / frame-server](https://learn.microsoft.com/en-us/windows/apps/develop/media-playback/play-audio-and-video-with-mediaplayer)
 - [Microsoft 视频传递函数](https://learn.microsoft.com/en-us/windows/win32/api/mfobjects/ne-mfobjects-mfvideotransferfunction)

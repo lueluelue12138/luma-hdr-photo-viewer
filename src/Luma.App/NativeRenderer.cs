@@ -27,6 +27,7 @@ internal static class Native
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaDecode(string path,out FrameInfo info,out IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaDecodeSized(string path,uint maxEdge,out FrameInfo info,out IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaDecodeThumbnail(string path,uint maxEdge,out FrameInfo info,out IntPtr frame);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaProbeFloatHdr(string path,out int hdr);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern void LumaFreeFrame(IntPtr frame);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Unicode)]internal static extern int LumaFrameWarning(IntPtr frame,System.Text.StringBuilder text,uint count);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)]internal static extern int LumaCopySdrBgra(IntPtr frame,[Out]byte[] pixels,ulong bytes);
