@@ -1,6 +1,6 @@
 # Live / 动态照片与 RTX HDR
 
-首轮实现：2026-10-15；当前源码与本地候选 0.1.25。当前公开下载仍是 0.1.23；本轮没有创建标签或公开 Release。
+首轮实现：2026-10-15；当前源码与本地候选 0.1.26。当前公开下载仍是 0.1.23；本轮没有创建标签或公开 Release。
 
 ## 怎么用
 
@@ -26,6 +26,8 @@
 | 原生 HDR 视频、Dolby Vision、.livp、AVIF Motion Photo、其他厂商变体 | 尚未完成。识别到 PQ / HLG / Dolby Vision 时明确保留静态照片，不压成 SDR 后冒充原生 HDR 视频 |
 
 视频使用 Windows 媒体组件解码；HEVC 视频可能需要 **Windows HEVC 视频扩展**。HEIC 照片仍依赖 Windows HEIF / HEVC 扩展。本轮没有增加 FFmpeg、外部播放器、NuGet 包或新的安装前置。
+
+播放器与媒体流在后台创建，和 GPU 准备并行；停止后的媒体资源关闭也在后台完成，避免占用窗口线程。
 
 首次播放最多接受 60 秒、8192 单边 / 1600 万像素的视频；内嵌片段限制 256 MiB，元数据限制 4 MiB。Apple 候选配对有数量上限，超大目录中的重命名视频可能无法自动找到。保留原始配对文件最可靠。
 
@@ -57,6 +59,7 @@ Windows MediaPlayer 的 frame-server 模式负责解封装、解码、时间轴�
 
 ```powershell
 ./.tools/dotnet/dotnet.exe run --project tests/Luma.Tests -c Release
+python tests/verify_live_performance.py '<完整动态照片路径>' --app artifacts/Luma/Luma.App.exe
 python tests/verify_live_preferences.py '<内嵌视频的动态照片路径>' --app artifacts/Luma/Luma.App.exe
 python tests/verify_photo_features.py --app artifacts/Luma/Luma.App.exe
 python tests/verify_live_photo.py '<完整动态照片路径>' --app artifacts/Luma-live-final/Luma.App.exe

@@ -134,13 +134,21 @@ public sealed partial class ViewerWindow
     internal async Task<object> VerificationFilmstripDetailsAsync()
     {
         var saved=AppWindow.Size;var originalSequence=sequence;var samples=new List<object>();
-        sequence=Enumerable.Repeat(current!,24).ToList();selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=0;selecting=false;
-        foreach(int width in new[]{1240,900,740,600})foreach(bool visible in new[]{true,false})
+        foreach(int photoCount in new[]{3,9,24})
         {
-            AppWindow.Resize(new((int)(width*Surface.CompositionScaleX),(int)(800*Surface.CompositionScaleY)));ShowInfo(visible);ShowControls(true);await Task.Delay(280);await VerificationPresentationAsync();UpdateFilmstripBar();
+        sequence=Enumerable.Repeat(current!,photoCount).ToList();selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=0;selecting=false;
+        foreach(int width in new[]{2200,1700,1240,900,740,600})
+        {
+            AppWindow.Resize(new((int)(width*Surface.CompositionScaleX),(int)(800*Surface.CompositionScaleY)));ShowInfo(false);ShowControls(true);await Task.Delay(280);await VerificationPresentationAsync();
+            var original=BottomPanel.TransformToVisual(Canvas).TransformPoint(new(0,0));double originalWidth=BottomPanel.ActualWidth;
+            double infoLeft=Canvas.ActualWidth-20-InfoPanel.Width;
+            bool originallyClear=original.X+originalWidth+12<=infoLeft;
+            foreach(bool visible in new[]{true,false})
+            {
+            ShowInfo(visible);await Task.Delay(280);await VerificationPresentationAsync();UpdateFilmstripBar();
             var strip=BottomPanel.TransformToVisual(Canvas).TransformPoint(new(0,0));
             double expected=(BottomPanel.Margin.Left+Canvas.ActualWidth-BottomPanel.Margin.Right)/2;
-            if(Math.Abs(strip.X+BottomPanel.ActualWidth/2-expected)>2||strip.X<0||strip.X+BottomPanel.ActualWidth>Canvas.ActualWidth+1||Filmstrip.ActualWidth>BottomPanel.ActualWidth-76||FilmstripBar.Maximum<=0)
+            if(Math.Abs(strip.X+BottomPanel.ActualWidth/2-expected)>2||strip.X<0||strip.X+BottomPanel.ActualWidth>Canvas.ActualWidth+1||Filmstrip.ActualWidth>BottomPanel.ActualWidth-76||(photoCount*104>Filmstrip.ActualWidth+4&&FilmstripBar.Maximum<=0))
                 throw new InvalidOperationException($"Filmstrip not centered / bounded at {width}, details={visible}: {strip.X}, {BottomPanel.ActualWidth}, list {Filmstrip.ActualWidth}");
             if(visible)
             {
@@ -148,7 +156,13 @@ public sealed partial class ViewerWindow
                 if(strip.X<info.X+InfoPanel.ActualWidth&&strip.X+BottomPanel.ActualWidth>info.X&&strip.Y<info.Y+InfoPanel.ActualHeight&&strip.Y+BottomPanel.ActualHeight>info.Y)
                     throw new InvalidOperationException("Details and filmstrip must not overlap");
             }
-            samples.Add(new{width,details=visible,left=strip.X,stripWidth=BottomPanel.ActualWidth,listWidth=Filmstrip.ActualWidth,expectedCenter=expected,range=FilmstripBar.Maximum});
+            if((originallyClear||!visible)&&(Math.Abs(strip.X-original.X)>1||Math.Abs(BottomPanel.ActualWidth-originalWidth)>1))throw new InvalidOperationException("A non-overlapping strip must not move or resize when details toggle");
+            // A second settled pass must keep the same result, not oscillate.
+            UpdateGlass();await Task.Delay(100);var settled=BottomPanel.TransformToVisual(Canvas).TransformPoint(new(0,0));
+            if(Math.Abs(settled.X-strip.X)>1)throw new InvalidOperationException("Filmstrip avoidance oscillated after layout");
+            samples.Add(new{photoCount,width,details=visible,originallyClear,left=strip.X,stripWidth=BottomPanel.ActualWidth,listWidth=Filmstrip.ActualWidth,expectedCenter=expected,range=FilmstripBar.Maximum});
+            }
+        }
         }
         sequence=originalSequence;selecting=true;Filmstrip.ItemsSource=sequence;Filmstrip.SelectedIndex=index;selecting=false;
         AppWindow.Resize(saved);ShowInfo(true);await Task.Delay(250);return new{scenario="filmstrip-details-layout",samples};

@@ -197,4 +197,19 @@ public sealed partial class ViewerWindow
         var result=new{soundEnabled=livePlayback?.Muted==false,storedSoundEnabled=!ViewerPreferences.Current.LiveMuted,liveDetails=true,fixedToolbarGeometry=geometry.Select(g=>new{g.State,g.Width,g.X,g.SoundX}),animationRespectsSystem=true};
         StopLive();await liveRetirement;return result;
     }
+    internal async Task<object> VerificationLivePerformanceAsync()
+    {
+        await liveDetection;hdrRequested=false;vsrRequested=false;var runs=new List<object>();
+        for(int n=0;n<3;n++)
+        {
+            await StartLiveAsync();var live=livePlayback??throw new InvalidOperationException(liveWarning??"No Live player");live.VerificationLoop=true;
+            var watch=System.Diagnostics.Stopwatch.StartNew();while(live.Frames<12){if(watch.Elapsed.TotalSeconds>15)throw new TimeoutException("No Live frames");await Task.Delay(15);}
+            var times=live.FrameMilliseconds.OrderBy(x=>x).ToArray();
+            var state=new{iteration=n,live.RendererReadyMilliseconds,live.MediaOpenMilliseconds,live.SurfaceReadyMilliseconds,live.FirstFrameMilliseconds,live.Renderer.DeviceReused,frames=live.Frames,submitP95=times[(int)((times.Length-1)*.95)],gpuBytes=live.Renderer.Status().GpuBytes};
+            StopLive();await liveRetirement;
+            if(!live.PreparedOffUiThread||!live.ReleasedOffUiThread)throw new InvalidOperationException("Media preparation and retirement must stay off XAML");
+            runs.Add(new{timing=state,live.PreparedOffUiThread,live.ReleasedOffUiThread});
+        }
+        return new{mode="SDR, no SDK success claim",runs};
+    }
 }

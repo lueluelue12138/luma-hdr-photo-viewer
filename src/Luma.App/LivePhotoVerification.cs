@@ -5,6 +5,13 @@ using Luma.Core;
 namespace Luma.App;
 internal static class LivePhotoVerification
 {
+    internal static async Task PerformanceAsync(MainWindow owner,string path)
+    {
+        ViewerWindow? viewer=null;string file=Path.Combine(App.DataDirectory,"live-performance.json");
+        try{await owner.VerificationReady.Task;viewer=new(path,owner:owner);viewer.Activate();await viewer.VerificationReady.Task;var result=await viewer.VerificationLivePerformanceAsync();await viewer.VerificationLiveCloseAsync();viewer=null;File.WriteAllText(file,JsonSerializer.Serialize(new{complete=true,result,cancelNaturalReplayClose=true},new JsonSerializerOptions{WriteIndented=true}));}
+        catch(Exception ex){File.WriteAllText(file,JsonSerializer.Serialize(new{complete=false,error=ex.ToString()}));throw;}
+        finally{if(viewer is not null){viewer.Close();await viewer.VerificationDisposeAsync();}owner.Close();}
+    }
     internal static async Task RenderSymbolAsync(LivePhotoIcon icon)
     {
         var bitmap=new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();await bitmap.RenderAsync(icon,240,240);

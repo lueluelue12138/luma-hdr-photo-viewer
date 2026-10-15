@@ -537,10 +537,21 @@ public sealed partial class ViewerWindow : Window
         double infoTop=Math.Max(82,badgeTop+StatusBadge.ActualHeight+12);if(InfoPanel.Margin.Top!=infoTop)InfoPanel.Margin=new(16,infoTop,20,0);
         double infoWidth=Math.Clamp(Canvas.ActualWidth-40,180,340);
         bool infoVisible=InfoPanel.Visibility==Visibility.Visible;
-        bool reserveInfo=infoVisible&&Canvas.ActualWidth-infoWidth-100>=240;
+        double normalMaxWidth=Math.Max(0,Math.Min(920,Canvas.ActualWidth-72));
+        // Evaluate the strip in its normal centered position, independently of
+        // the previous avoidance layout. Using its already-shifted bounds would
+        // alternate between "collision" and "no collision" on layout updates.
+        // Template: 100 DIP per item + 4 margin; panel chrome totals 80 DIP.
+        double normalStripWidth=Math.Min(normalMaxWidth,sequence.Count*104d+80);
+        double normalStripRight=(Canvas.ActualWidth+normalStripWidth)/2;
+        double stripHeight=BottomPanel.ActualHeight>0?BottomPanel.ActualHeight:108;
+        double stripTop=Canvas.ActualHeight-28-stripHeight;
+        double infoLeft=Canvas.ActualWidth-20-infoWidth;
+        bool collides=infoVisible&&BottomPanel.Visibility==Visibility.Visible&&normalStripRight+12>infoLeft&&stripTop<Canvas.ActualHeight-8&&stripTop+stripHeight>infoTop-12;
+        bool reserveInfo=collides&&Canvas.ActualWidth-infoWidth-100>=240;
         // On narrow windows put the strip below the details instead of letting
         // the two overlays cover one another or squeezing the list to zero.
-        double infoHeight=Math.Max(120,Canvas.ActualHeight-infoTop-20-(infoVisible&&!reserveInfo?128:0));
+        double infoHeight=Math.Max(120,Canvas.ActualHeight-infoTop-20-(collides&&!reserveInfo?stripHeight+20:0));
         if(InfoPanel.Width!=infoWidth)InfoPanel.Width=infoWidth;if(InfoPanel.Height!=infoHeight)InfoPanel.Height=infoHeight;
         double right=reserveInfo?infoWidth+40:36;
         var filmstripMargin=new Thickness(36,0,right,28);if(BottomPanel.Margin!=filmstripMargin)BottomPanel.Margin=filmstripMargin;
