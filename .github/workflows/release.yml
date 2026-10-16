@@ -47,6 +47,7 @@ jobs:
           $project = [xml](Get-Content src/Luma.App/Luma.App.csproj -Raw)
           $version = [string]($project.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1)
           if (($env:RELEASE_TAG.Substring(1) -split '-', 2)[0] -ne $version) { throw 'Tag and source version differ.' }
+          if (!(Test-Path -LiteralPath "docs/releases/$env:RELEASE_TAG.md")) { throw 'Commit version-specific release notes before tagging.' }
 
       - name: Set up tested .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -123,6 +124,12 @@ jobs:
       RELEASE_TAG: ${{ github.ref_name }}
       RELEASE_COMMIT: ${{ github.sha }}
     steps:
+      - name: Read release notes from exact tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
       - name: Download verified package files
         # Use the matching v7 artifact implementation; the release job does not
         # retrieve or expose the private SDK archive or build dependencies.
@@ -148,23 +155,13 @@ jobs:
       - name: Create or update draft only
         shell: pwsh
         run: |
-          @'
-          重新看看你喜欢的照片。Luma 将 RTX Video HDR 带到普通 SDR 照片，并保留独立的 HDR / VSR 控制。
-
-          Rediscover your photos with RTX Video HDR. HDR and VSR remain independent; VSR starts off by default.
-
-          - Windows 11 x64：下载 setup.exe 安装，或下载 portable.zip 完整解压。
-          - Windows 11 x64: install setup.exe, or extract the complete portable ZIP.
-          - 当前包未签名；原生 HDR 格式范围和已知限制见项目 README。
-          - This candidate is unsigned. See the README for supported HDR formats and known limitations.
-          - SHA256SUMS.txt 可校验下载；NVIDIA 组件适用随包提供的独立许可。
-
-          此版本保持草稿，待人工核对后再决定是否公开。
-          '@ | Set-Content release-notes.md -Encoding utf8
+          Copy-Item -LiteralPath "docs/releases/$env:RELEASE_TAG.md" -Destination release-notes.md
           $existing = gh release view $env:RELEASE_TAG --json isDraft --jq .isDraft 2>$null
           if ($LASTEXITCODE -eq 0) {
             if ($existing -ne 'true') { throw 'Refusing to overwrite an already published release.' }
             gh release upload $env:RELEASE_TAG (Get-ChildItem release-files -File).FullName --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Draft release asset upload failed.' }
+            gh release edit $env:RELEASE_TAG --notes-file release-notes.md
           } else {
             $arguments = @('release','create',$env:RELEASE_TAG,'--verify-tag','--draft','--title',"Luma $env:RELEASE_TAG",'--notes-file','release-notes.md')
             if ($env:RELEASE_TAG.Contains('-')) { $arguments += '--prerelease' }

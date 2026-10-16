@@ -1,6 +1,6 @@
 # Live / 动态照片与 RTX HDR
 
-首轮实现：2026-10-15；当前源码与本地候选 0.1.26。当前公开下载仍是 0.1.23；本轮没有创建标签或公开 Release。
+首轮实现：2026-10-15；从 **0.1.27 正式版**开始提供公开下载。支持范围与限制见下文。
 
 ## 怎么用
 
@@ -62,7 +62,7 @@ Windows MediaPlayer 的 frame-server 模式负责解封装、解码、时间轴�
 python tests/verify_live_performance.py '<完整动态照片路径>' --app artifacts/Luma/Luma.App.exe
 python tests/verify_live_preferences.py '<内嵌视频的动态照片路径>' --app artifacts/Luma/Luma.App.exe
 python tests/verify_photo_features.py --app artifacts/Luma/Luma.App.exe
-python tests/verify_live_photo.py '<完整动态照片路径>' --app artifacts/Luma-live-final/Luma.App.exe
+python tests/verify_live_photo.py '<完整动态照片路径>' --app artifacts/Luma/Luma.App.exe
 ```
 
 集成测试使用独立图库，验证 SDK / FP16、视频变化、空格对应的对照状态、音轨与静音开关、循环纹理预算、静态缓存恢复、准备中取消、自然结束、重播与播放中关闭。声音开关状态测试不代替人工听感与音画同步测试。

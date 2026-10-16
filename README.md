@@ -6,11 +6,11 @@
 
 Luma 是免费、开源的 Windows 原生照片查看器，支持**原生 HDR 照片**，也能通过 **NVIDIA RTX Video HDR** 为普通 JPG 带来更丰富的光影。
 
-A native Windows photo viewer with RTX HDR for SDR photos and native HDR image support.
+A native Windows photo viewer with RTX HDR, native HDR images, and Live / Motion Photo playback.
 
 [下载最新版本](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/latest) · [HDR 入门](docs/HDR-SETUP.md) · [参与贡献](CONTRIBUTING.md) · [隐私说明](PRIVACY.md)
 
-**当前公开版本 `0.1.23` · Windows 11 x64。** [下载安装包](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/download/v0.1.23/Luma-0.1.23-windows-x64-rtx-setup.exe)（约 58.28 MiB），或在 [Release 页面](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.23) 获取便携版与更新说明。当前包未签名；微软商店版准备中。
+**当前版本 `0.1.27` · Windows 11 x64。** [下载安装包](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/download/v0.1.27/Luma-0.1.27-windows-x64-rtx-setup.exe)，或在 [Release 页面](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.27) 获取便携版与更新说明。已安装旧版时，退出 Luma 后直接运行新版安装器即可升级，图库和设置保留。当前包未签名；微软商店版准备中。
 
 ## 为什么做 Luma
 
@@ -25,13 +25,13 @@ A native Windows photo viewer with RTX HDR for SDR photos and native HDR image s
 - **照片是主角。** 原生 WinUI 3、深浅主题、悬浮毛玻璃；支持缩放、拖拽和全屏看图。
 - **效果由你选择。** HDR 与 VSR 独立控制，VSR 默认关闭；按住空格，对比原图或可用的 SDR 底图。
 - **相册顺着你的习惯。** 文件夹导入、搜索、收藏、最近打开；照片留在原位置，移除相册不会删除原文件。
-- **拍摄细节随手查看。** 顶部信息入口展示日期、相机、镜头、曝光与 HDR 来源，支持搜索和复制 EXIF。
+- **拍摄细节随手查看。** 顶部信息入口展示日期、相机、镜头、曝光、HDR 来源与实况信息，支持搜索和复制 EXIF；图库角标一眼看出照片特性。
 
-## 让回忆动起来（开发版）
+## 让回忆动起来
 
-源码已加入 Live / Motion Photo 预览：完整 iPhone HEIC＋MOV，以及已验证的 Google、Pixel、三星和小米动态照片。点击顶部实况图标或按 **L** 播放；动态部分为 SDR 时，也能选择 RTX HDR，空格仍用于原图对照。首次默认静音，之后会记住你的原声设置。
+实况照片里，往往还藏着按下快门前后的声音和动作。Luma 支持完整 iPhone HEIC＋MOV，以及已验证的 Google、Pixel、三星和小米动态照片。点击顶部同心圆图标或按 **L** 播放；首次默认静音，之后会记住你的原声设置。
 
-当前公开的 0.1.23 尚不含此功能。更多封装、原生 HDR 视频和 `.livp` 仍在完善，具体范围见 [Live 照片说明](docs/LIVE-PHOTOS.md)。
+**动态部分为 SDR 时，也能选择 RTX HDR。** 按住空格随时对比。请保留 iPhone 配套 MOV，Android 请导出完整原片；聊天软件转发后可能只剩静态图片。原生 HDR 视频和 `.livp` 尚未支持，具体范围见 [Live 照片说明](docs/LIVE-PHOTOS.md)。
 
 ## 开始体验 HDR
 
@@ -49,9 +49,10 @@ A native Windows photo viewer with RTX HDR for SDR photos and native HDR image s
 | 原生 HDR | iPhone HEIC 的 Apple / ISO 增益图、PQ HEIC；Android Ultra HDR / ISO / Apple 增益图 JPEG；线性 scRGB JPEG XR（JXR / WDP / HDP）。无需 RTX |
 | SDR → RTX HDR | 官方 NVIDIA TrueHDR；需要兼容的 RTX 显卡、驱动、含 SDK 的构建与开启 HDR 的屏幕 |
 | AI 超分 | 官方 NVIDIA RTX VSR |
-| 暂未支持 | AVIF HDR、JPEG XL、OpenEXR、RAW、动画播放；HLG HEIC 尚未完成验证。GIF / 多页 TIFF 当前显示第一帧 |
+| 实况 / 动态照片 | 已验证的 iPhone HEIC＋MOV、Google / Pixel / Samsung / Xiaomi Motion Photo；视频使用 Windows 媒体组件解码，播放期间暂停 VSR |
+| 暂未支持 | AVIF HDR、JPEG XL、OpenEXR、RAW、GIF 动画、原生 HDR 动态视频与 `.livp`；HLG HEIC 尚未完成验证。GIF / 多页 TIFF 当前显示第一帧 |
 
-HEIC 需要 Windows HEIF 图像扩展和 HEVC 视频扩展。具体格式、原图对照方式及验证范围见 [HDR 格式说明](docs/HDR-FORMATS.md)。
+包内包含 .NET、WinUI 和 NVIDIA 运行库，无需另装开发 SDK、FFmpeg 或播放器。HEIC 需要 Windows HEIF 图像扩展和 HEVC 视频扩展，部分实况视频也需要 HEVC 扩展。具体格式、原图对照方式及验证范围见 [HDR 格式说明](docs/HDR-FORMATS.md)。
 
 RTX HDR 是 AI 增强，不能恢复拍摄时没有记录的信息，也不保证每个区域都更亮。大图片可能依据资源预算缩小处理；首次未缓存的大相册缩略图、AI 初始化与更多显示器的适配仍在完善。
 
@@ -79,7 +80,7 @@ cd luma-hdr-photo-viewer
 
 </details>
 
-GitHub Actions 的 **standard** 开发包不含 NVIDIA SDK。**rtx** 标签流程使用受控 SDK 输入，自动构建 EXE 安装包和便携 ZIP，上传至 Release 草稿；正式公开下载由维护者另行决定。详见 [发布流程](docs/RELEASING.md)。
+GitHub Actions 的 **standard** 开发包不含 NVIDIA SDK。**rtx** 标签流程自动构建 EXE 安装包和便携 ZIP，生成 Release 草稿，核验后再公开。MSIX 使用独立的手动 Store 工作流，配置真实产品标识后出包，不自动上传或提交商店。详见 [发布流程](docs/RELEASING.md) 与 [微软商店操作指南](docs/MICROSOFT-STORE.md)。
 
 图库与设置保存在 `%LOCALAPPDATA%\Luma`，默认图片关联由你在 Windows 设置中选择。
 

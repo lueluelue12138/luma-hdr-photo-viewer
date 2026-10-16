@@ -35,6 +35,13 @@
     <TextBlock Text="按住空格对比原图；带增益图的 HDR 照片可对比 SDR 底图。VSR 是独立的 AI 超分开关，默认关闭。HDR 增强的是光影层次，不代表每个区域都更亮。" Style="{StaticResource Hint}"/>
    </StackPanel></Border>
    <TextBlock Text="按你的习惯使用" Style="{StaticResource SectionTitle}" Margin="0,12,0,0"/>
+   <Border Style="{StaticResource SettingCard}"><StackPanel Spacing="12">
+    <TextBlock Text="让回忆动起来" FontWeight="SemiBold" FontSize="16"/>
+    <TextBlock Text="支持的实况照片会在顶部显示同心圆图标。点击图标或按 L 播放 / 停止，Esc 停止播放；首次默认静音，之后会记住你的原声选择。图库的磨砂角标可快速识别 HDR 与实况照片。" Style="{StaticResource Hint}"/>
+    <TextBlock Text="iPhone 实况照片需要保留配套 MOV；Android 动态照片请使用完整原片，部分分享方式会丢失视频。动态部分为 SDR 时也可使用 RTX HDR，播放期间暂停 VSR。首次播放可能需要等待初始化。" Style="{StaticResource Hint}"/>
+    <TextBlock Text="缩放菜单的“适合窗口”完整显示照片，“填满窗口”铺满画面并裁去超出部分；旁边的适应按钮可一键恢复完整画面。" Style="{StaticResource Hint}"/>
+    <HyperlinkButton Content="实况照片使用说明 ↗" NavigateUri="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/docs/LIVE-PHOTOS.md" Padding="0,4" AutomationProperties.Name="在浏览器中打开实况照片的支持范围与使用说明"/>
+   </StackPanel></Border>
    <Border Style="{StaticResource SettingCard}"><StackPanel Spacing="12"><TextBlock Text="外观" FontWeight="SemiBold" FontSize="16"/><ComboBox x:Name="ThemeBox" Width="220" SelectionChanged="ThemeChanged" AutomationProperties.Name="应用主题"><ComboBoxItem Content="跟随系统" Tag="system"/><ComboBoxItem Content="浅色" Tag="light"/><ComboBoxItem Content="深色" Tag="dark"/></ComboBox></StackPanel></Border>
    <Border Style="{StaticResource SettingCard}"><StackPanel Spacing="12"><TextBlock Text="默认图片查看器" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="让双击照片直接打开 Luma。先注册应用，再由你在 Windows 默认应用设置中选择图片格式。" Style="{StaticResource Hint}"/><Button Content="在 Windows 中选择 Luma" Style="{StaticResource GalleryAction}" Click="DefaultAppsClick"/><TextBlock Text="如果列表中找不到 Luma，试试搜索 .jpg、.png 等文件类型，再选择 Luma。" Style="{StaticResource Hint}"/></StackPanel></Border>
    <TextBlock Text="关于 Luma" Style="{StaticResource SectionTitle}" Margin="0,12,0,0"/>

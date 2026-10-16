@@ -20,9 +20,11 @@ Luma HDR Photo Viewer
 
 导入文件夹即可浏览相册，支持搜索、收藏、最近打开、缩放拖拽、全屏和拍摄信息。照片留在原文件夹，不需要注册或上传。
 
+还能回放实况照片里快门前后的片刻：支持完整 iPhone HEIC＋MOV，以及已验证的 Google、Pixel、三星和小米动态照片。点一下实况图标即可播放，声音选择会记住；动态部分为 SDR 时，也能选择 RTX HDR。
+
 使用条件：Windows 11 x64。HDR 显示需要 HDR 屏幕并开启 Windows HDR；RTX HDR / VSR 另需兼容的 NVIDIA RTX 显卡和驱动。原生 HDR 不需要 RTX；HEIC 需要 Windows HEIF / HEVC 扩展，相关扩展的可用性和费用由微软商店决定。
 
-当前支持 Ultra HDR / ISO / Apple 增益图 JPEG、Apple / ISO 增益图和 PQ HEIC，以及线性 scRGB JPEG XR。并非所有同扩展名图片都包含受支持的 HDR 信息。AVIF HDR、RAW 和动画播放暂未支持；大相册首次缩略图与 AI 首次初始化可能需要等待。
+当前支持 Ultra HDR / ISO / Apple 增益图 JPEG、Apple / ISO 增益图和 PQ HEIC，以及线性 scRGB JPEG XR。并非所有同扩展名图片都包含受支持的 HDR 信息。AVIF HDR、RAW、GIF 动画、原生 HDR 实况视频和 .livp 暂未支持；请保留完整实况原片与配套视频。大相册首次缩略图、AI 初始化与首次实况播放可能需要等待。
 
 RTX HDR 是 AI 增强，不代表恢复拍摄时未记录的信息。Luma 是独立项目，并非 NVIDIA 官方应用。
 
@@ -30,6 +32,7 @@ RTX HDR 是 AI 增强，不代表恢复拍摄时未记录的信息。Luma 是独
 
 - 原生 HDR 照片预览：Ultra HDR JPEG、兼容的 iPhone HEIC 和 Windows JXR 截图。
 - NVIDIA RTX Video HDR 为普通照片增强光影；VSR 超分独立开关。
+- 实况 / Motion Photo 按需播放、记住原声选择；支持的 SDR 动态也可使用 RTX HDR，播放期间暂停 VSR。
 - Windows 原生界面、深浅主题、悬浮工具栏、全屏和缩放拖拽。
 - 文件夹相册、搜索、收藏与最近打开；原照片保留原位置。
 - 拍摄信息与 EXIF 搜索复制；Windows HDR 状态、峰值亮度及校准入口。

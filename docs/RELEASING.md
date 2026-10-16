@@ -8,6 +8,9 @@
 | --- | --- | --- |
 | 推送 `main` / Pull Request / 手动运行 CI | 源码边界、图库逻辑、SDK-free WIC/D3D11/FP16、安装生命周期检查 | standard EXE、便携 ZIP、SHA256、构建信息；Actions 产物保留 14 天 |
 | 推送与源码版本一致的 `v*` 标签 | 精确检出源码和私有 SDK、校验 SDK、编译完整 RTX 应用、核对包及隔离安装 | 完整 **RTX EXE、便携 ZIP、SHA256、构建信息**，自动上传到 **Release 草稿** |
+| 手动运行 Store 工作流，并选择已发布版本标签 | 使用真实 Partner Center 标识构建完整 RTX MSIX 并核对包内容 | **MSIX、SHA256、来源记录**，仅保存为 Actions 产物，不上传商店 |
+
+标签发布前需提交 `docs/releases/<标签>.md`，例如 `docs/releases/v0.1.27.md`。Release 草稿直接读取该标签提交里的说明，避免每一版都使用相同的通用介绍。草稿公开仍需明确授权与消费者包验证；推送标签不会自动公开 Release，也不会自动生成 MSIX。
 
 `standard` 不包含 NVIDIA 运行库，不能执行 RTX HDR/VSR。`rtx` 必须真正以官方 SDK 编译，并包含原始 TrueHDR/VSR release DLL、独立运行库条款和原始许可 PDF；SDK 缺失或验证失败时直接失败，不降级发布 standard。
 
@@ -43,12 +46,12 @@ python tests/verify_release.py --variant standard
 python tests/verify_installer.py
 
 # 已按 external/nvidia/README.md 放置官方 SDK 的完整本地候选
-./scripts/Build-Release.ps1 -Variant rtx -Tag v0.1.17 -TestInstaller
+./scripts/Build-Release.ps1 -Variant rtx -Tag v0.1.27 -TestInstaller
 python tests/verify_release.py --variant rtx
 python tests/verify_installer.py
 ```
 
-输出为 `Luma-0.1.17-windows-x64-rtx-setup.exe`、`Luma-0.1.17-windows-x64-rtx-portable.zip`、`SHA256SUMS.txt` 和 `build-info.json`。构建信息记录版本、源码提交、是否干净、RTX 能力、SDK 输入版本/哈希及原始运行库/许可哈希。`-Distribution` 要求已提交且干净的源码，不代表代替 NVIDIA 的许可或完成正式公开发行审批。
+输出为 `Luma-0.1.27-windows-x64-rtx-setup.exe`、`Luma-0.1.27-windows-x64-rtx-portable.zip`、`SHA256SUMS.txt` 和 `build-info.json`。构建信息记录版本、源码提交、是否干净、RTX 能力、SDK 输入版本/哈希及原始运行库/许可哈希。`-Distribution` 要求已提交且干净的源码，不代表代替 NVIDIA 的许可或完成正式公开发行审批。
 
 目前安装包与应用未做代码签名；编译器签名核对不等于应用已签名。完整包为离线自包含，用户不需下载开发 SDK、.NET SDK 或额外配置私有仓库；实际 RTX 功能仍需要兼容 GPU、驱动和开启 HDR 的屏幕。
 
@@ -78,6 +81,6 @@ python tests/verify_installer.py
 
 ## Store 路线
 
-采用 `scripts/Build-Store.ps1` 的完整 RTX、自包含 MSIX 路线；传统 `Package.ps1` 保留为旧开发工具，不用于商店提交。已有手动 Actions 出包流程、身份模板、包核对、隐私说明、商店文案与审核备注，见 [微软商店准备](MICROSOFT-STORE.md)。本地开发身份 MSIX 已实际出包并核对 504 文件；真实 Partner Center 身份、实际 MSIX 安装 / 更新 / 卸载与 WACK 仍待完成。未上传或提交微软商店。
+采用 `scripts/Build-Store.ps1` 的完整 RTX、自包含 MSIX 路线；传统 `Package.ps1` 保留为旧开发工具，不用于商店提交。已有手动 Actions 出包流程、身份模板、包核对、隐私说明、商店文案与审核备注，见 [微软商店准备](MICROSOFT-STORE.md)。维护者已注册开发者账户，真实 Partner Center 身份与实际 MSIX 安装 / 更新 / 卸载仍待完成。WACK 当前仅作可选本地检查。未上传或提交微软商店。
 
 参考：[GitHub deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)、[标签触发](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)、[Release 草稿](https://docs.github.com/en/rest/releases/releases#create-a-release)、[Inno Setup 当前用户安装](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm)。NVIDIA 条款以维护者实际下载、随包保留的原始许可为准。

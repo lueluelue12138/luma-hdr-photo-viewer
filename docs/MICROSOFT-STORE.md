@@ -1,6 +1,16 @@
 # 微软商店上架准备
 
-2026-10-15。当前只准备包与资料，尚未上传、提交审核或在商店发布。
+2026-10-16。维护者已注册开发者账户；当前只准备包与资料，尚未上传、提交审核或在商店发布。GitHub 0.1.27 的正式发布与商店提交是两个独立步骤。
+
+## 你当前页面的下一步
+
+1. 点击截图中的 **新产品**，选择 **MSIX / PWA 应用**。名称先填 **Luma HDR Photo Viewer**；被占用时可试 **Luma HDR & Live Photo Viewer**，以后台检查结果为准。不要选择游戏或 EXE / MSI 路线。
+2. 名称预留成功后，进入产品的 **产品管理 → 产品标识（Product identity）**。应用名称可选择；`Package/Identity/Name` 和 `Package/Identity/Publisher` 是微软分配的身份，不能自己猜写。原样复制这两项、`PublisherDisplayName` 与实际预留显示名称。发布者显示名称可沿用账户已有值，尚未设置时建议 `pengweidong`。
+3. 把四项填入下文列出的 GitHub Variables，再手动运行 Store 工作流，选择 **v0.1.27**。下载产物 ZIP，解压后找到 `Luma_0.1.27.0_x64.msix`。Actions 的 ZIP 只是下载容器；上传 Partner Center 的是里面的 `.msix`。
+4. 完成实际包测试后，在产品页面点击 **开始提交**。填写免费定价 / 市场、照片与视频类别、年龄分级、简体中文商店介绍和真实截图，上传 MSIX。中文文案见 [可复制草稿](store/LISTING.zh-CN.md)，审核说明见 [认证备注](store/CERTIFICATION.md)。
+5. 核对后台包验证和声明后，由维护者点击 **提交认证**。如不希望通过后立即公开，在提交选项中选择审核通过后暂缓发布 / 手动发布（名称以后台当前选项为准）；审核通过后再由维护者决定公开时间。
+
+本次不代为点击上传、提交认证或公开发布。以上步骤依据微软的 [名称预留](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/reserve-your-apps-name)、[提交清单](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/create-app-submission) 与 [包要求](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/app-package-requirements)。
 
 ## 推荐路径
 
@@ -10,7 +20,7 @@ MSIX 可由商店负责签名、托管和更新，不需要先购买商业代码
 
 ## 需要维护者先完成
 
-1. 用自己的微软账户在 [Store 开发者入口](https://storedeveloper.microsoft.com/) 注册并完成身份验证、开发者协议等账户步骤。账户流程 / 费用以所在地区和实际后台为准；不要向代理提供密码或验证码。
+1. 开发者账户已由维护者注册；如后台另有身份验证 / 开发者协议待办，按账户提示完成即可，不提供密码或验证码。
 2. 在 Partner Center 的 Apps and games 新建 **MSIX / PWA app**，检查并预留 **Luma HDR Photo Viewer**，不可用时另定名称。预留并不等于上架。
 3. 从产品的 **Product identity** 页面复制四项真实值：Package/Identity/Name、Package/Identity/Publisher、Package/Properties/PublisherDisplayName、预留显示名称。它们不是登录密码，可用来替换 `packaging/store/identity.example.json`；不要猜测 Publisher GUID。
 4. 确认发布者展示名称、联系渠道、免费定价、销售地区和年龄分级答案，以及有权公开的示例照片与真实截图。
@@ -53,7 +63,11 @@ python scripts/Prepare-StoreAssets.py
 | `STORE_PUBLISHER_DISPLAY_NAME` | PublisherDisplayName |
 | `STORE_DISPLAY_NAME` | 实际预留的名称 |
 
-在 Actions 手动运行 **Prepare Microsoft Store MSIX (no submission)**，下载候选，完成真实安装和 WACK 后再到 Partner Center 新建提交。当前无需提供 Azure 凭据、签名证书或 Store API 密钥；商店提交自动化可在首发跑通后再做。
+操作位置为 GitHub 仓库 **Settings → Secrets and variables → Actions → Variables → New repository variable**。这四项是产品身份，不是密码，不需要填进 Secrets。NVIDIA 私有 SDK 的 Secret 保持原样，不复制出来。
+
+在 **Actions → Prepare Microsoft Store MSIX (no submission) → Run workflow** 手动运行，选择版本标签 `v0.1.27`，下载 `Store-MSIX-<提交>` 产物。若页面只提供分支，可使用 `gh workflow run store.yml --ref v0.1.27` 指定标签。完成实际安装 / 运行测试后再到 Partner Center 新建提交。当前无需 Azure 凭据、商业签名证书或 Store API 密钥。
+
+**推送 Release 标签只会构建 EXE / ZIP，不会顺带构建 MSIX。** Store 工作流是独立的手动出包，未配置真实身份时会停止；即使出包成功，也不会自动上传商店、提交认证或公开。以后更新商店版仍需构建更高版本 MSIX，并在同一产品里新建提交；不要为每次更新新建产品或更换包身份。
 
 ## 尚不能省略的验收
 
@@ -61,4 +75,4 @@ python scripts/Prepare-StoreAssets.py
 
 商店至少需要一张合规桌面截图，建议准备 4–5 张：PNG、至少 1366×768、单张不超过 50 MB，使用有授权的照片和真实界面，不能用私人截图或产品示意图替代。[官方图片要求](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/screenshots-and-images)。
 
-之后填写 [提交资料](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/create-app-submission)、上传实际身份 MSIX、附加运行库许可、说明 `runFullTrust` 的用途，运行 WACK 并处理结果。完成维护者审核后再明确决定提交认证及公开时间。账户身份核验、接受账户协议及最终分级声明由维护者完成。
+之后填写 [提交资料](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/create-app-submission)、上传实际身份 MSIX、附加运行库许可并说明 `runFullTrust` 的用途。微软当前文档已将 **WACK 标记为停止维护的可选本地检查**，不再把安装或通过 WACK 列作本项目的硬性提交门槛；如使用仍可保存报告，正式认证由 Partner Center 处理。[微软说明](https://learn.microsoft.com/windows/msix/package/packaging-uwp-apps#validate-your-app-package-locally)。实际打包运行、关联、更新和数据保留验证仍需完成。账户协议及最终分级声明由维护者确认。
