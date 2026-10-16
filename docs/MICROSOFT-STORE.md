@@ -1,14 +1,15 @@
 # 微软商店上架准备
 
-2026-10-16。维护者已注册开发者账户；当前只准备包与资料，尚未上传、提交审核或在商店发布。GitHub 0.1.27 的正式发布与商店提交是两个独立步骤。
+2026-10-16。维护者已注册开发者账户、预留 **Luma HDR Photo Viewer**；已通过浏览器保存部分商店草稿，尚未上传程序包、提交审核或在商店发布。GitHub 0.1.27 的正式发布与商店提交是两个独立步骤。
 
-## 你当前页面的下一步
+## 当前后台进度与下一步
 
-1. 点击截图中的 **新产品**，选择 **MSIX / PWA 应用**。名称先填 **Luma HDR Photo Viewer**；被占用时可试 **Luma HDR & Live Photo Viewer**，以后台检查结果为准。不要选择游戏或 EXE / MSI 路线。
-2. 名称预留成功后，进入产品的 **产品管理 → 产品标识（Product identity）**。应用名称可选择；`Package/Identity/Name` 和 `Package/Identity/Publisher` 是微软分配的身份，不能自己猜写。原样复制这两项、`PublisherDisplayName` 与实际预留显示名称。发布者显示名称可沿用账户已有值，尚未设置时建议 `pengweidong`。
-3. 把四项填入下文列出的 GitHub Variables，再手动运行 Store 工作流，选择 **v0.1.27**。下载产物 ZIP，解压后找到 `Luma_0.1.27.0_x64.msix`。Actions 的 ZIP 只是下载容器；上传 Partner Center 的是里面的 `.msix`。
-4. 完成实际包测试后，在产品页面点击 **开始提交**。填写免费定价 / 市场、照片与视频类别、年龄分级、简体中文商店介绍和真实截图，上传 MSIX。中文文案见 [可复制草稿](store/LISTING.zh-CN.md)，审核说明见 [认证备注](store/CERTIFICATION.md)。
-5. 核对后台包验证和声明后，由维护者点击 **提交认证**。如不希望通过后立即公开，在提交选项中选择审核通过后暂缓发布 / 手动发布（名称以后台当前选项为准）；审核通过后再由维护者决定公开时间。
+1. 已建立 **MSIX / PWA 应用**和首次提交草稿；产品标识已从后台读取，四项实际身份保存于本地忽略文件 `artifacts/store-identity.json`。它们由微软分配，后续更新继续使用同一身份。
+2. 属性已保存：照片与视频类别、项目 / Issues 网址、隐私政策与图形要求。照片和可能包含的 GPS 属于访问个人信息，即使不上传，也应选择“使用个人信息”，并提供说明本地处理方式的隐私政策。
+3. 已保存简体中文介绍、简短描述、6 项功能、7 个关键词、版权及现有随包许可；免费基准价格为 CNY 0，现有全球市场范围保留。认证说明已保存，个人电话 / 地址 / 开发者信息未填写。
+4. 年龄问卷已填到预览，结果为 3+ / Everyone；维护者需检查答案，亲自勾选 IARC 条款及本人法定成年声明，再保存。最终声明尚未完成。
+5. 将实际身份填入下文 GitHub Variables，再手动运行 Store 工作流，选择 **v0.1.27**。完成包测试后，上传产物内的 `.msix`；Actions ZIP 只是下载容器。当前开发身份 MSIX 不能上传替代。
+6. 补充至少一张使用获准公开照片的真实界面截图，核对个人资料、分级、市场和许可后，由维护者点击 **提交认证**。提交选项已保存为 **除非我选择“立即发布”，否则不发布此提交**；通过审核后仍由维护者决定公开时间。
 
 本次不代为点击上传、提交认证或公开发布。以上步骤依据微软的 [名称预留](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/reserve-your-apps-name)、[提交清单](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/create-app-submission) 与 [包要求](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/app-package-requirements)。
 
@@ -21,8 +22,8 @@ MSIX 可由商店负责签名、托管和更新，不需要先购买商业代码
 ## 需要维护者先完成
 
 1. 开发者账户已由维护者注册；如后台另有身份验证 / 开发者协议待办，按账户提示完成即可，不提供密码或验证码。
-2. 在 Partner Center 的 Apps and games 新建 **MSIX / PWA app**，检查并预留 **Luma HDR Photo Viewer**，不可用时另定名称。预留并不等于上架。
-3. 从产品的 **Product identity** 页面复制四项真实值：Package/Identity/Name、Package/Identity/Publisher、Package/Properties/PublisherDisplayName、预留显示名称。它们不是登录密码，可用来替换 `packaging/store/identity.example.json`；不要猜测 Publisher GUID。
+2. 应用名称与产品身份已就绪，后续无需再次新建产品；预留并不等于上架。
+3. 本地 `artifacts/store-identity.json` 已记录 Product identity 的四项真实值。它们不是登录密码；发布者个人资料由维护者确认，不能猜测 Publisher GUID 或改用示例值。
 4. 确认发布者展示名称、联系渠道、免费定价、销售地区和年龄分级答案，以及有权公开的示例照片与真实截图。
 
 微软要求 [名称预留](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/reserve-your-apps-name) 与实际身份匹配。当前仓库中的 `Luma.PhotoViewer / CN=Luma Development` 仅用于本地开发，不能直接提交为该账户的 Store 身份。
@@ -31,7 +32,7 @@ MSIX 可由商店负责签名、托管和更新，不需要先购买商业代码
 
 - `scripts/Build-Store.ps1`：从完整 RTX 载荷复制到独立 staging，用正式身份生成清单，MakeAppx 校验、MSIX、SHA256 和来源记录；不改写 GitHub 载荷、不安装证书、不上传。
 - `tests/verify_store_package.py`：逐文件核对 MSIX 与原载荷，检查 13 种格式关联、原始 NVIDIA DLL/PDF/条款、包身份、资源与校验和；不能替代 WACK 或运行时验收。
-- 0.1.27 已从云端消费者载荷实际生成开发身份 MSIX：87,451,022 字节（83.40 MiB），504 文件与 13 项格式关联核对通过。它仍是 `CN=Luma Development`，未签名、未安装，不能作为正式商店身份包上传；正式身份出包仍需前述四项标识。
+- 0.1.27 已从云端消费者载荷实际生成开发身份 MSIX：87,451,022 字节（83.40 MiB），504 文件与 13 项格式关联核对通过。它仍是 `CN=Luma Development`，未签名、未安装，不能作为正式商店身份包上传；四项真实身份现已获取，正式身份出包与运行测试尚未执行。
 - `.github/workflows/store.yml`：手动构建 Store 候选，只保存 MSIX / 校验和 / 来源三类 Actions 产物，不自动提交或公开。缺少真实 Store 身份时直接失败。
 - [隐私说明](../PRIVACY.md)、[商店中文文案](store/LISTING.zh-CN.md)、[审核备注与测试清单](store/CERTIFICATION.md)。应用仍以简体中文为主，不把英文介绍等同于完整英文 UI。
 - 现有透明原始 logo 位于 `branding/Luma.png`，包内已有启动 / 磁贴图标。商店 300×300 tile 可由 `scripts/Prepare-StoreAssets.py` 生成；真实界面截图仍需准备。
