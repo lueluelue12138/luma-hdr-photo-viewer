@@ -4,7 +4,7 @@
 
 ![Luma 产品展示：浅色相册与照片预览、悬浮毛玻璃、独立 RTX HDR 与 VSR 控制](docs/images/luma-product-showcase.webp)
 
-Luma 是免费、开源的 Windows 原生照片查看器，支持**原生 HDR 照片**，也能通过 **NVIDIA RTX Video HDR** 为普通 JPG 带来更丰富的光影。
+Luma 是免费、开源的 Windows 原生照片查看器，支持**原生 HDR/Live 照片**，也能通过 **NVIDIA RTX Video HDR** 为普通 JPG 带来更丰富的光影，甚至使用HDR预览live照片。
 
 A native Windows photo viewer with RTX HDR, native HDR images, and Live / Motion Photo playback.
 
@@ -31,7 +31,7 @@ A native Windows photo viewer with RTX HDR, native HDR images, and Live / Motion
 
 实况照片里，往往还藏着按下快门前后的声音和动作。Luma 支持完整 iPhone HEIC＋MOV，以及已验证的 Google、Pixel、三星和小米动态照片。点击顶部同心圆图标或按 **L** 播放；首次默认静音，之后会记住你的原声设置。
 
-**动态部分为 SDR 时，也能选择 RTX HDR。** 按住空格随时对比。请保留 iPhone 配套 MOV，Android 请导出完整原片；聊天软件转发后可能只剩静态图片。原生 HDR 视频和 `.livp` 尚未支持，具体范围见 [Live 照片说明](docs/LIVE-PHOTOS.md)。
+**动态部分也能选择 RTX HDR 预览。** 按住空格随时对比。请保留 iPhone 配套 MOV，Android 请导出完整原片；聊天软件转发后可能只剩静态图片。原生 HDR 视频和 `.livp` 尚未支持，具体范围见 [Live 照片说明](docs/LIVE-PHOTOS.md)。
 
 ## 开始体验 HDR
 
