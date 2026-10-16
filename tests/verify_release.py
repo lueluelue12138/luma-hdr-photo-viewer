@@ -36,7 +36,10 @@ for name in ['nvngx_truehdr.dll', 'nvngx_vsr.dll', 'NVIDIA_RTX_Video_SDK_License
 terms = payload/'licenses/NVIDIA-runtime-terms.rtf'
 assert terms.exists() == (args.variant == 'rtx')
 if args.variant == 'rtx':
-    assert terms.read_bytes() == (root/'packaging/RTX-EULA.rtf').read_bytes()
+    # Windows Git checkouts can materialize this text-only RTF with CRLF while
+    # another checkout has LF. Keep the wording exact and still bind the actual
+    # distributed bytes to build-info/SHA256; DLL/PDF checks above stay binary.
+    assert terms.read_bytes().replace(b'\r\n', b'\n') == (root/'packaging/RTX-EULA.rtf').read_bytes().replace(b'\r\n', b'\n')
     assert terms.read_bytes().startswith(b'{\\rtf1')
     assert b'NVIDIA_RTX_Video_SDK_License.pdf' in terms.read_bytes()
     assert metadata['nvidia']['termsSha256'] == hashlib.sha256(terms.read_bytes()).hexdigest()

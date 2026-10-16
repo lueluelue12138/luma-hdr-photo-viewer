@@ -1,5 +1,17 @@
 # Luma 本机验证记录
 
+## 0.1.27 正式附件与 HDR 补验（2026-10-16）
+
+[正式 Release](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.27) 已公开，非草稿、非预发布；源提交 `ee3cfc617440336bcb1716249fb55dee1d06da62`，没有移动旧标签。[完整 RTX 构建 38855410902](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38855410902) 与主 CI 均通过。Actions 产物下载后整体 SHA256 为 `9ef7449d83948a85dee7140b332c61a4885be52b29481dafe7eb6bc992c2d651`，匹配 GitHub digest；四附件也逐个匹配 digest 与 SHA256SUMS，503 个便携文件逐个与 ZIP 相同。实际 EXE 产品版本携带同一提交，构建元数据 `sourceDirty=false`。消费者目录 203,595,515 字节，安装器 61,183,335 字节（58.35 MiB），ZIP 85,764,381 字节（81.79 MiB）。
+
+维护者随后手动开启 Windows HDR，在 RTX 5070 Ti Laptop 上补验**同一云端消费者包**。`artifacts/release-0.1.27/consumer-native-hdr.log`：实际 TrueHDR、VSR-only、组合 / 缓存对照、40 次原图切换及 FP16 读回通过；测试 JPEG 的 TrueHDR 高光约 7.793 scRGB，原生线性 JXR 保留 4.0。以上是实际 SDK 与浮点呈现读回，不是显示器物理亮度测量。
+
+`artifacts/live-photo-20261016-142423/` 小米与 `...142435/` iPhone 均完整通过实际 HDR、原图同时间轴对照、准备取消 / 自然结束 / 重播 / 关闭。TrueHDR 调用分别为 117 / 123，VSR 为 0；变化的 FP16 峰值约 7.801 / 7.555，自有纹理循环前后固定为 80065440 / 99234720 字节。首帧约 2152 / 1303 ms，提交 P95 2.63 / 2.36 ms；合并通知不等于实测丢帧率，不能由提交计时推导物理 FPS。`artifacts/viewer-lifecycle-20261016-143157/` 的 49 个真实窗口、两次进程启动、HDR/VSR 独立 / 并发 / 关闭、快速切图、弹层、滚动和重启偏好通过。此前单张照片测试目录在第 47 窗口因没有滚动范围失败；改用真实多图只读目录后通过，保留原报告，不把测试夹具不足称为应用回归。
+
+`artifacts/release-0.1.27/upgrade-verification.json` 记录 0.1.23 → 0.1.27：复用旧自定义安装目录，旧 / 新进程均能打开保留的图库、收藏、历史和偏好，原文件与缓存不变；重复安装、卸载与其他副本注册保护通过。使用专用隔离安装器，生产库与默认关联未变。NVIDIA DLL / PDF 与原件严格一致；包装 RTF 在云端 Git 检出为 5939 字节 CRLF、本地为 5904 字节 LF，正文仅换行不同。校验工具只对该文本接受 LF / CRLF 等价，实际分发条款 hash 仍绑定构建记录，不放宽二进制许可校验。
+
+0.1.27 开发身份 MSIX 为 87,451,022 字节（83.40 MiB），504 文件 / 13 格式关联 / 原始 NVIDIA 组件 / 清单 / 图标 / SHA256 校验通过，记录 `artifacts/store/0.1.27-development/`。未签名、未安装、没有真实 Partner Center 身份、未上传或认证；不能将其当作正式商店提交包。固定 `artifacts/Luma` 的旧进程仍在运行，按规则未覆盖；正式包测试入口为 `artifacts/release-payload-rtx/Luma.App.exe`。没有为了记录文档再生成新程序目录。
+
 ## 0.1.27 发布前复核（2026-10-16）
 
 本轮应用改动仅为版本号与设置页实况 / 缩放帮助；原生 DLL 与 0.1.26 均为 SHA256 `412d20c88d2f0f84a7941305e5aaedbd0fd56bc26cc910742206c274030ef6ad`，不把文档更新算作一次运行时性能优化。53 项 Core、907 个可达公开对象边界检查、三个 workflow 的 actionlint 与差异空白检查通过。

@@ -10,7 +10,7 @@ A native Windows photo viewer with RTX HDR, native HDR images, and Live / Motion
 
 [下载最新版本](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/latest) · [HDR 入门](docs/HDR-SETUP.md) · [参与贡献](CONTRIBUTING.md) · [隐私说明](PRIVACY.md)
 
-**当前版本 `0.1.27` · Windows 11 x64。** [下载安装包](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/download/v0.1.27/Luma-0.1.27-windows-x64-rtx-setup.exe)，或在 [Release 页面](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.27) 获取便携版与更新说明。已安装旧版时，退出 Luma 后直接运行新版安装器即可升级，图库和设置保留。当前包未签名；微软商店版准备中。
+**当前正式版 `0.1.27` · Windows 11 x64。** [下载安装包](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/download/v0.1.27/Luma-0.1.27-windows-x64-rtx-setup.exe)（**58.35 MiB**），或在 [Release 页面](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.27) 获取便携版（81.79 MiB）与更新说明。已安装旧版时，退出 Luma 后直接运行新版安装器即可升级，图库和设置保留。当前包未签名；微软商店版准备中。
 
 ## 为什么做 Luma
 

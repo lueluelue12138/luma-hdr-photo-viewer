@@ -31,6 +31,7 @@ MSIX 可由商店负责签名、托管和更新，不需要先购买商业代码
 
 - `scripts/Build-Store.ps1`：从完整 RTX 载荷复制到独立 staging，用正式身份生成清单，MakeAppx 校验、MSIX、SHA256 和来源记录；不改写 GitHub 载荷、不安装证书、不上传。
 - `tests/verify_store_package.py`：逐文件核对 MSIX 与原载荷，检查 13 种格式关联、原始 NVIDIA DLL/PDF/条款、包身份、资源与校验和；不能替代 WACK 或运行时验收。
+- 0.1.27 已从云端消费者载荷实际生成开发身份 MSIX：87,451,022 字节（83.40 MiB），504 文件与 13 项格式关联核对通过。它仍是 `CN=Luma Development`，未签名、未安装，不能作为正式商店身份包上传；正式身份出包仍需前述四项标识。
 - `.github/workflows/store.yml`：手动构建 Store 候选，只保存 MSIX / 校验和 / 来源三类 Actions 产物，不自动提交或公开。缺少真实 Store 身份时直接失败。
 - [隐私说明](../PRIVACY.md)、[商店中文文案](store/LISTING.zh-CN.md)、[审核备注与测试清单](store/CERTIFICATION.md)。应用仍以简体中文为主，不把英文介绍等同于完整英文 UI。
 - 现有透明原始 logo 位于 `branding/Luma.png`，包内已有启动 / 磁贴图标。商店 300×300 tile 可由 `scripts/Prepare-StoreAssets.py` 生成；真实界面截图仍需准备。

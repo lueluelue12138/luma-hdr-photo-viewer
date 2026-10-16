@@ -1,4 +1,7 @@
-"""Local real-window integration test. Never opens the production library."""
+"""Real HDR windows using a multi-photo folder (scroll cases need overflow).
+
+Originals are read-only; this never opens the production library.
+"""
 import argparse,json,pathlib,subprocess,time
 from PIL import Image,ImageDraw
 
