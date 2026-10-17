@@ -29,6 +29,10 @@ public partial class App : Application
             Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();await ViewerPreferences.LoadAsync();
             Log($"Launch {Environment.ProcessId}");
             string? file=LaunchArguments.PhotoPath(cli);
+            if(test>=0&&cli.Contains("--verify-fullscreen"))
+            {
+                window=new MainWindow();window.Activate();await FullscreenVerification.RunAsync((MainWindow)window,file??throw new ArgumentException("Fullscreen verification requires a photo"));return;
+            }
             if(test>=0&&cli.Contains("--verify-live-performance"))
             {
                 window=new MainWindow();window.Activate();await LivePhotoVerification.PerformanceAsync((MainWindow)window,file??throw new ArgumentException("Live performance requires a photo"));return;

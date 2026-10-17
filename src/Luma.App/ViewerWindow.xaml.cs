@@ -409,12 +409,17 @@ public sealed partial class ViewerWindow : Window
             windowedPresenter=AppWindow.Presenter;
             windowedMaximized=windowedPresenter is OverlappedPresenter {State:OverlappedPresenterState.Maximized};
             var p=AppWindow.Position;var s=AppWindow.Size;windowedBounds=new(p.X,p.Y,s.Width,s.Height);
+            // WinUI reserves one physical pixel at the top for an extended
+            // caption even with FullScreenPresenter. Disable it before switching
+            // so the XAML / FP16 surface covers the entire monitor.
+            ExtendsContentIntoTitleBar=false;
             AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);fullScreen=true;
         }
         else
         {
             if(windowedPresenter is not null)AppWindow.SetPresenter(windowedPresenter);else AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
             fullScreen=false;
+            ExtendsContentIntoTitleBar=true;SetTitleBar(TitleDrag);
             if(AppWindow.Presenter is OverlappedPresenter presenter)
             {
                 if(windowedMaximized)presenter.Maximize();else{presenter.Restore();AppWindow.MoveAndResize(windowedBounds);}

@@ -1,5 +1,15 @@
 # Luma 本机验证记录
 
+## 0.1.28 全屏顶部白边修复（2026-10-17）
+
+本机控制组复现：3840×2160、150% 缩放，FullScreenPresenter 的客户区已覆盖屏幕，但扩展标题栏开启时 XAML 根高仅 1439.333374 DIP，即约 2159 个物理像素。证据 `artifacts/fullscreen-0.1.27-control/fullscreen.json`。仅修改 DWM 描边未解决根布局缺口，未采用该方案；对 DWM 仅写属性的查询也不作为成功证据。
+
+实际修复仅在进入全屏前设置 `ExtendsContentIntoTitleBar=false`，退出后恢复扩展标题栏与拖动区域。没有放大 / 裁切照片来遮边，也没有新增逐帧工作。`artifacts/fullscreen-verified/fullscreen.json`：12 次进出（亮 / 暗 × 普通 / 最大化 × 3 次），客户区与 XAML 根均完整覆盖 3840×2160，标题行高度 0；切换焦点 / 开合详情不会重新引入标题栏，退出后 Win32 样式、窗口位置 / 大小 / 最大化状态与 44 DIP 标题行恢复。其他 DPI / 显示拓扑仍待实机验证；本轮不把布局检查当作新增 HDR / VSR 效果验证。
+
+复核命令：`python tests/verify_fullscreen.py --app <exe>`。使用单独 `--test-library` 与合成暗色边缘图片，不访问生产图库、不修改显示设置。中间编译复用 `artifacts/Luma-candidate`，没有为每个调整新建程序目录。
+
+版本号更新后的候选再次完成全部 12 次检查，报告 `artifacts/fullscreen-0.1.28-final/fullscreen.json`；Win32 全屏样式为 `0x14000000`，没有 caption / sizing frame。53 项 Core 与 949 个已提交公开对象扫描通过，新增文件随提交再次扫描。窗口工具对独立候选返回同一所属进程不匹配错误，刷新后仍失败，因此未将额外截图检查记为通过；用户原预览进程不被关闭。
+
 ## 0.1.27 正式附件与 HDR 补验（2026-10-16）
 
 [正式 Release](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.27) 已公开，非草稿、非预发布；源提交 `ee3cfc617440336bcb1716249fb55dee1d06da62`，没有移动旧标签。[完整 RTX 构建 38855410902](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38855410902) 与主 CI 均通过。Actions 产物下载后整体 SHA256 为 `9ef7449d83948a85dee7140b332c61a4885be52b29481dafe7eb6bc992c2d651`，匹配 GitHub digest；四附件也逐个匹配 digest 与 SHA256SUMS，503 个便携文件逐个与 ZIP 相同。实际 EXE 产品版本携带同一提交，构建元数据 `sourceDirty=false`。消费者目录 203,595,515 字节，安装器 61,183,335 字节（58.35 MiB），ZIP 85,764,381 字节（81.79 MiB）。
