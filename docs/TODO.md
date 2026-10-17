@@ -7,7 +7,7 @@
 - [x] 复现全屏顶部保留 1 个物理像素的问题：4K / 150% 下客户区完整而 XAML 根高约 2159 像素。关闭全屏时的扩展标题栏后根高为 2160，退出恢复自定义标题栏。12 次真实窗口切换覆盖深浅主题、普通 / 最大化、焦点与详情，窗口样式与位置 / 尺寸恢复；报告 `artifacts/fullscreen-verified/fullscreen.json`。
 - [ ] 继续覆盖其他 DPI、多屏切换及高对比度下的屏幕边缘与全屏恢复。
 - [x] 0.1.28 最终候选再次通过 12 次全屏进出（`artifacts/fullscreen-0.1.28-final/`）、53 项 Core 和公开边界检查；不把窗口工具绑定失败当作目视通过。
-- [ ] 完成 0.1.28 发布包复核并发布修复版；本次不涉及微软商店提交。
+- [x] [v0.1.28 正式发布](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.28)，源码 `86b85f5`，主 CI 与 RTX Release 构建成功；四附件 / 来源核对，正式安装器 61,186,429 字节、SHA256 与 Release digest / 校验文件一致。实际本机从 0.1.27 → 0.1.28 安装成功，图库 / 收藏 / 历史 / 设置逻辑数据完全保留，有本地数据库恢复副本；已安装云端版本再次通过全部 12 次全屏进出，重开生产图库。报告 `artifacts/release-0.1.28/installed-upgrade-verification.json`、`artifacts/fullscreen-0.1.28-installed/`。固定预览已更新 0.1.28，保留 0.1.26 回退；本次不涉及微软商店提交。
 
 ## Partner Center 草稿代填（2026-10-16）
 

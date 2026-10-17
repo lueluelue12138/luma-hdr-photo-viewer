@@ -1,6 +1,6 @@
 # 微软商店上架准备
 
-2026-10-16。维护者已注册开发者账户、预留 **Luma HDR Photo Viewer**；已通过浏览器保存部分商店草稿，尚未上传程序包、提交审核或在商店发布。GitHub 0.1.27 的正式发布与商店提交是两个独立步骤。
+2026-10-17。维护者已注册开发者账户、预留 **Luma HDR Photo Viewer**；已通过浏览器保存部分商店草稿，尚未上传程序包、提交审核或在商店发布。GitHub 0.1.28 的正式发布与商店提交是两个独立步骤。
 
 ## 当前后台进度与下一步
 
@@ -8,7 +8,7 @@
 2. 属性已保存：照片与视频类别、项目 / Issues 网址、隐私政策与图形要求。照片和可能包含的 GPS 属于访问个人信息，即使不上传，也应选择“使用个人信息”，并提供说明本地处理方式的隐私政策。
 3. 已保存简体中文介绍、简短描述、6 项功能、7 个关键词、版权及现有随包许可；免费基准价格为 CNY 0，现有全球市场范围保留。认证说明已保存，个人电话 / 地址 / 开发者信息未填写。
 4. 年龄问卷已填到预览，结果为 3+ / Everyone；维护者需检查答案，亲自勾选 IARC 条款及本人法定成年声明，再保存。最终声明尚未完成。
-5. 将实际身份填入下文 GitHub Variables，再手动运行 Store 工作流，选择 **v0.1.27**。完成包测试后，上传产物内的 `.msix`；Actions ZIP 只是下载容器。当前开发身份 MSIX 不能上传替代。
+5. 将实际身份填入下文 GitHub Variables，再手动运行 Store 工作流，选择包含全屏白边修复的 **v0.1.28**。完成包测试后，上传产物内的 `.msix`；Actions ZIP 只是下载容器。当前开发身份 MSIX 不能上传替代。
 6. 补充至少一张使用获准公开照片的真实界面截图，核对个人资料、分级、市场和许可后，由维护者点击 **提交认证**。提交选项已保存为 **除非我选择“立即发布”，否则不发布此提交**；通过审核后仍由维护者决定公开时间。
 
 本次不代为点击上传、提交认证或公开发布。以上步骤依据微软的 [名称预留](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/reserve-your-apps-name)、[提交清单](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/create-app-submission) 与 [包要求](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/app-package-requirements)。
@@ -67,7 +67,7 @@ python scripts/Prepare-StoreAssets.py
 
 操作位置为 GitHub 仓库 **Settings → Secrets and variables → Actions → Variables → New repository variable**。这四项是产品身份，不是密码，不需要填进 Secrets。NVIDIA 私有 SDK 的 Secret 保持原样，不复制出来。
 
-在 **Actions → Prepare Microsoft Store MSIX (no submission) → Run workflow** 手动运行，选择版本标签 `v0.1.27`，下载 `Store-MSIX-<提交>` 产物。若页面只提供分支，可使用 `gh workflow run store.yml --ref v0.1.27` 指定标签。完成实际安装 / 运行测试后再到 Partner Center 新建提交。当前无需 Azure 凭据、商业签名证书或 Store API 密钥。
+在 **Actions → Prepare Microsoft Store MSIX (no submission) → Run workflow** 手动运行，选择版本标签 `v0.1.28`，下载 `Store-MSIX-<提交>` 产物。若页面只提供分支，可使用 `gh workflow run store.yml --ref v0.1.28` 指定标签。完成实际安装 / 运行测试后再到 Partner Center 新建提交。当前无需 Azure 凭据、商业签名证书或 Store API 密钥。
 
 **推送 Release 标签只会构建 EXE / ZIP，不会顺带构建 MSIX。** Store 工作流是独立的手动出包，未配置真实身份时会停止；即使出包成功，也不会自动上传商店、提交认证或公开。以后更新商店版仍需构建更高版本 MSIX，并在同一产品里新建提交；不要为每次更新新建产品或更换包身份。
 

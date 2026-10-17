@@ -10,6 +10,12 @@
 
 版本号更新后的候选再次完成全部 12 次检查，报告 `artifacts/fullscreen-0.1.28-final/fullscreen.json`；Win32 全屏样式为 `0x14000000`，没有 caption / sizing frame。53 项 Core 与 949 个已提交公开对象扫描通过，新增文件随提交再次扫描。窗口工具对独立候选返回同一所属进程不匹配错误，刷新后仍失败，因此未将额外截图检查记为通过；用户原预览进程不被关闭。
 
+[v0.1.28 正式 Release](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.28) 已公开并设为最新，非预发布；固定源提交 `86b85f5752ee37b6a57b11712feaac2e75e33169`。主 CI `39017206967` 和 RTX 构建 `39017256402` 均成功，构建来源 `sourceDirty=false`、完整 RTX。四附件名称及来源核对通过，安装器 61,186,429 字节（58.35 MiB），SHA256 `34fcfa95bb4212181600eb059c360305974120db48dc654ce2bbf777e888f4fa` 同时匹配 Release digest 与 SHA256SUMS；便携 ZIP 85,770,025 字节（81.80 MiB），本轮未下载 ZIP，不声称本机逐文件检查过该 ZIP。
+
+维护者随后明确授权替换本机已安装版。使用上述已校验正式安装器覆盖升级同一安装目录，安装器正常关闭旧版本、退出码 0、无需重启；升级前对 SQLite 做一致性恢复副本，升级后 albums / photos / album_photos / settings 的逻辑行内容哈希和行数完全相同。注册版本与实际 EXE 均为 0.1.28，产品版本携带同一源提交，NVIDIA DLL / 原始许可 SHA256 与构建来源一致；本地记录 `artifacts/release-0.1.28/installed-upgrade-verification.json`，私人恢复数据库不会上传。**已安装的云端消费者版本**再次通过全部 12 次全屏进出，`artifacts/fullscreen-0.1.28-installed/fullscreen.json`；随后重新打开生产图库。固定开发入口已更新 0.1.28，上一版保存于 `artifacts/Luma-previous-0.1.26-20261017`。
+
+本地 0.1.28 原生渲染回归另验证 SDR / WIC、缩放 / 旋转、透明度、原生 JXR 与玻璃 FP16 读回，线性 JXR 保留 4.0；日志 `artifacts/fullscreen-0.1.28-committed/native-rendering.log`。本轮 Windows HDR 关闭，RTX HDR 调用为 0，因此不声称重新验证了实际 RTX HDR 生效，沿用此前已记录的验证范围。本次生产改动不涉及原生渲染代码。新增提交及标签后的公开源码边界检查通过 967 个可达对象。
+
 ## 0.1.27 正式附件与 HDR 补验（2026-10-16）
 
 [正式 Release](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.27) 已公开，非草稿、非预发布；源提交 `ee3cfc617440336bcb1716249fb55dee1d06da62`，没有移动旧标签。[完整 RTX 构建 38855410902](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/38855410902) 与主 CI 均通过。Actions 产物下载后整体 SHA256 为 `9ef7449d83948a85dee7140b332c61a4885be52b29481dafe7eb6bc992c2d651`，匹配 GitHub digest；四附件也逐个匹配 digest 与 SHA256SUMS，503 个便携文件逐个与 ZIP 相同。实际 EXE 产品版本携带同一提交，构建元数据 `sourceDirty=false`。消费者目录 203,595,515 字节，安装器 61,183,335 字节（58.35 MiB），ZIP 85,764,381 字节（81.79 MiB）。
