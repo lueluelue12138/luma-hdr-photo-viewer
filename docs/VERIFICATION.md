@@ -12,6 +12,12 @@
 
 88 项 Core 检查通过，新增并发写入 / 索引一致性检查：三份 LibraryStore、400 照片、96 次历史写入与扫描并发、24 收藏写入，完整检查及重开后的照片 / 历史数量一致。测试验证现有正常写入没有复现索引损坏，并不能证明此前损坏的根因已查明。新测试不会全库扫描用户的启动或开图路径。
 
+提交 `55ce055e77a980d240807df0520f2cd4c42b4c65` 后重建，真实原图重跑八场景通过（`committed/candidate-6ofl28lx/`）。固定预览 503 文件全部 SHA256 一致，上一可用 0.1.30 保留；本机安装器 61,215,684 字节、SHA256 `d3a42c3ba7ffc00effd25d7143c44f265ea9659eccbf1366fcdd46aa4d4dca07`，同目录从 0.1.30 升级至 0.1.31，退出 0。502 消费者文件校验一致，升级前后的一致性副本完整检查均为 `ok`；两份副本当时的 12 相册 / 370 照片 / 136 链接 / 3 设置全部逻辑行一致。该计数与更早修复时的计数属于不同时间点，不把期间正常图库刷新当作安装器改写数据。记录 `artifacts/local-install-0.1.31/installed-upgrade-verification.json`。
+
+已安装 EXE 对用户 DSC06746-3、DSC06997-4、DSC06998、DSC07063 四张原图逐张只读复验，每张均通过完整八场景；隔离库位于 `artifacts/database-20261019/installed/` 的四份 `library-failure.json`，随后正常打开生产图库。该功能验证不修改用户照片。本机载荷如实标记 `sourceDirty=true` / `uncommittedPaths=[docs/TODO.md]` / `uncommittedApplicationSource=false`：保留维护者独立编辑的随手记，应用源码已提交，未将无关记录混入提交或把整个工作区谎称干净。原生 DLL 沿用已核验来源、源码未变。本轮没有推送发布 tag、公开 Release 或商店提交。
+
+生产图库正常重开后的新一致性副本完整检查也返回 `ok`，记录 `artifacts/local-install-0.1.31/production-reopen.json`；实际运行路径和产品版本确认是已安装的 0.1.31 / `55ce055`。
+
 ## 迭代交付 skill 与补装 0.1.30（2026-10-18）
 
 新增项目内 `.agents/skills/commit-and-release/`，入口说明按改动选择验证、共同署名与推送；两份引用分别覆盖本机覆盖升级和显式授权的 Release / MSIX。根 AGENTS 记录维护者已授权常规迭代推送、每次应用版本更新后同步本机安装，后续暂缓指令优先；发布 tag / 正式 Release、Store 上传和提交仍需对应授权。skill-creator 的 `quick_validate.py` 在 UTF-8 模式通过；引用文件、UI 元数据、实际脚本入口、tag 仅生成草稿 / Store 仅手动构建的描述核对通过，报告 `artifacts/local-install-0.1.30/skill-validation.json`。本轮未改应用源码或递增版本，不重跑无关的原生 / Core 全量测试。
