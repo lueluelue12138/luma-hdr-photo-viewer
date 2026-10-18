@@ -1,5 +1,17 @@
 # Luma 本机验证记录
 
+## GitHub Pages 与 v0.1.31 正式消费者包（2026-10-19）
+
+维护者在调度会话明确要求按 TODO“随手记”继续官网部署与最新修复版正式发布。拉取现有主页提交后，确认旧 Pages 运行 `39147680831` 在仓库未启用 Pages 时失败；通过 API 启用 `build_type=workflow`，手动运行现有流程 `39153789167` 成功，HTTPS 已强制启用。实际站点 https://lueluelue12138.github.io/luma-hdr-photo-viewer/ 首屏已在本机浏览器查看，HTML / 11 个资源逐字节匹配提交内容，总计 1,171,194 字节；这不是单次访问流量或大陆速度测量。仓库 homepage 字段已指向该地址；证据 `artifacts/pages-20261019/`，截图、HTTP 清单与配置保留，未改变页面设计。
+
+`v0.1.31` 固定在 `34fce1f18c1b7f9d577841c9a7777ca14b20a613`；创建标签时将维护者未提交的 TODO 随手记保存在可恢复 stash，标签推送后恢复，未混入发行或丢弃。主 CI `39154819634` 与 RTX 构建 / 草稿 `39155506146` 成功。草稿的四附件已下载，Release digest / SHA256SUMS 与实际字节一致，build-info 的源码、sourceDirty=false、RTX 能力及 NVIDIA 输入 / DLL / 原始许可哈希符合固定输入。便携 ZIP 完整性与全部 503 文件清单核对，未含私人样本、数据库或 SDK 构建输入。
+
+正式安装器 61,254,605 字节（58.42 MiB），SHA256 `021eb0a15b7e7aae7f6c0dafb9d79cfe9946d1c7d6cd0fd5321dc85fd875c457`；便携 ZIP 85,820,460 字节（81.84 MiB），SHA256 `bf7b03316d68bc17e6be83b97a824aa73f49e7448651c77eee4bddf31b2b9d2b`。实际下载的消费者包通过坏索引 / 元数据失败 / 真实缺失文件的八场景回归。正式 EXE 覆盖本机同版本开发包，从源 `55ce055` 同步到正式源 `34fce1f`，退出 0，同一安装目录的 502 消费者文件全部一致；前后 SQLite 一致性副本完整检查为 ok、原有四表全部逻辑行不变。已安装 EXE 的筛选偏好、相册置顶 / 排序重开及本次错误分类再次通过，正常重开生产图库。
+
+正式包原生库在 RTX 5070 Ti Laptop GPU 上实际执行 HDR / VSR 各一次 SDK evaluation，离屏 FP16 GPU 读回原图白色为 2.5、增强后约 12.5，原图 / 增强切换精确恢复缓存像素且不新增 SDK 调用。当前远程显示的 DXGI 输出无法查询，真实显示器查询检查返回 DXGI_ERROR_NOT_FOUND；上述测试显式注入 1000 nits / SDR white=2.5 到独立测试渲染器，没有修改系统 HDR。因此该结果验证真实 SDK 与 FP16 渲染，不作为实屏呈现 / Windows 校准峰值或亮度观感验收；原生源码未变，先前实屏记录继续保留。证据 `artifacts/release-0.1.31/consumer-gpu.json`、`installed-upgrade-verification.json`、`installed-filter/`、`installed-albums/` 及 `installed-library-regression/`。
+
+消费者验收后将 Release `416635492` 公开为非预发布并设为最新，匿名公开页面 HTTP 200、latest 指向 v0.1.31、四附件保持不变。固定预览的 503 文件同步正式便携载荷，原本地 0.1.31 保留回退。本次未上传 / 提交微软商店；README 更新正式版链接和实测包体积，真实截图替换另行准备且等待维护者验收。
+
 ## 0.1.31 图库记录错误与照片解码隔离（2026-10-19）
 
 用户报告照片已经显示且增强状态有效，却覆盖“无法打开照片”；实际日志堆栈位于 `LibraryStore.RecordOpenAsync`，在帧已呈现后写浏览记录时触发 SQLite 11。在线一致性副本的完整检查发现 `ix_photos_opened` 项数错误及 rowid 321 / 322 / 323 / 324 / 337 缺失，其余表可完整读取。升级 0.1.30 前备份有完全相同的坏索引；升级 0.1.29 前及更早备份完整。尚不能确定最初损坏的操作或环境原因，不能将它直接归因于 0.1.30。此前升级仅比较表行，未检查索引完整性，确实未发现这一既有问题；维护流程已补上升级前后完整 `PRAGMA integrity_check`，不以 quick_check 替代。

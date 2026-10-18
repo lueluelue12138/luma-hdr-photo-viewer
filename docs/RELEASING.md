@@ -72,6 +72,8 @@ python tests/verify_installer.py
 
 ## 标签与 Release
 
+最新正式版为 [v0.1.31](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.31)，固定源码 `34fce1f18c1b7f9d577841c9a7777ca14b20a613`。主 CI、RTX 工作流、附件来源 / 校验和、正式消费者包安装与数据保留已核验，见 [验证记录](VERIFICATION.md)。本机与固定预览已同步此包，未提交微软商店。
+
 `v0.1.23` 已于 2026-10-15 按维护者明确要求公开为首个正式 Release：[下载与说明](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.23)。此前 `v0.1.16` 构建失败、`v0.1.17` 仅有草稿；标签本身不会出现在公开 Releases 列表。新标签仍默认创建草稿，后续公开需维护者明确要求，不把本次发布授权改成永远自动公开。
 
 1. 完成合适验证，提交代码与文档，并核对工具作者及人类共同署名。
