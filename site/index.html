@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Luma · Windows 原生 HDR 照片查看器</title>
+<meta name="description" content="Luma 是免费、开源的 Windows 原生照片查看器：原生 HDR 照片直接显示，普通照片可借助 NVIDIA RTX Video HDR 增强光影，实况照片的动态部分也能 RTX HDR 预览。">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
+<link rel="canonical" href="https://lueluelue12138.github.io/luma-hdr-photo-viewer/">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:site_name" content="Luma">
+<meta property="og:title" content="Luma HDR Photo Viewer">
+<meta property="og:description" content="让普通照片，也有 HDR 的光影。免费、开源的 Windows 原生照片查看器。">
+<meta property="og:url" content="https://lueluelue12138.github.io/luma-hdr-photo-viewer/">
+<meta property="og:image" content="https://lueluelue12138.github.io/luma-hdr-photo-viewer/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="628">
+<meta property="og:image:alt" content="Luma 应用图标，以及一个正在显示蓝天白云与草甸照片的看图窗口。">
+<meta name="twitter:card" content="summary_large_image">
+<script>(function (d) { d.classList.add('js'); setTimeout(function () { if (!d.dataset.ready) d.classList.remove('js'); }, 4000); })(document.documentElement);</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<a class="skip" href="#main">跳到主要内容</a>
+
+<header class="nav" id="top">
+  <div class="nav__inner">
+    <a class="brand" href="#top" aria-label="Luma，回到顶部">
+      <img src="assets/logo.webp" width="26" height="25" alt="">
+      <span>Luma</span>
+    </a>
+    <nav class="nav__links" aria-label="页面导航">
+      <a href="#features">亮点</a>
+      <a href="#live">实况</a>
+      <a href="#formats">格式</a>
+      <a href="#start">开始</a>
+      <a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer">GitHub</a>
+    </nav>
+    <a class="btn btn--sm" href="#download">下载</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- Hero -->
+  <section class="hero" aria-labelledby="hero-title">
+    <p class="eyebrow" data-rise style="--d:0ms">Windows 11 · 免费 · 开源</p>
+    <h1 id="hero-title" data-rise style="--d:80ms">让普通照片<span class="hang">，</span><br>也有 <span class="grad">HDR</span> 的光影<span class="hang">。</span></h1>
+    <p class="lead" data-rise style="--d:160ms">Luma 是一款 Windows 原生照片查看器。原生 HDR 照片直接点亮；普通照片，<span class="nb">甚至实况照片，</span>也能借助 <span class="nb">NVIDIA RTX Video HDR</span> 增强光影。</p>
+    <div class="cta" data-rise style="--d:240ms">
+      <a class="btn" href="#download">下载 Luma</a>
+      <a class="link" href="https://github.com/lueluelue12138/luma-hdr-photo-viewer">在 GitHub 查看</a>
+    </div>
+    <!-- The page names no version. site.js fills the first two spans with the latest release when GitHub's API answers (docs/WEBSITE.md). -->
+    <p class="fine" data-rise style="--d:300ms"><span class="nb"><span data-release="line" hidden></span><span data-release="sep" aria-hidden="true" hidden> · </span>Windows 11 x64</span><span class="fine__sep" aria-hidden="true"> · </span><span class="nb">RTX HDR 与 VSR 需要兼容的 NVIDIA RTX 显卡</span></p>
+
+    <figure class="stage" data-stage data-badge="assets/hero-hdr-badge.webp">
+      <!-- One gain-map AVIF of a real Windows capture of the whole window; site.js layers it twice on an HDR display and lays the badge overlay
+           (the HDR capture's own "RTX HDR 已生效" label) over the HDR half (docs/WEBSITE.md). -->
+      <div class="win">
+        <picture>
+          <source type="image/avif" srcset="assets/hero-1100.avif 1100w, assets/hero-1834.avif 1834w" sizes="(min-width: 1100px) 1040px, calc(100vw - 44px)">
+          <img src="assets/hero-1100.webp" width="1834" height="1085" fetchpriority="high" decoding="async"
+               alt="Luma 看图窗口：蓝天白云下的草甸，远处是雪山。顶部是悬浮工具栏，右上角提示“SDR · 原图”，底部是缩略图栏。">
+        </picture>
+      </div>
+      <figcaption>Windows 实机截图（SDR）。在开启 HDR 的屏幕上用 Chrome 或 Edge 打开，可拖动对比 HDR 效果。</figcaption>
+    </figure>
+  </section>
+
+  <!-- Why: the project's one-sentence purpose (the README's opening line) -->
+  <section class="why" aria-label="为什么做 Luma">
+    <p class="why__text">
+      <span class="why__a" data-reveal><i class="nb">如果你有一块好 HDR 屏幕，</i><i class="nb">别只用它看电影。</i></span>
+      <strong class="why__b" data-reveal style="--d:240ms"><i class="nb">也用它，</i><i class="nb">重新看看自己的照片。</i></strong>
+    </p>
+  </section>
+
+  <!-- Features -->
+  <section class="section" id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <h2 id="features-title" class="sr-only">亮点</h2>
+
+      <div class="bento">
+
+        <article class="card card--7" data-reveal>
+          <h3>原生 HDR，<span class="nb">直接点亮。</span></h3>
+          <p>带 HDR 信息的照片自动以 HDR 显示，不需要 RTX。图库角标，一眼看出照片的特性。</p>
+          <div class="vis">
+            <ul class="chips" aria-label="支持的原生 HDR 格式"><li>Ultra HDR JPEG</li><li>iPhone HEIC</li><li>JPEG XR</li></ul>
+            <img class="pic pic--round" src="assets/card-badges.webp" width="990" height="360" loading="lazy" decoding="async"
+                 alt="图库里的三张照片缩略图，左下角带有“HDR”和实况角标。">
+          </div>
+        </article>
+
+        <article class="card card--5" data-reveal style="--d:80ms">
+          <h3>普通照片，<span class="nb">也能 HDR。</span></h3>
+          <p>借助官方 NVIDIA RTX Video HDR，为普通照片增强光影。</p>
+          <div class="vis">
+            <ul class="facts">
+              <li><b>RTX HDR</b><span>在顶部“显示增强”中开启</span></li>
+              <li><b>HDR 风格</b><span>柔和、自然、鲜明，默认自然</span></li>
+              <li><b>VSR 超分辨率</b><span>独立开关，默认关闭</span></li>
+              <li><b>实况照片</b><span>动态部分也能用 RTX HDR 预览</span></li>
+              <li><b>按住 <kbd>空格</kbd></b><span>对比原图或可用的 SDR 底图</span></li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="card card--5" data-reveal>
+          <h3>拍摄细节，<span class="nb">随手查看。</span></h3>
+          <p>日期、相机、镜头、曝光、HDR 来源与实况信息，支持搜索和复制 EXIF。</p>
+          <div class="vis vis--bleed vis--panel">
+            <!-- The page's one drawn interface. The real panel scrolls, so a single screenshot only reaches its first sections and never the camera and
+                 exposure rows. Wording, order and number formats follow ViewerWindow.xaml / ViewerWindow.Details.cs; the values are the sample photo's own EXIF
+                 (docs/WEBSITE.md). -->
+            <div class="panel" role="img" aria-label="“照片信息”面板（示例）：复制路径、复制详情、打开位置；照片特性为 HDR、实况、JPG；Android Motion Photo，内嵌视频 2.42 MiB；拍摄于 2024 年 6 月 2 日 15:47:34；设备 Google Pixel 6 Pro，19 mm、f/3.5、1/371 秒、ISO 29；原生 HDR，JPEG 增益图，sRGB。">
+              <div class="panel__head"><span>照片信息</span><svg class="ic" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg></div>
+              <div class="panel__acts">
+                <span><svg class="ic" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="10" height="10" rx="2"/><path d="M15.5 8.5v-1a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1"/></svg>复制路径</span>
+                <span><svg class="ic" viewBox="0 0 24 24"><path d="M7 4.5h6.5L18 9v9a1.8 1.8 0 0 1-1.8 1.8H7A1.8 1.8 0 0 1 5.2 18V6.3A1.8 1.8 0 0 1 7 4.5z"/><path d="M13.5 4.5V9H18"/></svg>复制详情</span>
+                <span><svg class="ic" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.2h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>打开位置</span>
+              </div>
+              <div class="panel__lab">照片特性</div>
+              <div class="panel__tags"><span><b>HDR</b></span><span><svg class="live-icon" viewBox="0 0 24 24"><circle class="live-icon__dots" cx="12" cy="12" r="10.5" pathLength="36"/><circle class="live-icon__mid" cx="12" cy="12" r="8"/><circle class="live-icon__core" cx="12" cy="12" r="4"/></svg></span><span>JPG</span></div>
+              <div class="panel__lab">实况照片</div>
+              <div class="panel__val">Android Motion Photo<br>内嵌视频 · 2.42 MiB · 2,535,338 字节</div>
+              <div class="panel__lab">日期与时间</div>
+              <div class="panel__val">拍摄：2024年6月2日 15:47:34</div>
+              <div class="panel__lab">设备与拍摄</div>
+              <div class="panel__val"><strong>Google · Pixel 6 Pro</strong><br>Google · Pixel 6 Pro back camera 19.0mm f/3.5<br>19 mm · f/3.5 · 1/371 秒 · ISO 29</div>
+              <div class="panel__lab">色彩与显示</div>
+              <div class="panel__val">原生 HDR · JPEG 增益图<br><span>EXIF 色彩空间：sRGB</span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card card--7" data-reveal style="--d:80ms">
+          <h3>相册，<span class="nb">顺着你的习惯。</span></h3>
+          <p>导入文件夹即可浏览，支持搜索、收藏与最近打开。照片留在原位置，移除相册不会删除原文件。</p>
+          <div class="vis vis--bleed vis--album">
+            <img class="pic pic--top pic--wide" src="assets/card-albums.webp" width="1300" height="843" loading="lazy" decoding="async"
+                 alt="Luma 图库的“相册”页：侧栏是所有照片、相册、收藏和最近打开，主区以封面网格显示相册。">
+          </div>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Live -->
+  <section class="section section--tight" id="live" aria-labelledby="live-title">
+    <div class="wrap">
+      <div class="live" data-reveal>
+        <div class="live__copy">
+          <p class="eyebrow">实况照片</p>
+          <h2 id="live-title">让回忆动起来。</h2>
+          <p class="live__hdr">动态部分，<span class="nb">也能用 <em>RTX HDR</em> 预览。</span></p>
+          <p>点击顶部的同心圆图标，或按 <kbd>L</kbd>，<span class="nb">回放按下快门前后的声音与动作。</span><span class="nb">按住 <kbd>空格</kbd> 随时对比。</span></p>
+          <p><a class="link" href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/docs/LIVE-PHOTOS.md">使用说明与验证范围</a></p>
+        </div>
+
+        <!-- A real crop of the viewer toolbar; the dashed button sits exactly over its Live icon (positions are in docs/WEBSITE.md). -->
+        <div class="viewer" id="live-demo">
+          <img src="assets/live-demo.webp" width="1040" height="780" loading="lazy" decoding="async"
+               alt="Luma 看图窗口顶部的悬浮工具栏和一张灰雁照片，工具栏中有同心圆的实况图标。">
+          <button class="live-btn" type="button" aria-pressed="false" aria-describedby="live-state">
+            <span class="sr-only">播放实况（示意动画）</span>
+          </button>
+          <p class="viewer__hint" id="live-state" aria-live="polite">点这里，试试实况回放</p>
+          <!-- The app's own status text while a Live Photo plays with RTX HDR on (ViewerWindow.xaml.cs); shown only during the demo. -->
+          <p class="viewer__status" aria-hidden="true">LIVE · RTX HDR 已生效</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Formats -->
+  <section class="section" id="formats" aria-labelledby="formats-title">
+    <div class="wrap wrap--narrow">
+      <header class="head" data-reveal>
+        <p class="eyebrow">支持范围</p>
+        <h2 id="formats-title">支持什么，<span class="nb">一目了然。</span></h2>
+      </header>
+
+      <dl class="specs" data-reveal>
+        <div class="specs__row"><dt>普通图片</dt><dd>JPEG、PNG、BMP、GIF、TIFF、ICO</dd></div>
+        <div class="specs__row"><dt>原生 HDR</dt><dd>iPhone HEIC（Apple / ISO 增益图、PQ）；Android Ultra HDR / ISO / Apple 增益图 JPEG；线性 scRGB JPEG XR（JXR、WDP、HDP）。无需 RTX。</dd></div>
+        <div class="specs__row"><dt>RTX HDR 与 VSR</dt><dd>官方 NVIDIA RTX Video HDR 增强普通 SDR 照片的光影；RTX VSR 是独立的 AI 超分开关，默认关闭。需要兼容的 RTX 显卡、驱动，以及开启 HDR 的屏幕。RTX HDR 是 AI 增强，不能恢复拍摄时没有记录的信息，也不保证每个区域都更亮。</dd></div>
+        <div class="specs__row"><dt>实况 / 动态照片</dt><dd>已验证的 iPhone HEIC＋MOV，以及 Google、Pixel、三星、小米动态照片。动态部分可选 RTX HDR 预览，播放期间暂停 VSR。请保留 iPhone 配套的 MOV，Android 请导出完整原片；聊天软件转发后可能只剩静态图。</dd></div>
+        <div class="specs__row"><dt>暂未支持</dt><dd>AVIF HDR、JPEG XL、OpenEXR、RAW、GIF 动画、原生 HDR 动态视频、.livp。HLG HEIC 尚未完成验证。</dd></div>
+        <div class="specs__row"><dt>系统要求</dt><dd>Windows 11 x64。安装包内含 .NET、WinUI 与 NVIDIA 运行库；HEIC 需要 Windows 的 HEIF 图像扩展与 HEVC 视频扩展。</dd></div>
+      </dl>
+
+      <p class="more" data-reveal><a class="link" href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/docs/HDR-FORMATS.md">HDR 格式说明</a></p>
+    </div>
+  </section>
+
+  <!-- Start -->
+  <section class="section section--alt section--compact" id="start" aria-labelledby="start-title">
+    <div class="wrap">
+      <header class="head" data-reveal>
+        <p class="eyebrow">开始体验</p>
+        <h2 id="start-title">三步，<span class="nb">用好你的 HDR 屏幕。</span></h2>
+      </header>
+
+      <ol class="steps">
+        <li data-reveal>
+          <span class="steps__n" aria-hidden="true">1</span>
+          <h3>开启系统 HDR</h3>
+          <p>在 Windows<span class="nb">“设置 → 系统 → 显示”</span>中选中屏幕，打开“使用 HDR”。</p>
+        </li>
+        <li data-reveal style="--d:80ms">
+          <span class="steps__n" aria-hidden="true">2</span>
+          <h3>检查屏幕校准</h3>
+          <p>用微软的 Windows HDR Calibration 按测试图案校准并保存配置。</p>
+        </li>
+        <li data-reveal style="--d:160ms">
+          <span class="steps__n" aria-hidden="true">3</span>
+          <h3>打开自己的照片</h3>
+          <p>原生 HDR 照片自动识别。普通照片，在顶部<span class="nb">“显示增强”</span>里开启 RTX HDR。</p>
+        </li>
+      </ol>
+      <p class="more" data-reveal><a class="link" href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/docs/HDR-SETUP.md">HDR 屏幕准备指南</a></p>
+    </div>
+  </section>
+
+  <!-- Download -->
+  <section class="section" id="download" aria-labelledby="download-title">
+    <div class="get" data-reveal>
+      <img class="get__logo" src="assets/logo.webp" width="256" height="250" alt="Luma 应用图标" loading="lazy" decoding="async">
+      <h2 id="download-title">下载 Luma</h2>
+      <p class="get__lead">免费、开源。适用于 Windows 11 x64。</p>
+      <div class="get__btns">
+        <a class="btn btn--lg" data-asset="setup" href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/latest">下载安装包<small></small></a>
+        <a class="btn btn--lg btn--soft" data-asset="portable" href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/latest">便携版 ZIP<small></small></a>
+      </div>
+      <!-- Until site.js has the latest release, both buttons open its page and no version is shown; then they link straight to the files. -->
+      <p class="get__links">
+        <a class="link" data-release="notes" href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/latest">更新说明</a>
+        <a class="link" href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases">全部版本</a>
+        <a class="link" href="https://github.com/lueluelue12138/luma-hdr-photo-viewer#构建与发布">自行构建</a>
+      </p>
+      <ul class="get__notes">
+        <li>已安装旧版？退出 Luma 后直接运行新版安装器即可升级，图库和设置保留。</li>
+        <li>当前安装包未做代码签名，可用 Release 中的 SHA256SUMS.txt 校验下载。微软商店版准备中。</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot__inner">
+    <div class="foot__cols">
+      <div>
+        <h2>项目</h2>
+        <ul>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer">GitHub 仓库</a></li>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases">版本与更新说明</a></li>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/issues">问题反馈</a></li>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/CONTRIBUTING.md">参与贡献</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>文档</h2>
+        <ul>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/docs/HDR-SETUP.md">HDR 屏幕准备</a></li>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/docs/HDR-FORMATS.md">HDR 格式说明</a></li>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/docs/LIVE-PHOTOS.md">实况照片说明</a></li>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/PRIVACY.md">隐私说明</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>关于</h2>
+        <ul>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/LICENSE">MIT 许可</a></li>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/THIRD-PARTY-NOTICES.md">第三方声明</a></li>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/docs/TODO.md">待办清单</a></li>
+          <li><a href="https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/docs/VERIFICATION.md">验证记录</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot__legal">
+      <p>页面中的界面图是 Luma 在 Windows 11 上的实机截图，仅“照片信息”卡片是按实际界面重绘的示例。截图是 SDR，不能呈现屏幕上的 HDR 高光亮度；实际效果取决于你的屏幕、显卡与照片。</p>
+      <p>Luma 是独立项目，并非 NVIDIA 或 Microsoft 官方应用，也未获其认可。NVIDIA、RTX 是 NVIDIA Corporation 的商标，Windows 是 Microsoft 的商标。This software contains source code provided by NVIDIA Corporation.</p>
+      <p>© 2026 Luma contributors · 原创代码与图标使用 MIT 许可，第三方组件适用各自许可。</p>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>
