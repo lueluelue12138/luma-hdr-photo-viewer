@@ -15,7 +15,7 @@
 
 1. 从 `HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{0E473918-221F-45FC-A413-6145712ADFE5}_is1` 读 `InstallLocation` / `DisplayVersion`。一般是 `%LOCALAPPDATA%\Programs\Luma`，尊重实际已注册位置，不能靠猜路径覆盖其他程序。若已同版本且 hash 相同，不重复安装；禁止无意降级。
 2. 枚举 Luma 进程并核对实际 EXE 路径。正常关闭该安装的全部窗口，等待进程退出；一个进程可能同时有多个图库 / 预览窗口，关闭 MainWindow 不代表所有窗口已退出。逐窗关闭应有数量 / 时间上限，核对窗口确实消失，不对同一未响应窗口持续重发。不要杀掉无关候选或其他目录的进程。未能关闭时停止替换并保留候选，不能持续强杀 / 重试。
-3. 生产数据在 `%LOCALAPPDATA%\Luma`，与安装目录分离。对 `library.db` 做 SQLite backup API 的一致性副本到忽略的 `artifacts/local-install-<version>/`；不要只复制正在 WAL 写入的主文件。保留副本及升级前的 schema / 表行数 / 内容摘要，不输出私人照片路径，不提交数据库。
+3. 生产数据在 `%LOCALAPPDATA%\Luma`，与安装目录分离。对 `library.db` 做 SQLite backup API 的一致性副本到忽略的 `artifacts/local-install-<version>/`；不要只复制正在 WAL 写入的主文件。在副本执行完整 `PRAGMA integrity_check`，确认返回 `ok`；只比较表行无法发现坏索引，`quick_check` 也不能替代索引完整性校验。发现损坏先保全并诊断，不自动清空 / 重建用户库。保留副本及升级前的 schema / 表行数 / 内容摘要，不输出私人照片路径，不提交数据库。
 4. 检查安装器版本、RTX 来源和 SHA256，与实际候选一致；记录升级前版本。不默认卸载旧版，不清理用户目录、不修改系统 HDR / 默认应用 / 证书信任。
 
 ## 安装与验收
@@ -27,6 +27,7 @@
 - 重新读取注册版本 / 安装位置，检查实际 EXE / 托管程序集版本及 `build-info.json` 源提交。
 - 按消费者清单逐个核验 SHA256，特别是原生 DLL、NVIDIA 运行时和许可；同时检查没有本轮已移除依赖的陈旧残留。
 - 比较 `albums` / `photos` / `album_photos` / `settings` 的逻辑行与备份，核对图库链接、收藏、历史、偏好未被安装器修改。使用稳定排序的逻辑摘要，不能用 SQLite 文件 hash 代替。
+- 对升级后的数据库一致性副本再次执行完整 `PRAGMA integrity_check`，区分升级前已有损坏和本轮引入的问题；不要把这项维护检查放进每次开图 / 启动的 UI 路径。
 
 随后从**已安装 EXE** 在隔离 `--test-library` 中跑本轮关键场景，再正常打开生产图库。若新版本有 schema 迁移，额外在隔离旧库验证迁移及原有数据字段保留；不能因新列 / 新默认设置就误判数据损坏，也不能把 EXE 结论直接套用 MSIX。
 

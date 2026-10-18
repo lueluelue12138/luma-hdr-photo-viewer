@@ -1,4 +1,5 @@
 using Luma.Core;
+using Microsoft.Data.Sqlite;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -91,6 +92,10 @@ public sealed partial class ViewerWindow : Window
     internal (double Zoom,double X,double Y) VerificationView=>(zoom,panX,panY);
     internal string? VerificationPhoto=>current?.Path;
     internal bool VerificationErrorVisible=>ErrorPanel.Visibility==Visibility.Visible;
+    internal bool VerificationLibraryNoticeOpen=>LibraryNotice.IsOpen;
+    internal string VerificationLibraryNotice=>LibraryNotice.Message;
+    internal void VerificationDismissLibraryNotice()=>LibraryNotice.IsOpen=false;
+    internal Task VerificationFavoriteAsync()=>ToggleFavoriteAsync();
     internal FrameInfo? VerificationFrameInfo=>currentFrame?.Info;
     internal Task VerificationDetailAsync()=>EnsureFullResolutionAsync();
     internal void VerificationPan(double x,double y){panX=x;panY=y;UpdateView();}
@@ -239,7 +244,7 @@ public sealed partial class ViewerWindow : Window
         if(renderer is null){index=selected;return;}
         StopLive(false);liveAsset=null;photoFeatures=null;liveWarning=null;UpdateLiveControls();index=selected;current=sequence[index];int generation=++request;enhancementCancellation?.Cancel();loadingCancellation?.Cancel();loadingCancellation?.Dispose();loadingCancellation=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);var token=loadingCancellation.Token;
         var timing=Stopwatch.StartNew();uint previewEdge=PreviewEdge;
-        viewTimer.Stop();fillWindow=false;zoom=1;panX=panY=0;rotation=0;FileTitle.Text=current.Name;Title=$"{current.Name} — Luma";ErrorPanel.Visibility=Visibility.Collapsed;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;_ = ShowLoadingAfterDelayAsync(generation,token);ShowControls();UpdatePosition();UpdateInfo();
+        viewTimer.Stop();fillWindow=false;zoom=1;panX=panY=0;rotation=0;FileTitle.Text=current.Name;Title=$"{current.Name} — Luma";ErrorPanel.Visibility=Visibility.Collapsed;LibraryNotice.IsOpen=false;Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;_ = ShowLoadingAfterDelayAsync(generation,token);ShowControls();UpdatePosition();UpdateInfo();
         try
         {
             var photo=current;var lease=await cache.GetAsync(photo.Path,token,previewEdge);if(closed||generation!=request){lease.Dispose();return;}
@@ -252,8 +257,13 @@ public sealed partial class ViewerWindow : Window
             currentLease?.Dispose();currentLease=lease;displayedRequest=generation;UpdateView();UpdateGlass();cache.Trim(photo.Path);Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;
             FirstFrameMilliseconds=timing.ElapsedMilliseconds;FirstFrameReady.TrySetResult();liveDetection=DetectLiveAsync(photo.Path,generation,token);App.Log($"Photo first frame: {photo.Name}; {FirstFrameMilliseconds} ms; {lease.Frame.Info.Width}x{lease.Frame.Info.Height}; original {lease.Frame.Info.OriginalWidth}x{lease.Frame.Info.OriginalHeight}");
             Prefetch();await ApplyEffectsAsync();if(closed||generation!=request)return;
-            var stored=await App.Store.IsFavoriteAsync(photo.Path);if(generation!=request)return;current=photo with{Favorite=stored};UpdateFavorite();
-            await App.Store.RecordOpenAsync(current);if(closed||generation!=request)return;RefreshStatus();UpdateInfo();VerificationReady.TrySetResult();
+            // Library bookkeeping is optional: the frame has already been
+            // decoded and presented. Its failures must never mark it unreadable.
+            try{var stored=await App.Store.IsFavoriteAsync(photo.Path);if(closed||generation!=request)return;current=photo with{Favorite=stored};UpdateFavorite();}
+            catch(Exception ex)when(IsLibraryFailure(ex)){if(closed||generation!=request)return;ShowLibraryNotice("收藏状态暂时无法读取。",ex);}
+            try{await App.Store.RecordOpenAsync(current);}
+            catch(Exception ex)when(IsLibraryFailure(ex)){if(closed||generation!=request)return;ShowLibraryNotice("这次浏览记录未能保存。",ex);}
+            if(closed||generation!=request)return;RefreshStatus();UpdateInfo();VerificationReady.TrySetResult();
         }
         catch(OperationCanceledException){}catch(Exception ex){if(generation==request&&!closed){VerificationReady.TrySetException(ex);Fail(ex);}}
         finally{if(generation==request&&!closed){Loading.IsActive=false;Loading.Visibility=Visibility.Collapsed;}}
@@ -398,7 +408,15 @@ public sealed partial class ViewerWindow : Window
     private void CanvasTapped(object sender,TappedRoutedEventArgs e){if(!panMoved)ToggleControls();e.Handled=true;}
     private void ToggleControls(){manuallyHidden=controlsVisible;controlsVisible=!controlsVisible;lastActivity=DateTime.UtcNow;hover=false;AnimateChrome(controlsVisible);}
     private void CanvasDoubleTapped(object sender,DoubleTappedRoutedEventArgs e){if(Math.Abs(zoom-1)<0.001)ActualSize();else Fit();e.Handled=true;}
-    private async void FavoriteClick(object sender,RoutedEventArgs e){if(current is null)return;var photo=current;int generation=request;try{bool favorite=await App.Store.ToggleFavoriteAsync(photo);if(closed||generation!=request)return;current=photo with{Favorite=favorite};UpdateFavorite();ShowControls();}catch(Exception ex){if(!closed&&generation==request)Fail(ex);}}
+    private async void FavoriteClick(object sender,RoutedEventArgs e)=>await ToggleFavoriteAsync();
+    private async Task ToggleFavoriteAsync(){if(current is null)return;var photo=current;int generation=request;try{bool favorite=await App.Store.ToggleFavoriteAsync(photo);if(closed||generation!=request)return;current=photo with{Favorite=favorite};UpdateFavorite();ShowControls();}catch(Exception ex)when(IsLibraryFailure(ex)){if(!closed&&generation==request)ShowLibraryNotice("收藏未能保存，请稍后重试。",ex);}}
+    private static bool IsLibraryFailure(Exception error)=>error is SqliteException or IOException or UnauthorizedAccessException;
+    private void ShowLibraryNotice(string message,Exception error)
+    {
+        App.Log("Photo library bookkeeping: "+error);
+        LibraryNotice.Message=message+(error is SqliteException {SqliteErrorCode:11 or 26}?" 图库数据需要检查，原照片未被修改。":" 照片仍可正常查看。");
+        LibraryNotice.IsOpen=true;
+    }
     private void UpdateFavorite(){FavoriteIcon.Glyph=current?.Favorite==true?"\uEB52":"\uEB51";FavoriteButton.SetValue(AutomationProperties.NameProperty,current?.Favorite==true?"取消收藏":"收藏");}
     private void FullScreenClick(object sender,RoutedEventArgs e)=>ToggleFullScreen();
     private void ToggleFullScreen()

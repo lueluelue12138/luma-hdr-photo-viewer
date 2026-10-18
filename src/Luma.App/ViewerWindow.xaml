@@ -108,6 +108,7 @@
    </Border>
    <Border x:Name="StatusBadge" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="20,14,20,0" CornerRadius="10" Background="{ThemeResource FloatingBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="1" Padding="12,8" IsHitTestVisible="False"><TextBlock x:Name="StatusText" Text="SDR · 原图" Foreground="{ThemeResource TextFillColorPrimaryBrush}" FontSize="12"/></Border>
    <local:LoadingIndicator x:Name="Loading" IsActive="False" Width="40" Height="40" Visibility="Collapsed"/>
+   <InfoBar x:Name="LibraryNotice" IsOpen="False" IsClosable="True" Severity="Warning" Title="照片已打开" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="16,80,16,0" MaxWidth="560"/>
    <Border x:Name="ErrorPanel" Visibility="Collapsed" MaxWidth="460" HorizontalAlignment="Center" VerticalAlignment="Center" Background="{ThemeResource FloatingBrush}" CornerRadius="12" Padding="24"><StackPanel Spacing="12"><FontIcon Glyph="&#xE7BA;"/><TextBlock Text="无法打开这张照片" FontWeight="SemiBold" FontSize="18" HorizontalAlignment="Center"/><TextBlock x:Name="ErrorText" TextWrapping="Wrap" TextAlignment="Center"/><Button Content="打开其他照片…" Click="OpenClick" HorizontalAlignment="Center"/></StackPanel></Border>
   </Grid>
  </Grid>

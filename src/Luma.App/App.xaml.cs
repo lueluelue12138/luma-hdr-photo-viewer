@@ -29,6 +29,10 @@ public partial class App : Application
             Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();await ViewerPreferences.LoadAsync();
             Log($"Launch {Environment.ProcessId}");
             string? file=LaunchArguments.PhotoPath(cli);
+            if(test>=0&&cli.Contains("--verify-library-failure"))
+            {
+                window=new MainWindow();window.Activate();await LibraryFailureVerification.RunAsync((MainWindow)window,file??throw new ArgumentException("Library verification requires a fixture photo"));return;
+            }
             if(test>=0&&cli.Contains("--verify-photo-filter"))
             {
                 window=new MainWindow();window.Activate();await ((MainWindow)window).VerificationPhotoFilterAsync(cli.Contains("--verify-filter-read"));return;

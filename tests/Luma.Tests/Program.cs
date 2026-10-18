@@ -50,4 +50,5 @@ Assert(metadataRows.Count==4&&PhotoMetadataFormatting.Filter(metadataRows,"ISO")
 LivePhotoTests.Run(root,Assert);
 await AlbumOrganizationTests.RunAsync(root,Assert);
 await PhotoTypeFilterTests.RunAsync(root,Assert);
+await LibraryIntegrityTests.RunAsync(root,Assert);
 Console.WriteLine($"{checks} core checks passed. Artifacts: {root}");
