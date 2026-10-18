@@ -30,15 +30,23 @@ public sealed class LibraryStore
         using var cmd = Cmd(c, """
             PRAGMA journal_mode=WAL;
             PRAGMA foreign_keys=ON;
-            CREATE TABLE IF NOT EXISTS albums(id INTEGER PRIMARY KEY, name TEXT NOT NULL, folder TEXT NOT NULL COLLATE NOCASE UNIQUE, cover TEXT, offline INTEGER NOT NULL DEFAULT 0, sort TEXT NOT NULL DEFAULT 'name');
+            CREATE TABLE IF NOT EXISTS albums(id INTEGER PRIMARY KEY, name TEXT NOT NULL, folder TEXT NOT NULL COLLATE NOCASE UNIQUE, cover TEXT, offline INTEGER NOT NULL DEFAULT 0, sort TEXT NOT NULL DEFAULT 'name', pinned INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS photos(path TEXT PRIMARY KEY COLLATE NOCASE, name TEXT NOT NULL, size INTEGER NOT NULL, modified INTEGER NOT NULL, favorite INTEGER NOT NULL DEFAULT 0, opened INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS album_photos(album_id INTEGER NOT NULL, path TEXT NOT NULL COLLATE NOCASE, missing INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(album_id,path));
             CREATE INDEX IF NOT EXISTS ix_album_photos_path ON album_photos(path);
             CREATE INDEX IF NOT EXISTS ix_photos_opened ON photos(opened);
             CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            PRAGMA user_version=1;
             """);
-        return await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync();
+        // Additive migration: retain existing albums, covers, photo sort and settings.
+        bool hasPinned=false;
+        using(var columns=Cmd(c,"PRAGMA table_info(albums)"))
+        using(var reader=await columns.ExecuteReaderAsync())
+            while(await reader.ReadAsync())hasPinned|=reader.GetString(1)=="pinned";
+        if(!hasPinned){using var migration=Cmd(c,"ALTER TABLE albums ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");await migration.ExecuteNonQueryAsync();}
+        using var version=Cmd(c,"PRAGMA user_version");
+        if(Convert.ToInt32(await version.ExecuteScalarAsync())<2){using var update=Cmd(c,"PRAGMA user_version=2");await update.ExecuteNonQueryAsync();}
+        return 0;
     });
     public Task<long> AddFolderAsync(string folder) => Use(async c =>
     {
@@ -46,14 +54,15 @@ public sealed class LibraryStore
         using var cmd = Cmd(c, "INSERT INTO albums(name,folder) VALUES($n,$f) ON CONFLICT(folder) DO NOTHING; SELECT id FROM albums WHERE folder=$f", ("$n", new DirectoryInfo(folder).Name), ("$f", folder));
         return Convert.ToInt64(await cmd.ExecuteScalarAsync());
     });
-    public Task<List<Album>> AlbumsAsync() => Use(async c =>
+    public Task<List<Album>> AlbumsAsync(string sort = "name") => Use(async c =>
     {
-        using var cmd = Cmd(c, """
+        string order=AlbumSort.Normalize(sort) switch{"name-desc"=>"a.name COLLATE NOCASE DESC", "newest"=>"a.id DESC", "oldest"=>"a.id ASC", "most"=>"photo_count DESC", "least"=>"photo_count ASC", _=>"a.name COLLATE NOCASE"};
+        using var cmd = Cmd(c, $"""
             SELECT a.id,a.name,a.folder,COALESCE((SELECT ap.path FROM album_photos ap WHERE ap.album_id=a.id AND ap.path=a.cover AND ap.missing=0),(SELECT ap.path FROM album_photos ap WHERE ap.album_id=a.id AND ap.missing=0 ORDER BY ap.path LIMIT 1)),
-            (SELECT COUNT(*) FROM album_photos ap WHERE ap.album_id=a.id AND ap.missing=0),a.offline,a.sort FROM albums a ORDER BY a.name COLLATE NOCASE
+            (SELECT COUNT(*) FROM album_photos ap WHERE ap.album_id=a.id AND ap.missing=0) AS photo_count,a.offline,a.sort,a.pinned FROM albums a ORDER BY a.pinned DESC,{order},a.name COLLATE NOCASE,a.id
             """);
         using var r = await cmd.ExecuteReaderAsync(); var list = new List<Album>();
-        while (await r.ReadAsync()) list.Add(new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetInt32(4), r.GetBoolean(5), r.GetString(6)));
+        while (await r.ReadAsync()) list.Add(new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetInt32(4), r.GetBoolean(5), r.GetString(6), r.GetBoolean(7)));
         return list;
     });
     public Task<List<Photo>> PhotosAsync(PhotoScope scope = PhotoScope.All, long albumId = 0, string search = "", string sort = "name") => Use(async c =>
@@ -77,9 +86,9 @@ public sealed class LibraryStore
         using var cmd = Cmd(c, "INSERT INTO photos(path,name,size,modified,opened) VALUES($p,$n,$s,$m,$o) ON CONFLICT(path) DO UPDATE SET opened=excluded.opened,name=excluded.name,size=excluded.size,modified=excluded.modified", ("$p", photo.Path), ("$n", photo.Name), ("$s", photo.Size), ("$m", photo.Modified), ("$o", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
         return await cmd.ExecuteNonQueryAsync();
     });
-    public Task SetAlbumAsync(long id, string? name = null, string? cover = null, string? sort = null) => Use(async c =>
+    public Task SetAlbumAsync(long id, string? name = null, string? cover = null, string? sort = null, bool? pinned = null) => Use(async c =>
     {
-        using var cmd = Cmd(c, "UPDATE albums SET name=COALESCE($n,name),cover=COALESCE($c,cover),sort=COALESCE($s,sort) WHERE id=$id", ("$id", id), ("$n", name), ("$c", cover), ("$s", sort)); return await cmd.ExecuteNonQueryAsync();
+        using var cmd = Cmd(c, "UPDATE albums SET name=COALESCE($n,name),cover=COALESCE($c,cover),sort=COALESCE($s,sort),pinned=COALESCE($p,pinned) WHERE id=$id", ("$id", id), ("$n", name), ("$c", cover), ("$s", sort), ("$p", pinned)); return await cmd.ExecuteNonQueryAsync();
     });
     public Task RemoveAlbumAsync(long id) => Use(async c =>
     {

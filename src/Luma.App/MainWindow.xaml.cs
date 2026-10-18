@@ -14,7 +14,7 @@ namespace Luma.App;
 public sealed partial class MainWindow : Window
 {
     private List<Album> albums=[];private List<Photo> photos=[];
-    private string page="albums",sort="name";private long albumId;private int generation;private bool ready,closed,scanning;
+    private string page="albums",sort="name",albumSort="name";private long albumId;private int generation;private bool ready,closed,scanning;
     private CancellationTokenSource? searchCancellation;private readonly CancellationTokenSource lifetime=new();
     private readonly List<ViewerWindow> viewers=[];
     private int responsiveBand=-1;
@@ -35,6 +35,7 @@ public sealed partial class MainWindow : Window
     private bool refreshAllPending;
     private readonly HashSet<long> refreshAlbumsPending=[];
     private Task refreshTask=Task.CompletedTask;
+    private Task albumSortSave=Task.CompletedTask;
     internal Task StartupRefresh {get;private set;}=Task.CompletedTask;
     internal TaskCompletionSource VerificationReady {get;}=new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal async Task<object> VerificationGalleryAsync(string folder)
@@ -95,6 +96,7 @@ public sealed partial class MainWindow : Window
         if(Nav.PaneDisplayMode!=mode)Nav.PaneDisplayMode=mode;
         Nav.IsPaneToggleButtonVisible=compact;ImportLabel.Visibility=band<2?Visibility.Collapsed:Visibility.Visible;OpenPhotoLabel.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
         SortBox.Visibility=band==0||page is "albums" or "settings" or "recent"?Visibility.Collapsed:Visibility.Visible;
+        AlbumSortBox.Visibility=page=="albums"?Visibility.Visible:Visibility.Collapsed;
         Gallery.Padding=new Thickness(band<2?16:28,22,band<2?16:28,16);
         GalleryScroll.Margin=new Thickness(0,0,band<2?-8:-18,0);
         Search.HorizontalAlignment=band<3?HorizontalAlignment.Left:HorizontalAlignment.Center;Search.Margin=band<3?new Thickness(130,0,0,0):new Thickness(0);
@@ -105,6 +107,8 @@ public sealed partial class MainWindow : Window
         Root.Loaded-=Loaded;
         // Selecting the initial page must not launch a second async reload and
         // entrance animation while the first cover/layout is being prepared.
+        albumSort=AlbumSort.Normalize(await App.Store.GetSettingAsync("albumOverviewSort"));if(closed)return;
+        AlbumSortBox.SelectedItem=AlbumSortBox.Items.OfType<ComboBoxItem>().First(i=>Equals(i.Tag,albumSort));
         Nav.SelectedItem=AlbumsItem;ready=true;await ReloadAsync();if(closed)return;
         // Prepare the real gallery layout before releasing the native cloak.
         // A visible empty shell followed by creating all its cards competes
@@ -122,12 +126,13 @@ public sealed partial class MainWindow : Window
     }
     private async Task ReloadAsync()
     {
-        int g=++generation;var all=await App.Store.AlbumsAsync();if(closed||g!=generation)return;
-        bool navigationChanged=!all.Select(a=>(a.Id,a.Name)).SequenceEqual(albums.Select(a=>(a.Id,a.Name)));albums=all;
+        int g=++generation;var all=await App.Store.AlbumsAsync(albumSort);if(closed||g!=generation)return;
+        bool navigationChanged=!all.Select(a=>(a.Id,a.Name,a.Pinned)).SequenceEqual(albums.Select(a=>(a.Id,a.Name,a.Pinned)));albums=all;
         ready=false;
-        if(navigationChanged){while(Nav.MenuItems.Count>5)Nav.MenuItems.RemoveAt(Nav.MenuItems.Count-1);foreach(var a in albums)Nav.MenuItems.Add(new NavigationViewItem{Content=a.Name,Tag=a.Id,Icon=new FontIcon{Glyph="\uE8B7"}});}
+        if(navigationChanged){while(Nav.MenuItems.Count>5)Nav.MenuItems.RemoveAt(Nav.MenuItems.Count-1);foreach(var a in albums){var item=new NavigationViewItem{Content=a.Name,Tag=a.Id,Icon=new FontIcon{Glyph=a.Pinned?"\uE718":"\uE8B7"}};item.ContextRequested+=AlbumContextRequested;Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(item,a.Name+(a.Pinned?"，已置顶":""));Nav.MenuItems.Add(item);}}
         if(page=="album")Nav.SelectedItem=Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(n=>n.Tag is long id&&id==albumId);
         ready=true;
+        AlbumSortBox.Visibility=page=="albums"?Visibility.Visible:Visibility.Collapsed;
         if(page=="settings")return;
         if(page=="albums")
         {
@@ -158,7 +163,7 @@ public sealed partial class MainWindow : Window
             Gallery.Visibility=Visibility.Collapsed;SettingsHost.Visibility=Visibility.Visible;RefreshSettingsDisplay();Motion.Enter(SettingsHost);return;
         }
         if(args.SelectedItem is not NavigationViewItem item)return;
-        if(item.Tag is long id){page="album";albumId=id;sort=albums.FirstOrDefault(a=>a.Id==id)?.Sort??"name";SortBox.SelectedIndex=sort switch{"newest"=>1,"oldest"=>2,_=>0};}else{page=item.Tag?.ToString()??"all";albumId=0;}
+        if(item.Tag is long id){page="album";albumId=id;sort=albums.FirstOrDefault(a=>a.Id==id)?.Sort??"name";ready=false;SortBox.SelectedIndex=sort switch{"newest"=>1,"oldest"=>2,_=>0};ready=true;}else{page=item.Tag?.ToString()??"all";albumId=0;}
         settingsDisplayTimer?.Stop();settingsPanel?.DeactivateDisplay();Gallery.Visibility=Visibility.Visible;SettingsHost.Visibility=Visibility.Collapsed;await ReloadAsync();Motion.Enter(Gallery);
     }
     private async void SearchChanged(AutoSuggestBox sender,AutoSuggestBoxTextChangedEventArgs args)
@@ -197,7 +202,7 @@ public sealed partial class MainWindow : Window
             do
             {
                 bool all=refreshAllPending;var ids=refreshAlbumsPending.ToArray();refreshAllPending=false;refreshAlbumsPending.Clear();
-                var snapshot=await App.Store.AlbumsAsync();
+                var snapshot=await App.Store.AlbumsAsync(albumSort);
                 bool reload=!snapshot.SequenceEqual(albums);
                 if(verificationBeforeScan is {} pause)await pause();
                 foreach(var a in snapshot.Where(a=>all||ids.Contains(a.Id)))
@@ -211,6 +216,20 @@ public sealed partial class MainWindow : Window
     private void FolderChanged(long id)=>DispatcherQueue.TryEnqueue(async()=>{if(closed)return;var a=albums.FirstOrDefault(a=>a.Id==id);if(a is null)return;try{var result=await App.Indexer.RefreshAsync(a,lifetime.Token);if(result.Added>0||result.Updated>0||result.Missing>0||result.Offline!=a.Offline){Thumbnail.InvalidateFolder(a.Folder);await ReloadAsync();}}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}});
     private void RefreshClick(object sender,RoutedEventArgs e){foreach(var album in albums.Where(a=>page!="album"||a.Id==albumId))PhotoFeaturesCache.InvalidateFolder(album.Folder);_=RefreshAllAsync(page=="album"?albumId:0);}
     private async void SortChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;sort=(SortBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"name";if(page=="album")await App.Store.SetAlbumAsync(albumId,sort:sort);await ReloadAsync();}
+    private async void AlbumSortChanged(object sender,SelectionChangedEventArgs e)
+    {
+        if(!ready||page!="albums")return;
+        string selected=albumSort=AlbumSort.Normalize((AlbumSortBox.SelectedItem as ComboBoxItem)?.Tag?.ToString());
+        albumSortSave=SaveAlbumSortAsync(albumSortSave,selected);
+        try{await albumSortSave;if(!closed&&albumSort==selected)await ReloadAsync();}
+        catch(Exception ex){await ErrorAsync("无法保存相册排序",ex.Message);}
+    }
+    private static async Task SaveAlbumSortAsync(Task previous,string selected)
+    {
+        // Rapid selections must not let an older queued write win on restart.
+        try{await previous;}catch(Exception){/* Its handler already reports the failed write. */}
+        await App.Store.SetSettingAsync("albumOverviewSort",selected);
+    }
     private void AlbumClick(object sender,RoutedEventArgs e){if(((Button)sender).Tag is Album a){var nav=Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(n=>n.Tag is long id&&id==a.Id);Nav.SelectedItem=nav;}}
     private static void HoverCard(object sender,bool over)
     {
@@ -225,13 +244,22 @@ public sealed partial class MainWindow : Window
         if(((Button)sender).Tag is not Photo p)return;var v=new ViewerWindow(p.Path,photos,this);viewers.Add(v);v.Closed+=async(_,_)=>{viewers.Remove(v);await ReloadAsync();};v.Activate();
     }
     private async Task ErrorAsync(string title,string message){if(closed)return;await new ContentDialog{XamlRoot=Root.XamlRoot,Title=title,Content=message,CloseButtonText="关闭"}.ShowAsync();}
-    private void AlbumRightTapped(object sender,RightTappedRoutedEventArgs e)
+    private void AlbumContextRequested(UIElement sender,ContextRequestedEventArgs e)
     {
-        if(((Button)sender).Tag is not Album a)return;var menu=new MenuFlyout();
+        Album? a=sender switch{Button {Tag:Album card}=>albums.FirstOrDefault(current=>current.Id==card.Id),NavigationViewItem {Tag:long id}=>albums.FirstOrDefault(current=>current.Id==id),_=>null};
+        if(a is null)return;CreateAlbumMenu(a,sender is NavigationViewItem).ShowAt((FrameworkElement)sender);e.Handled=true;
+    }
+    private MenuFlyout CreateAlbumMenu(Album a,bool pinOnly=false)
+    {
+        var menu=new MenuFlyout();
+        Add(menu,a.Pinned?"取消置顶":"置顶相册",async()=>{await App.Store.SetAlbumAsync(a.Id,pinned:!a.Pinned);await ReloadAsync();});
+        ((MenuFlyoutItem)menu.Items[0]).Icon=new FontIcon{Glyph=a.Pinned?"\uE77A":"\uE718"};
+        if(pinOnly)return menu;
+        menu.Items.Add(new MenuFlyoutSeparator());
         Add(menu,"重命名相册",async()=>{var box=new TextBox{Text=a.Name,PlaceholderText="相册名称",MaxLength=120};var d=new ContentDialog{XamlRoot=Root.XamlRoot,Title="重命名相册",Content=box,PrimaryButtonText="保存",CloseButtonText="取消",DefaultButton=ContentDialogButton.Primary};if(await d.ShowAsync()==ContentDialogResult.Primary&&!string.IsNullOrWhiteSpace(box.Text)){await App.Store.SetAlbumAsync(a.Id,name:box.Text.Trim());await ReloadAsync();}});
         Add(menu,"刷新",async()=>{var result=await App.Indexer.RefreshAsync(a);if(result.Added>0||result.Updated>0||result.Missing>0||result.Offline!=a.Offline)Thumbnail.InvalidateFolder(a.Folder);await ReloadAsync();});
         Add(menu,"在资源管理器中打开",()=>{OpenFolder(a.Folder);return Task.CompletedTask;});
-        menu.Items.Add(new MenuFlyoutSeparator());Add(menu,"从图库移除（保留原文件）",async()=>{var d=new ContentDialog{XamlRoot=Root.XamlRoot,Title=$"移除“{a.Name}”？",Content="只移除相册索引，原始照片仍保留在文件夹中。",PrimaryButtonText="移除相册",CloseButtonText="取消"};if(await d.ShowAsync()==ContentDialogResult.Primary){App.Indexer.Forget(a.Id);await App.Store.RemoveAlbumAsync(a.Id);await ReloadAsync();}});menu.ShowAt((FrameworkElement)sender);e.Handled=true;
+        menu.Items.Add(new MenuFlyoutSeparator());Add(menu,"从图库移除（保留原文件）",async()=>{var d=new ContentDialog{XamlRoot=Root.XamlRoot,Title=$"移除“{a.Name}”？",Content="只移除相册索引，原始照片仍保留在文件夹中。",PrimaryButtonText="移除相册",CloseButtonText="取消"};if(await d.ShowAsync()==ContentDialogResult.Primary){App.Indexer.Forget(a.Id);await App.Store.RemoveAlbumAsync(a.Id);await ReloadAsync();}});return menu;
     }
     private void PhotoRightTapped(object sender,RightTappedRoutedEventArgs e)
     {

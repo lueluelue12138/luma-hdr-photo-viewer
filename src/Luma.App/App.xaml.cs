@@ -29,6 +29,10 @@ public partial class App : Application
             Store=new(Path.Combine(DataDirectory,"library.db")); await Store.InitializeAsync(); Indexer=new(Store);Theme=await ThemeAsync();await ViewerPreferences.LoadAsync();
             Log($"Launch {Environment.ProcessId}");
             string? file=LaunchArguments.PhotoPath(cli);
+            if(test>=0&&cli.Contains("--verify-album-organization"))
+            {
+                window=new MainWindow();window.Activate();await ((MainWindow)window).VerificationAlbumOrganizationAsync(cli.Contains("--verify-album-read"));return;
+            }
             if(test>=0&&cli.Contains("--verify-fullscreen"))
             {
                 window=new MainWindow();window.Activate();await FullscreenVerification.RunAsync((MainWindow)window,file??throw new ArgumentException("Fullscreen verification requires a photo"));return;
