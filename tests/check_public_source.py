@@ -14,9 +14,11 @@ for entry in subprocess.check_output(['git', 'ls-files', '--stage', '-z'], cwd=R
     files.append([oid, name])
 forbidden_suffixes = {'.exe', '.dll', '.lib', '.exp', '.obj', '.zip', '.pfx', '.p12', '.pem', '.key', '.db', '.sqlite', '.lth', '.jpg', '.jpeg', '.jxr', '.heic', '.heif', '.wdp', '.hdp', '.avif', '.arw', '.mp4', '.mov', '.m4v', '.livp'}
 errors = []
+# The homepage hero is one AVIF with an HDR gain map (the maintainer's own photo, see docs/WEBSITE.md); only that folder may hold .avif.
+site_avif = lambda name: name.startswith('site/assets/') and name.lower().endswith('.avif')
 for oid, name in files:
     p = Path(name)
-    if name.startswith(('artifacts/', '.tools/', 'external/nvidia/sdk/')) or p.suffix.lower() in forbidden_suffixes or p.name.startswith('.env'):
+    if name.startswith(('artifacts/', '.tools/', 'external/nvidia/sdk/')) or (p.suffix.lower() in forbidden_suffixes and not site_avif(name)) or p.name.startswith('.env'):
         errors.append((name, 'generated/private/proprietary payload tracked in history'))
 
 patterns = [
