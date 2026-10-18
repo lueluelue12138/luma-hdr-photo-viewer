@@ -9,6 +9,7 @@
 | 推送 `main` / Pull Request / 手动运行 CI | 源码边界、图库逻辑、SDK-free WIC/D3D11/FP16、安装生命周期检查 | standard EXE、便携 ZIP、SHA256、构建信息；Actions 产物保留 14 天 |
 | 推送与源码版本一致的 `v*` 标签 | 精确检出源码和私有 SDK、校验 SDK、编译完整 RTX 应用、核对包及隔离安装 | 完整 **RTX EXE、便携 ZIP、SHA256、构建信息**，自动上传到 **Release 草稿** |
 | 手动运行 Store 工作流，并选择已发布版本标签 | 使用真实 Partner Center 标识构建完整 RTX MSIX 并核对包内容 | **MSIX、SHA256、来源记录**，仅保存为 Actions 产物，不上传商店 |
+| `site/**` / Pages 工作流变更进入 main，或手动运行 Pages | 将已提交的 `site/` 作为静态网站部署 | [GitHub Pages 主页](https://lueluelue12138.github.io/luma-hdr-photo-viewer/)，不随普通应用提交重复部署 |
 
 标签发布前需提交 `docs/releases/<标签>.md`，例如 `docs/releases/v0.1.27.md`。Release 草稿直接读取该标签提交里的说明，避免每一版都使用相同的通用介绍。草稿公开仍需明确授权与消费者包验证；推送标签不会自动公开 Release，也不会自动生成 MSIX。
 
