@@ -35,6 +35,7 @@
     <TextBlock Text="按住空格对比原图；带增益图的 HDR 照片可对比 SDR 底图。VSR 是独立的 AI 超分开关，默认关闭。HDR 增强的是光影层次，不代表每个区域都更亮。" Style="{StaticResource Hint}"/>
    </StackPanel></Border>
    <TextBlock Text="按你的习惯使用" Style="{StaticResource SectionTitle}" Margin="0,12,0,0"/>
+   <Border Style="{StaticResource SettingCard}"><StackPanel Spacing="12"><TextBlock Text="按照片类型筛选" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="在相册、收藏或全部照片页，点击顶部漏斗图标，可多选 HDR、实况和普通静态照片。多个类型表示匹配任意一项；相册首页只显示含匹配照片的相册。筛选会保留搜索与排序，也会记住你的选择，点击“显示全部”即可清除。首次识别在后台进行，之后在本次运行内复用结果。" Style="{StaticResource Hint}"/><TextBlock Text="HDR 指照片自带的 HDR 信息，不包含通过 RTX HDR 增强的普通照片；实况指仍保留视频的完整照片。文件暂时无法读取时会提示，重新连接后可刷新重试。" Style="{StaticResource Hint}"/></StackPanel></Border>
    <Border Style="{StaticResource SettingCard}"><StackPanel Spacing="12"><TextBlock Text="让常用相册排在前面" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="右键相册卡片或侧边栏里的相册，选择“置顶相册”；再次右键可取消。键盘可按 Shift+F10 打开菜单。相册页顶部可按名称、添加顺序或照片数量排序，置顶相册始终在前；选择会自动保存。相册内的照片排序独立设置。" Style="{StaticResource Hint}"/></StackPanel></Border>
    <Border Style="{StaticResource SettingCard}"><StackPanel Spacing="12">
     <TextBlock Text="让回忆动起来" FontWeight="SemiBold" FontSize="16"/>

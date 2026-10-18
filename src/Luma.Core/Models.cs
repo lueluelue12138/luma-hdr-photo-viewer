@@ -5,9 +5,9 @@ public sealed record Photo(string Path, string Name, long Size, long Modified, b
     public string Detail => Missing ? "文件暂不可用" : $"{Size / 1048576.0:0.0} MB";
     public override string ToString() => Name;
 }
-public sealed record Album(long Id, string Name, string Folder, string? Cover, int Count, bool Offline, string Sort, bool Pinned = false)
+public sealed record Album(long Id, string Name, string Folder, string? Cover, int Count, bool Offline, string Sort, bool Pinned = false, int? MatchedCount = null)
 {
-    public string CountLabel => Offline ? $"{Count} 张 · 文件夹离线" : $"{Count} 张";
+    public string CountLabel => (MatchedCount is int matched?$"匹配 {matched} / 共 {Count} 张":$"{Count} 张")+(Offline?" · 文件夹离线":"");
     public override string ToString() => Name;
 }
 public static class AlbumSort

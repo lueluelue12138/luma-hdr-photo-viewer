@@ -74,12 +74,13 @@ public sealed partial class MainWindow : Window
     }
     public MainWindow()
     {
-        InitializeComponent();ExtendsContentIntoTitleBar=true;SetTitleBar(TitleDrag);SystemBackdrop=new MicaBackdrop();
+        InitializeComponent();typeIndex=new(ReadPhotoTypeAsync);ExtendsContentIntoTitleBar=true;SetTitleBar(TitleDrag);SystemBackdrop=new MicaBackdrop();
         WindowLayout.Configure(this,Root);
         App.RegisterGallery(this);
         WindowLayout.SizeForDpi(this,Root,1160,800);AppWindow.TitleBar.PreferredHeightOption=TitleBarHeightOption.Standard;AppWindow.TitleBar.ButtonBackgroundColor=Colors.Transparent;AppWindow.TitleBar.ButtonInactiveBackgroundColor=Colors.Transparent;
-        Root.Loaded+=Loaded;Root.SizeChanged+=(_,_)=>UpdateResponsiveLayout();Closed+=(_,_)=>{closed=true;settingsDisplayTimer?.Stop();settingsPanel?.DeactivateDisplay();lifetime.Cancel();searchCancellation?.Cancel();App.Indexer.FolderChanged-=FolderChanged;};
+        Root.Loaded+=Loaded;Root.SizeChanged+=(_,_)=>UpdateResponsiveLayout();Closed+=(_,_)=>{closed=true;settingsDisplayTimer?.Stop();settingsPanel?.DeactivateDisplay();lifetime.Cancel();searchCancellation?.Cancel();CancelTypeFilter();PhotoFeaturesCache.Invalidated-=TypeFeaturesInvalidated;App.Indexer.FolderChanged-=FolderChanged;};
         App.Indexer.FolderChanged+=FolderChanged;
+        PhotoFeaturesCache.Invalidated+=TypeFeaturesInvalidated;
         // Only query while settings is visible. Activation catches a return
         // from Windows HDR/calibration; debounce cross-monitor moves.
         Activated+=(_,e)=>{if(e.WindowActivationState!=WindowActivationState.Deactivated)RefreshSettingsDisplay();};
@@ -97,6 +98,7 @@ public sealed partial class MainWindow : Window
         Nav.IsPaneToggleButtonVisible=compact;ImportLabel.Visibility=band<2?Visibility.Collapsed:Visibility.Visible;OpenPhotoLabel.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
         SortBox.Visibility=band==0||page is "albums" or "settings" or "recent"?Visibility.Collapsed:Visibility.Visible;
         AlbumSortBox.Visibility=page=="albums"?Visibility.Visible:Visibility.Collapsed;
+        AlbumSortBox.Width=band==0?120:144;
         Gallery.Padding=new Thickness(band<2?16:28,22,band<2?16:28,16);
         GalleryScroll.Margin=new Thickness(0,0,band<2?-8:-18,0);
         Search.HorizontalAlignment=band<3?HorizontalAlignment.Left:HorizontalAlignment.Center;Search.Margin=band<3?new Thickness(130,0,0,0):new Thickness(0);
@@ -108,6 +110,7 @@ public sealed partial class MainWindow : Window
         // Selecting the initial page must not launch a second async reload and
         // entrance animation while the first cover/layout is being prepared.
         albumSort=AlbumSort.Normalize(await App.Store.GetSettingAsync("albumOverviewSort"));if(closed)return;
+        await LoadTypeFilterAsync();if(closed)return;
         AlbumSortBox.SelectedItem=AlbumSortBox.Items.OfType<ComboBoxItem>().First(i=>Equals(i.Tag,albumSort));
         Nav.SelectedItem=AlbumsItem;ready=true;await ReloadAsync();if(closed)return;
         // Prepare the real gallery layout before releasing the native cloak.
@@ -133,23 +136,35 @@ public sealed partial class MainWindow : Window
         if(page=="album")Nav.SelectedItem=Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(n=>n.Tag is long id&&id==albumId);
         ready=true;
         AlbumSortBox.Visibility=page=="albums"?Visibility.Visible:Visibility.Collapsed;
-        if(page=="settings")return;
+        if(page=="settings"){CancelTypeFilter();return;}
+        if(!HasTypeFilter){CancelTypeFilter();TypeFilterBar.Visibility=Visibility.Collapsed;}
         if(page=="albums")
         {
             FolderText.Text="照片保留在原文件夹";
-            var filtered=albums.Where(a=>a.Name.Contains(Search.Text,StringComparison.CurrentCultureIgnoreCase)).ToList();if(AlbumsRepeat.ItemsSource is not List<Album> displayed||!displayed.SequenceEqual(filtered))AlbumsRepeat.ItemsSource=filtered;AlbumsRepeat.Visibility=Visibility.Visible;PhotosRepeat.Visibility=Visibility.Collapsed;PageTitle.Text="相册";CountText.Text=$"{filtered.Count} 个相册";EmptyState.Visibility=filtered.Count==0?Visibility.Visible:Visibility.Collapsed;SortBox.Visibility=Visibility.Collapsed;
+            var filtered=albums.Where(a=>a.Name.Contains(Search.Text,StringComparison.CurrentCultureIgnoreCase)).ToList();AlbumsRepeat.Visibility=Visibility.Visible;PhotosRepeat.Visibility=Visibility.Collapsed;PageTitle.Text="相册";SortBox.Visibility=Visibility.Collapsed;
+            if(HasTypeFilter)
+            {
+                var source=await App.Store.PhotosAsync();var paths=await App.Store.AlbumPhotoPathsAsync();if(closed||g!=generation)return;
+                StartTypeFilter(source,paths);
+            }
+            else{if(AlbumsRepeat.ItemsSource is not List<Album> displayed||!displayed.SequenceEqual(filtered))AlbumsRepeat.ItemsSource=filtered;CountText.Text=$"{filtered.Count} 个相册";EmptyState.Visibility=filtered.Count==0?Visibility.Visible:Visibility.Collapsed;}
         }
         else
         {
             var a=albums.FirstOrDefault(a=>a.Id==albumId);var scope=page switch{"favorites"=>PhotoScope.Favorites,"recent"=>PhotoScope.Recent,"album"=>PhotoScope.Album,_=>PhotoScope.All};
-            var result=await App.Store.PhotosAsync(scope,albumId,Search.Text,sort);if(closed||g!=generation)return;if(!photos.SequenceEqual(result)||PhotosRepeat.ItemsSource is null){photos=result;PhotosRepeat.ItemsSource=photos;}PhotosRepeat.Visibility=Visibility.Visible;AlbumsRepeat.Visibility=Visibility.Collapsed;EmptyState.Visibility=photos.Count==0?Visibility.Visible:Visibility.Collapsed;CountText.Text=$"{photos.Count} 张照片";PageTitle.Text=page switch{"favorites"=>"收藏","recent"=>"最近打开","album"=>a?.Name??"相册",_=>"所有照片"};SortBox.Visibility=page=="recent"||Root.ActualWidth<650?Visibility.Collapsed:Visibility.Visible;FolderText.Text=a?.Offline==true?"文件夹暂时离线，重新连接后刷新即可恢复":a?.Folder??"照片保留在原文件夹";
+            var result=await App.Store.PhotosAsync(scope,albumId,Search.Text,sort);if(closed||g!=generation)return;
+            PhotosRepeat.Visibility=Visibility.Visible;AlbumsRepeat.Visibility=Visibility.Collapsed;
+            PageTitle.Text=page switch{"favorites"=>"收藏","recent"=>"最近打开","album"=>a?.Name??"相册",_=>"所有照片"};SortBox.Visibility=page=="recent"||Root.ActualWidth<650?Visibility.Collapsed:Visibility.Visible;FolderText.Text=a?.Offline==true?"文件夹暂时离线，重新连接后刷新即可恢复":a?.Folder??"照片保留在原文件夹";
+            if(HasTypeFilter)StartTypeFilter(result);
+            else{if(!photos.SequenceEqual(result)||PhotosRepeat.ItemsSource is null){photos=result;PhotosRepeat.ItemsSource=photos;}EmptyState.Visibility=photos.Count==0?Visibility.Visible:Visibility.Collapsed;CountText.Text=$"{photos.Count} 张照片";}
         }
         ToolTipService.SetToolTip(FolderText,FolderText.Text);
-        EmptyTitle.Text=albums.Count==0?"让照片的光影，有个家":"这里还没有照片";EmptyDescription.Text=albums.Count==0?"导入一个文件夹，开始整理你的照片。\n照片始终保留在原位置。":"试试其他搜索词，或导入新的文件夹。";
+        if(!HasTypeFilter){EmptyTitle.Text=albums.Count==0?"让照片的光影，有个家":"这里还没有照片";EmptyDescription.Text=albums.Count==0?"导入一个文件夹，开始整理你的照片。\n照片始终保留在原位置。":"试试其他搜索词，或导入新的文件夹。";}
     }
     private async void NavigationChanged(NavigationView sender,NavigationViewSelectionChangedEventArgs args)
     {
         if(!ready)return;
+        CancelTypeFilter();
         if(args.IsSettingsSelected)
         {
             page="settings";ready=false;
@@ -213,8 +228,14 @@ public sealed partial class MainWindow : Window
         catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.ToString());ScanText.Text="刷新失败，可稍后重试";}
         finally{scanning=false;ScanProgress.IsActive=false;ScanProgress.Visibility=Visibility.Collapsed;}
     }
-    private void FolderChanged(long id)=>DispatcherQueue.TryEnqueue(async()=>{if(closed)return;var a=albums.FirstOrDefault(a=>a.Id==id);if(a is null)return;try{var result=await App.Indexer.RefreshAsync(a,lifetime.Token);if(result.Added>0||result.Updated>0||result.Missing>0||result.Offline!=a.Offline){Thumbnail.InvalidateFolder(a.Folder);await ReloadAsync();}}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}});
-    private void RefreshClick(object sender,RoutedEventArgs e){foreach(var album in albums.Where(a=>page!="album"||a.Id==albumId))PhotoFeaturesCache.InvalidateFolder(album.Folder);_=RefreshAllAsync(page=="album"?albumId:0);}
+    private void FolderChanged(long id)=>DispatcherQueue.TryEnqueue(async()=>{if(closed)return;var a=albums.FirstOrDefault(a=>a.Id==id);if(a is null)return;try{PhotoFeaturesCache.InvalidateFolder(a.Folder);var result=await App.Indexer.RefreshAsync(a,lifetime.Token);if(result.Added>0||result.Updated>0||result.Missing>0||result.Offline!=a.Offline){Thumbnail.InvalidateFolder(a.Folder);await ReloadAsync();}}catch(OperationCanceledException){}catch(Exception ex){App.Log(ex.Message);}});
+    private void RefreshClick(object sender,RoutedEventArgs e)
+    {
+        var folders=albums.Where(a=>page!="album"||a.Id==albumId).Select(a=>a.Folder)
+            .Concat((typeRequest?.Source??photos).Select(p=>Path.GetDirectoryName(p.Path)!).Where(p=>p is not null)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        foreach(string folder in folders)PhotoFeaturesCache.InvalidateFolder(folder);
+        _=RefreshAllAsync(page=="album"?albumId:0);
+    }
     private async void SortChanged(object sender,SelectionChangedEventArgs e){if(!ready)return;sort=(SortBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()??"name";if(page=="album")await App.Store.SetAlbumAsync(albumId,sort:sort);await ReloadAsync();}
     private async void AlbumSortChanged(object sender,SelectionChangedEventArgs e)
     {

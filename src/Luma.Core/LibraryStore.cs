@@ -74,6 +74,13 @@ public sealed class LibraryStore
         while (await r.ReadAsync()) list.Add(new(r.GetString(0), r.GetString(1), r.GetInt64(2), r.GetInt64(3), r.GetBoolean(4), r.GetInt64(5), r.GetBoolean(6)));
         return list;
     });
+    public Task<Dictionary<long,List<string>>> AlbumPhotoPathsAsync()=>Use(async c=>
+    {
+        using var cmd=Cmd(c,"SELECT album_id,path FROM album_photos WHERE missing=0 ORDER BY album_id,path COLLATE NOCASE");
+        using var reader=await cmd.ExecuteReaderAsync();var result=new Dictionary<long,List<string>>();
+        while(await reader.ReadAsync()){long id=reader.GetInt64(0);if(!result.TryGetValue(id,out var paths))result[id]=paths=[];paths.Add(reader.GetString(1));}
+        return result;
+    });
     public Task<bool> ToggleFavoriteAsync(Photo photo) => Use(async c =>
     {
         using var insert = Cmd(c, "INSERT INTO photos(path,name,size,modified) VALUES($p,$n,$s,$m) ON CONFLICT(path) DO NOTHING", ("$p", photo.Path), ("$n", photo.Name), ("$s", photo.Size), ("$m", photo.Modified)); await insert.ExecuteNonQueryAsync();
