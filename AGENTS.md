@@ -1,13 +1,14 @@
 # Luma development
 
-- Commit each completed iteration after its appropriate validation passes. Use a descriptive commit message and include its related documentation updates; keep unrelated changes out of the commit. Local commits do not authorize pushing or publishing.
+- Commit each completed iteration after its appropriate validation passes. Use a descriptive commit message and include its related documentation updates; keep unrelated changes out of the commit. Use the project delivery skill at `.agents/skills/commit-and-release/SKILL.md` for validation, attribution, push, local installation and release preparation.
+- The current maintainer has explicitly authorized pushing completed, validated iterations and upgrading the locally installed application after each application version update. Honor later instructions to withhold a push or installation. Verify the installed version and preservation of the library/preferences; documentation-only changes do not require a new application version or reinstall.
 - Maintain `docs/TODO.md`: record new user feedback and outstanding work there, and mark completed items with their actual validation evidence.
 - Keep the latest validated local build at `artifacts/Luma/Luma.App.exe` for manual testing. Use separate directories for experiments, and retain the previous usable build when validation fails. Do not replace files while that preview is running.
 - Limit build accumulation: use incremental builds for intermediate code checks and reuse one idle `artifacts/Luma-candidate` directory for related changes, instead of publishing a new full directory per small edit. Keep the current tested preview and one previous usable version. Preserve test samples, compact reports and Git recovery backups; list obsolete builds / large diagnostic files for manual cleanup when requested. Documentation-only work does not require republishing the app.
 - For requested local cleanup, prefer moving an exact audited list of obsolete generated outputs into one clearly named folder under `artifacts` for the user to delete. Validate resolved source/destination boundaries, protected paths and their ancestors, reparse points, changed files and running programs before moving; refuse overwrites, preserve compact reports outside that folder, and retain a move manifest. Do not automatically delete the staged folder or offer a bulk deletion script.
 - Keep measured results distinct from estimates. Do not claim HDR/VSR success without SDK evaluation and the actual FP16 presentation path.
 - Prefer Apple Human Interface Guidelines for visual hierarchy, restrained materials and motion, while preserving familiar Windows behavior, theme/accessibility support and performance. Use original vector artwork and native controls; reference: https://developer.apple.com/design/human-interface-guidelines/live-photos.
-- Do not publish a repository, push changes, upload to Microsoft Store, or make a public release without an explicit user request.
+- Repository publication, release-tag pushes, public Releases and Microsoft Store uploads/submissions require the corresponding explicit user request. Standing authorization for ordinary iteration pushes and local upgrades does not authorize these publication actions.
 
 ## Commit attribution
 

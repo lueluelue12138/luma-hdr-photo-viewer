@@ -14,6 +14,10 @@ Windows 11 原生图库与图片查看器。C# / WinUI 3 负责界面，C++ / Di
 - `Luma.App.exe "D:\Photos\photo.jpg"` 直接打开照片，先解码当前照片，再列举同文件夹图片，不等待全图库扫描。
 - 本地数据位于 `%LOCALAPPDATA%\Luma`；数据库为 `library.db`，异常日志为 `luma.log`，NVIDIA 日志为 `ngx`。
 
+## 迭代交付
+
+项目内部流程见 [commit-and-release skill](../.agents/skills/commit-and-release/SKILL.md)：按改动验证 → 共同署名提交 → 按授权推送 → 同步固定预览和本机安装版。维护者已要求每次应用版本更新自动覆盖升级本机安装，同时核验图库 / 收藏 / 历史 / 设置保留；纯文档修改不出新应用包。发布 tag / 公开 Release 和微软商店提交仍需对应授权，推送 tag 默认只生成 Release 草稿。
+
 ## 构建目录保留
 
 中间代码检查使用增量 build；相关实验复用一个未运行的 `artifacts/Luma-candidate`，验证后更新固定 `artifacts/Luma`，只保留一份最近可用回退。文档修改无需出包。测试样本、报告与 Git 恢复备份单独保留，不再为每个小修改保留完整便携目录。

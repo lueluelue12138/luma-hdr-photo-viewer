@@ -1,0 +1,6 @@
+interface:
+  display_name: "Luma 提交与版本交付"
+  short_description: "验证、共同署名提交与推送，同步本机安装版，按授权准备正式 Release 与 MSIX"
+  default_prompt: "使用 $commit-and-release 完成本轮 Luma 交付，并同步更新本机已安装版。"
+policy:
+  allow_implicit_invocation: true
