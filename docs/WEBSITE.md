@@ -68,6 +68,8 @@
 
 ## 版本号
 
+下载区另有固定的[夸克网盘下载](https://pan.quark.cn/s/109763c10614)按钮，安装版与便携版由维护者在每次正式发布后手动同步。该按钮是普通 HTML 链接，不依赖 GitHub API 或 JavaScript，也不随最新 Release 的动态链接替换；文件夹中的版本号才是网盘实际同步情况的依据。Release Notes 同样提供该链接，发布后的人工上传提醒见项目 `commit-and-release` skill。商店版当前按维护者 2026-10-20 的反馈标记为已提交审核，未获确认前不展示为已上架或提供商店下载按钮。
+
 页面自己不写版本号（上一版写死了 0.1.27，而最新发布已是 0.1.28），也就不需要每次发版时更新页面。`site.js` 在页面加载完成后向 `https://api.github.com/repos/lueluelue12138/luma-hdr-photo-viewer/releases/latest` 要最新的正式发布（不含预发布与草稿），读到后填上：
 
 - 首屏小字前面的“当前正式版 x.y.z”；

@@ -155,7 +155,12 @@ jobs:
       - name: Create or update draft only
         shell: pwsh
         run: |
-          Copy-Item -LiteralPath "docs/releases/$env:RELEASE_TAG.md" -Destination release-notes.md
+          $notes = Get-Content -LiteralPath "docs/releases/$env:RELEASE_TAG.md" -Raw
+          $quarkUrl = 'https://pan.quark.cn/s/109763c10614'
+          if (!$notes.Contains($quarkUrl)) {
+            $notes = $notes.TrimEnd() + "`n`n## 国内下载`n`n[夸克网盘下载]($quarkUrl)（安装版与便携版，由维护者手动同步；请按目录中的版本号选择，尚未同步时可使用 GitHub 附件）。`n"
+          }
+          Set-Content -LiteralPath release-notes.md -Value $notes -Encoding utf8
           $existing = gh release view $env:RELEASE_TAG --json isDraft --jq .isDraft 2>$null
           if ($LASTEXITCODE -eq 0) {
             if ($existing -ne 'true') { throw 'Refusing to overwrite an already published release.' }

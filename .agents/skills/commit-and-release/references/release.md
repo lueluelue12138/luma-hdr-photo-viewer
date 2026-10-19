@@ -4,12 +4,25 @@
 
 ## GitHub 发布
 
-1. 检查当前源码、上一正式 Release、所有未发布变更与尚未完成的实机事项；不要只读取最后一个 commit。同步应用 / manifest 版本、README / 设置使用说明及 `docs/releases/vX.Y.Z.md`，写用户能感知的变化、依赖与明确限制。草稿文案来自同一 tag 中的文件。
+1. 检查当前源码、上一正式 Release、所有未发布变更与尚未完成的实机事项；不要只读取最后一个 commit。同步应用 / manifest 版本、README / 设置使用说明及 `docs/releases/vX.Y.Z.md`，写用户能感知的变化、依赖与明确限制。草稿文案来自同一 tag 中的文件，下载一节包含下方的固定夸克网盘链接。
 2. 完成本轮验证并提交，工作区与目标源提交干净、署名正确；推送对应分支后确认主 CI 通过。发布 tag 固定到已验证的精确提交，不移动旧 tag、不覆盖已公开版本；需要修复则递增版本。
 3. 推送已授权的 `vX.Y.Z`（或明确的预发布 tag）。`.github/workflows/release.yml` 在 `v*` tag 推送时构建完整 RTX 包，执行源边界 / Core / 原生 / 包 / 隔离安装检查，然后**仅创建 GitHub Release 草稿**。tag 和 draft 都不等于已经正式公开，因此仓库 Releases 栏可能仍没有新正式版本。
 4. 等待对应 workflow 实际完成，检查 tag 仍指向目标 commit。核对下载的四附件：`Luma-<version>-windows-x64-rtx-setup.exe`、`Luma-<version>-windows-x64-rtx-portable.zip`、`SHA256SUMS.txt`、`build-info.json`。来源 commit / sourceDirty=false、RTX HDR / VSR 标志、NVIDIA 输入版本与运行时 hash 应一致；核对附件校验和，实测字节数与 MiB 分开报告。
 5. 用下载的消费者包做受本轮改动影响的实机验证，包括安装 / 数据保留。实际 RTX / FP16 效果证据来自支持硬件，不来自 hosted CI。没有下载 / 检查的附件不能声称本机验证过；记录限制并解决发布阻塞项。
 6. 在对应公开发布授权下将草稿公开；正式版设置为非预发布 / latest，预发布保持 prerelease。检查公开可见性、目标提交、版本说明与四附件 / digest / 下载链接。发布后同步本机到这份正式安装包，再记录结果；同版本本地版不能自动冒充正式云端二进制。
+7. 正式发布后，每次都在最终交付回复中提醒维护者：**记得将本版 EXE 安装包与便携 ZIP 上传到夸克网盘，并更新固定分享目录。** 在 `docs/TODO.md` 记录此版本的网盘同步状态；只有维护者确认或实际核对对应文件后才标为完成。
+
+### 国内下载与手动同步
+
+- 固定地址：**https://pan.quark.cn/s/109763c10614**。维护者自行上传、管理各版本并保持此地址不变；不因 GitHub 发布成功就宣称网盘已有最新版，也不代为更改分享或上传。
+- 官网下载区、README 与每次新建 Release 的说明使用相同地址。`release.yml` 会在生成草稿时补上缺失的入口；手工创建或编辑发布说明时也必须检查。此要求不追溯修改已公开的旧 Release，也不移动旧 tag。
+- 新版说明的下载一节包含以下内容；若本版尚未手动同步，保留明确提示：
+
+  ```markdown
+  - 国内下载：[夸克网盘下载](https://pan.quark.cn/s/109763c10614)（安装版与便携版，由维护者手动同步；请按目录中的版本号选择，尚未同步时可使用 GitHub 附件）。
+  ```
+
+- 提醒维护者同步的是已验证、与本次 GitHub 附件一致的 EXE / ZIP，建议连同 `SHA256SUMS.txt` 一并上传；不要放入测试签名 MSIX、临时构建或私有诊断材料。核对网盘版本时查看文件夹 / 文件名和实际文件，不把固定链接存在视为内容已经更新。
 
 当前 `.github/workflows/ci.yml` 的普通分支构建生成 standard 开发附件，不具备完整 RTX 能力；不能代替 RTX 发布工作流。NVIDIA SDK 从受限输入仓库的固定 revision / archive SHA256 获取，只读访问；密钥、archive、头文件 / lib 不属于发布资产。使用可用的已认证 GitHub 连接器 / CLI 操作，不打印凭据，不将私有数据库、照片、转储作为附件。
 

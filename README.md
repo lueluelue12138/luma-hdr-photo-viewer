@@ -8,9 +8,9 @@ Luma 是免费、开源的 Windows 原生照片查看器，支持**原生 HDR/Li
 
 A native Windows photo viewer with RTX HDR, native HDR images, and Live / Motion Photo playback.
 
-[项目主页](https://lueluelue12138.github.io/luma-hdr-photo-viewer/) · [下载最新版本](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/latest) · [HDR 入门](docs/HDR-SETUP.md) · [参与贡献](CONTRIBUTING.md) · [隐私说明](PRIVACY.md)
+[项目主页](https://lueluelue12138.github.io/luma-hdr-photo-viewer/) · [GitHub 下载](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/latest) · [夸克网盘下载](https://pan.quark.cn/s/109763c10614) · [HDR 入门](docs/HDR-SETUP.md) · [参与贡献](CONTRIBUTING.md) · [隐私说明](PRIVACY.md)
 
-**当前正式版 `0.1.31` · Windows 11 x64。** [下载安装包](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/download/v0.1.31/Luma-0.1.31-windows-x64-rtx-setup.exe)（**58.42 MiB**），或在 [Release 页面](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.31) 获取便携版（81.84 MiB）与更新说明。本版新增相册置顶与排序、照片类型多选筛选，并修复图库记录失败遮住正常照片的问题。已安装旧版时，退出 Luma 后直接运行新版安装器即可升级，图库和设置保留。当前包未签名；微软商店版准备中。
+**当前正式版 `0.1.31` · Windows 11 x64。** [下载安装包](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/download/v0.1.31/Luma-0.1.31-windows-x64-rtx-setup.exe)（**58.42 MiB**），或在 [Release 页面](https://github.com/lueluelue12138/luma-hdr-photo-viewer/releases/tag/v0.1.31) 获取便携版（81.84 MiB）与更新说明。国内用户也可使用[夸克网盘下载](https://pan.quark.cn/s/109763c10614)，由维护者手动同步，请按文件夹中的版本号选择。本版新增相册置顶与排序、照片类型多选筛选，并修复图库记录失败遮住正常照片的问题。已安装旧版时，退出 Luma 后直接运行新版安装器即可升级，图库和设置保留。当前包未签名；微软商店版已提交审核，尚未上架。
 
 ## 为什么做 Luma
 
