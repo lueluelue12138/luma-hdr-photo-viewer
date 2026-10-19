@@ -18,7 +18,7 @@ Luma HDR Photo Viewer
 
 支持的原生 HDR 照片可以直接显示；普通 SDR 照片则能通过 NVIDIA RTX Video HDR 增强光影。按住空格，随时对比原图或可用的 SDR 底图。HDR 与 AI 超分独立控制，效果由你选择。
 
-导入文件夹即可浏览相册，支持搜索、收藏、最近打开、缩放拖拽、全屏和拍摄信息。照片留在原文件夹，不需要注册或上传。
+导入文件夹即可浏览相册，支持相册置顶与排序、搜索、收藏和最近打开；HDR、实况与普通静态照片可多选筛选。缩放拖拽、全屏和拍摄信息随手可用。照片留在原文件夹，不需要注册或上传。
 
 还能回放实况照片里快门前后的片刻：支持完整 iPhone HEIC＋MOV，以及已验证的 Google、Pixel、三星和小米动态照片。点一下实况图标即可播放，声音选择会记住；动态部分为 SDR 时，也能选择 RTX HDR。
 
@@ -34,7 +34,7 @@ RTX HDR 是 AI 增强，不代表恢复拍摄时未记录的信息。Luma 是独
 - NVIDIA RTX Video HDR 为普通照片增强光影；VSR 超分独立开关。
 - 实况 / Motion Photo 按需播放、记住原声选择；支持的 SDR 动态也可使用 RTX HDR，播放期间暂停 VSR。
 - Windows 原生界面、深浅主题、悬浮工具栏、全屏和缩放拖拽。
-- 文件夹相册、搜索、收藏与最近打开；原照片保留原位置。
+- 文件夹相册、置顶排序、HDR / 实况多选筛选、搜索与收藏；原照片保留原位置。
 - 拍摄信息与 EXIF 搜索复制；Windows HDR 状态、峰值亮度及校准入口。
 
 ## 可填字段
@@ -44,9 +44,11 @@ RTX HDR 是 AI 增强，不代表恢复拍摄时未记录的信息。Luma 是独
 - 关键词候选：HDR、照片查看器、RTX HDR、Ultra HDR、HEIC、JXR、photo viewer（按后台数量与长度限制取舍）。
 - 隐私说明：https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/PRIVACY.md
 - 支持页面：https://github.com/lueluelue12138/luma-hdr-photo-viewer/issues
-- 项目网站：https://github.com/lueluelue12138/luma-hdr-photo-viewer
+- 项目网站：https://lueluelue12138.github.io/luma-hdr-photo-viewer/
 - 附加许可说明：Luma 原创代码为 MIT；NVIDIA 组件适用随包独立条款及原始许可。正式提交时将 `packaging/RTX-EULA.rtf` 内容及原始许可链接同步到后台适用的附加许可字段，不能把整包都声明为 MIT。
 
-## 截图计划（尚未完成）
+## 截图计划（尚未上传）
 
-使用真实发布版界面和有公开展示授权的照片，准备相册、看图、显示增强、图片详情、HDR 设置 4–5 张 PNG。每张至少 1366×768，不超过 50 MB，不使用带私人路径 / 人像的用户截图，也不把 README 产品示意图当作真实截图。普通商店截图不能证明实际 HDR 峰值或还原真实 HDR 亮度。
+使用真实发布版界面和有公开展示授权的照片，准备相册、看图、显示增强、图片详情、HDR 设置 4–5 张 PNG。建议每张 1366×768 或更高，不超过 50 MB，不使用带私人路径 / 人像的用户截图，也不把 README 产品示意图当作真实截图。普通商店截图不能证明实际 HDR 峰值或还原真实 HDR 亮度。
+
+2026-10-19：已准备维护者原始看图截图的未编辑 PNG 副本 `artifacts/store-assets/Luma-Viewer-SDR.png`（2118×1255，3,269,066 字节），没有使用 README 的标签合成图，没有上传 Partner Center。其余截图与最终上传仍待维护者确认。
