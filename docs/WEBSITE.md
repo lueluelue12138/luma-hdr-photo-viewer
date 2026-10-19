@@ -1,6 +1,6 @@
 # 项目主页
 
-`site/` 是纯静态页面：HTML、CSS 和约 190 行 JS，没有构建步骤，也不加载第三方字体、脚本或统计。页面里的界面图是 Luma 在 Windows 11 上的实机截图，只有“照片信息”卡片例外（它的面板很长、会滚动，一张截图拍不全，所以按应用的实际界面用 HTML 重绘，见下文）；首屏是整窗截图（一个带 HDR 增益图的 AVIF），所有访客只下载这一个文件；HDR 屏幕上的对比模式另取一张 11 KiB 的徽标覆盖层。页面不写版本号：能从 GitHub 的公开 API 读到最新发布时才显示（见“版本号”）。任何静态托管都能直接使用，包括 GitHub Pages。
+`site/` 是纯静态页面：HTML、CSS 和约 190 行 JS，没有构建步骤，也不加载第三方字体、脚本或统计。页面里的界面图是 Luma 在 Windows 11 上的实机截图，只有“照片信息”卡片例外（它的面板很长、会滚动，一张截图拍不全，所以按应用的实际界面用 HTML 重绘，见下文）；首屏是整窗截图（一个带 HDR 增益图的 AVIF），所有访客使用同一 AVIF 和一张约 11 KiB 的徽标覆盖层。页面不写版本号：能从 GitHub 的公开 API 读到最新发布时才显示（见“版本号”）。任何静态托管都能直接使用，包括 GitHub Pages。
 
 ## 预览与素材
 
@@ -22,9 +22,9 @@
 
 - 版面：标题、两行简介、下载按钮，之后只有一行小字（系统，以及 RTX HDR 与 VSR 需要兼容的 NVIDIA RTX 显卡；读到最新发布时前面加“当前正式版 x.y.z”），窗口紧随其后；1568 × 810 的屏幕上，首屏能露出窗口约 215 px。小字曾是两行，窗口前又空出约 70 px，整块看起来悬空；不要再加第二行，新增的说明放进简介或页脚。≤ 640 px 时这一行的两项分成两行，不留悬空的分隔点（版本号跟“Windows 11 x64”在同一行）。简介里的“普通照片，甚至实况照片，也能借助 NVIDIA RTX Video HDR 增强光影”对应 README 的“甚至使用 HDR 预览 live 照片”。
 - 窗口：不再用 HTML / CSS 重绘，界面只有一套，应用改版后换一张截图即可。`.win` 的圆角（宽 0.8%、高 1.35%，按百分比缩放，比窗口自己的圆角略大）裁掉矩形截图在窗口圆角外留下的几个桌面像素。
-- 图片：`hero-1834.avif` 与 `hero-1100.avif` 是同一张图的两个宽度，用 `<picture>` 的 `srcset` / `sizes` 选择。SDR 屏幕和不支持增益图的浏览器显示它的 SDR 基底；不支持 AVIF 的旧浏览器用 `hero-1100.webp`。页面注明这是 SDR 实机截图。
+- 图片：`hero-1834.avif` 与 `hero-1100.avif` 是同一张图的两个宽度，用 `<picture>` 的 `srcset` / `sizes` 选择。SDR 屏幕和不支持增益图的浏览器显示它的 SDR 基底；不支持 AVIF 的旧浏览器用 `hero-1100.webp`。页面注明这是实机界面展示；SDR 单图覆盖展示用的 RTX HDR 标签，照片仍来自 SDR 基底。
 - 对比：在开启 HDR 的屏幕上，用支持 HDR 图片和 CSS `dynamic-range-limit` 的浏览器（Chrome / Edge）打开，`site.js` 把同一个文件再叠一份：下层 `dynamic-range-limit: standard`（SDR），上层是 HDR，分界线可拖动 / 键盘操作。窗口界面在两半边都是 SDR 白，所以只有照片的高光和中间调不同。判断在 `hdrCapable()`；解码失败则保留普通图片。两份是同一个 URL，从缓存取，没有第二次请求。移动的是整个 `<picture>`：把 `<img>` 单独搬出 `<picture>` 会让浏览器改用 WebP。
-- 徽标覆盖层：两张截图的窗口右上角写的不一样（SDR 图是“SDR · 原图”，HDR 图是“RTX HDR 已生效”），一张增益图装不下两种文字。`Prepare-SiteHdr.py --badge` 在增益图里让这个框保持 SDR，并另存 `hero-hdr-badge.webp`：整幅大小的透明无损 WebP（11 KiB），只有徽标框（较大那个徽标四周各加 3 px，圆角、2 px 柔边）里是 HDR 捕获自己的像素。`site.js` 只在建立对比时取它，放在 HDR 一半上，和 HDR 层共用同一个裁剪，所以拖动分界线时徽标跟着换；文件取不到就保留“SDR · 原图”，对比照常可用。柔边处与 HDR 层的差别（脚本打印）平均 4.3 个码值，最大 23。`index.html` 里 `figure` 的 `data-badge` 指向它；两张截图的标签相同（例如同一帧）时不加 `--badge`、去掉该属性即可。
+- 徽标覆盖层：两张截图的窗口右上角写的不一样（SDR 图是“SDR · 原图”，HDR 图是“RTX HDR 已生效”），一张增益图装不下两种文字。`Prepare-SiteHdr.py --badge` 在增益图里让这个框保持 SDR，并另存 `hero-hdr-badge.webp`：整幅大小的透明无损 WebP（约 11 KiB），只有徽标框里是 HDR 捕获自己的像素。HTML 常驻加载这层，SDR 屏幕单图显示 RTX HDR 展示标签，避免把 HDR 捕获整体色调映射后带来的照片亮度 / 色彩变化。HDR 对比模式仍把覆盖层移入 `.cmp`，与 HDR 图共用 `clip-path`：左侧保留 SDR 原图标签，右侧显示 RTX HDR 标签；拖过徽标时按同一分界线切换。无 JS / WebP 回退也有单图标签；覆盖层加载失败则保留底图原标签，不影响照片与对比。照片 AVIF / WebP 和覆盖层本身均未重编码。这个组合仅用于宣传素材，不改变应用对真实 HDR 状态的判断，也不代表 SDR 屏幕能够显示 HDR 高光。覆盖层柔边、坐标与生成参数沿用下条，换截图时保持 `<img class="hero-badge">` 与主图同尺寸。
 - 生成：`python scripts/Prepare-SiteHdr.py --avifgainmaputil <路径> --register --badge 1917,84,2088,136`。需要 `imagecodecs`、NumPy、Pillow、`opencv-python-headless`，以及 libavif 1.2 以上的 `avifgainmaputil`（从源码构建，打开 `AVIF_BUILD_APPS`）。输出 `hero-1834.avif`、`hero-1100.avif` 和 `hero-hdr-badge.webp`。`--badge` 的四个数是较大那个徽标（“RTX HDR 已生效”）在 SDR 截图里的像素框，裁边之前；这一对是放大 5 倍、加网格线后目测量出的，误差 1–2 px，脚本已在四周各留 3 px。窗口外沿的 2–3 px 是轮廓和圆角外的桌面像素，脚本四边各裁 `--crop 2`，得到 2114 × 1251，再缩到 1834 宽（`--width`），文件大小保持在上一版的量级。
 - 配准：这一对来自两个工具（Game Bar 的 JXR，Snipaste 的 PNG），窗口位置差整整 (+2, +4) 个像素（JXR 的上边多 4 行、左边多 2 列轮廓，右边比 PNG 少 2 列，被 `--crop` 裁掉），`--register` 找到这个整数位移后直接裁切，不重采样，不会糊。别用 `--register affine`（ECC）去对这一对：照片在两帧里的渲染本来就不同（见下面“HDR 目标图”），ECC 被带偏到 (+2.27, +4.00)，在两帧完全相同的标题栏上平均误差 1.009 个码值，整数位移是 0.714（工具栏 5.20 对 4.37）。`affine` 留给缩放不同的一对，例如旧雪山那一对（HDR 帧里的照片小 1.1%）。Game Bar 自己写出的 JXR + PNG 零位移，不加 `--register`。
 - SDR 白：捕获时 Windows 的“SDR 内容亮度”决定 1.0 对应多少 nits。窗口自己的浅色平面界面（标题栏）在两帧里相同、没有被裁剪或色调映射，脚本优先从它读出 SDR 白（本次 6.016 × 80 = 481 nits，几种读法给出 480–481 nits）；找不到才退回照片里暗到中间调的像素。也可用 `--sdr-white` 指定。
@@ -55,7 +55,7 @@
 ## 内容原则
 
 - 文案只取自 README、`docs/` 和对应 Release 说明，不新增功能、性能或兼容性声明；有出入以这些文档为准。界面里已经能看到的内容（工具栏、图库布局）页面不再赘述。
-- 页面里的界面图是 Luma 在 Windows 11 上的实机截图；只有“照片信息”卡片是按实际界面用 HTML 重绘的示例（页脚也这样写明）。截图是 SDR 的；在 HDR 屏幕上看到的对比来自同一帧的 HDR 捕获。界面有明显改动时重新截图。
+- 页面里的界面图是 Luma 在 Windows 11 上的实机截图；只有“照片信息”卡片是按实际界面用 HTML 重绘的示例（页脚也这样写明）。首屏单图的 RTX HDR 标签是从 HDR 捕获提取后叠在 SDR 基底上的宣传展示，分屏仍按实际 SDR / HDR 区域切换标签。截图是 SDR 的；在 HDR 屏幕上看到的对比来自同一帧的 HDR 捕获。界面有明显改动时重新截图。
 - 截图里的照片：首屏和分享图用的雪山 `DSC06998.jpg` 是项目维护者自己拍的（2026-10-18 他确认；此前首屏用的灰雁来源不明，已换掉）。灰雁 `pixel-6-pro.jpg`（Pixel 6 Pro 动态照片）仍出现在几个小处：实况演示、图库角标的裁图，以及“照片信息”示例面板的 EXIF（维护者 2026-10-18 决定这些小处暂不改）。它的 EXIF 是 Pixel 6 Pro、2024-06-02（UTC+1），[LIVE-PHOTOS.md](LIVE-PHOTOS.md) 的“样本来源”一节列了 Immich 测试资源里的 Pixel 6 Pro 动态照片，同一文档还写明“公开可下载不等于获准随产品重新分发”；没有核对它是不是那份测试资源里的文件，来源和授权仍未确认。图库页面里还有人物（“夏天”封面里的人、“人物”相册里的角色渲染图），属于维护者准备的展示图库。
 - 实况区的按钮只播放一段“示意动画”，不播放视频，状态文字也这样标注。
 - 不使用 NVIDIA 或 Microsoft 标识，页脚保留非官方声明。公开前的 NVIDIA 通知与商标使用审查见 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)；主页比 README 更像宣传材料，应一并审查。
@@ -84,3 +84,5 @@
 
 - **GitHub Pages**（`.github/workflows/pages.yml`）：`site/` 变化并进入 `main`，或手动运行时发布。一次性设置：仓库 Settings → Pages → Build and deployment → Source 选 **GitHub Actions**。没设时 workflow 会在 `configure-pages` 一步失败：该 Action 的 `enablement` 默认关闭，替仓库开启 Pages 需要比 `GITHUB_TOKEN` 权限更高的令牌（读自 v6.0.0 的 `action.yml`），所以这一步留给维护者点一下。四个官方 Action 都固定到提交 SHA（与 `ci.yml` 一致，`checkout` 同 v7.0.1，其余 `configure-pages` v6.0.0、`upload-pages-artifact` v5.0.0、`deploy-pages` v5.0.1，SHA 已用 `git ls-remote` 对照标签核实）。最初制作时仅做了 YAML 解析；2026-10-19 已完成启用和实际 Actions 部署，结果见上文。页面里的 `canonical`、`og:url`、`og:image` 按 `https://lueluelue12138.github.io/luma-hdr-photo-viewer/` 填写，上线后需核对；换自定义域名则一并改掉。
 - **国内访问**：GitHub Pages 在中国大陆可以打开，但第三方测试（2024 年，博客园《各前端部署平台详细体验汇总》）报告它不稳定、常断连和慢；Cloudflare Pages 回源到美国，国内延迟很高；Vercel 的默认域名会被屏蔽，换自定义域名才好用。腾讯云 EdgeOne Makers（原 EdgeOne Pages）有永久免费版（官方 2026-02 正式版公告和定价页），支持直接导入 GitHub 仓库：纯静态，构建命令留空、输出目录填 `site`，加速区域选“全球可用区（不含中国大陆）”时不要求备案，默认域名可用；要用中国大陆节点，自定义域名必须先 ICP 备案（腾讯云文档）。这些是文档与第三方测试的结论，没有从维护者的网络实测，EdgeOne 的账号和授权也只能维护者本人操作。两处部署可以并存，页面本身不需要改。
+
+2026-10-19 标签展示补充：1280 / 390 px 浏览器检查通过，SDR 单图有覆盖层且无对比控件；HDR 模式标签与 HDR 图同盒同裁剪，Home / End 两端分别显示 HDR / SDR 原标签。SDR 条件用独立本地夹具模拟，未改变系统 HDR；无坏图、横向溢出或页面控制台错误。两个 AVIF、WebP 底图和已有标签文件 hash 均不变；本轮不重新验证实屏 HDR 亮度。报告见 `artifacts/readme-real-20261019/badge-*`。

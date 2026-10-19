@@ -1,6 +1,6 @@
 // Luma homepage behaviour: scroll reveal, navigation hairline, the hero SDR / HDR comparison, the latest release and the Live Photos demo.
-// The page is fully readable without this file. What it adds: on an HDR display a second request for the hero's own image and its badge
-// overlay (the same file, served from the cache), and once per hour a request to GitHub's public API for the latest release.
+// The page is fully readable without this file. What it adds: on an HDR display a second copy of the hero's own image
+// (served from the cache), and once per hour a request to GitHub's public API for the latest release.
 (() => {
   'use strict';
 
@@ -34,8 +34,8 @@
   // SDR display simply shows its base image. On an HDR display, in a browser that renders HDR images and can limit them
   // with CSS dynamic-range-limit, a second copy of the same file (served from the cache) is layered over the first: the
   // lower copy is limited to SDR, the upper one is shown in full HDR, and a draggable divider reveals it. The two screenshots
-  // label the window differently ("SDR · 原图" / "RTX HDR 已生效"), which one gain map cannot hold: the HDR half also gets a small
-  // transparent picture of the HDR capture's own badge (data-badge on the figure; if it fails to load the comparison still works).
+  // label the window differently ("SDR · 原图" / "RTX HDR 已生效"). SDR-only visitors see the captured RTX badge as a promotional
+  // overlay; in comparison mode it moves into the box and is clipped with the HDR half, revealing the original SDR badge on the left.
   const stage = document.querySelector('[data-stage]');
   const sdr = stage && stage.querySelector('img');
   const hdrCapable = () => window.matchMedia('(dynamic-range: high)').matches
@@ -46,7 +46,7 @@
     return image.decode().then(() => image, () => null);
   };
 
-  const buildCompare = (hdr, badge) => {
+  const buildCompare = (hdr) => {
     const box = document.createElement('div');
     box.className = 'cmp';
     box.setAttribute('role', 'group');
@@ -54,12 +54,12 @@
     const lower = sdr.closest('picture') || sdr;   // move the whole <picture>: taking the <img> out would make it fall back to the WebP
     lower.before(box);
     sdr.classList.add('cmp__sdr');
+    sdr.alt = 'Luma 看图窗口的 SDR 基底：蓝天白云下的草甸与雪山，右上角提示“SDR · 原图”；右侧可对比 RTX HDR 增强。';
     hdr.className = 'cmp__hdr';
     hdr.alt = '';
     box.append(lower, hdr);
+    const badge = stage.querySelector('.hero-badge');
     if (badge) {
-      badge.className = 'cmp__badge';
-      badge.alt = '';
       box.append(badge);
     }
     box.insertAdjacentHTML('beforeend',
@@ -83,15 +83,14 @@
     });
     sync();
     const caption = stage.querySelector('figcaption');
-    if (caption) caption.textContent = '拖动分界线：左侧是 SDR 原图，右侧是 RTX HDR 增强后的显示（同一窗口的两张 Windows 实机截图）。实际观感取决于你的屏幕、系统 HDR 设置和浏览器。';
+    if (caption) caption.textContent = '拖动分界线：左侧是 SDR 预览，右侧是 RTX HDR 增强后的显示（同一窗口的 Windows 实机素材）。实际观感取决于你的屏幕、系统 HDR 设置和浏览器。';
   };
 
   if (sdr && hdrCapable()) {
     const start = () => {
       if (!/\.avif($|[?#])/.test(sdr.currentSrc)) return;      // the WebP fallback carries no HDR
       // The same file as the visible image, served from the cache; if it cannot be decoded, keep the plain image.
-      Promise.all([decoded(sdr.currentSrc), stage.dataset.badge ? decoded(stage.dataset.badge) : null])
-        .then(([hdr, badge]) => { if (hdr) buildCompare(hdr, badge); });
+      decoded(sdr.currentSrc).then((hdr) => { if (hdr) buildCompare(hdr); });
     };
     if (document.readyState === 'complete') start(); else window.addEventListener('load', start, { once: true });
   }

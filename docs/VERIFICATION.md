@@ -1,5 +1,9 @@
 # Luma 本机验证记录
 
+## 主页展示标签（2026-10-19）
+
+主页使用既有透明无损 `hero-hdr-badge.webp`，在 HTML 中常驻加载；SDR 单图覆盖 RTX HDR 展示标签。浏览器支持 HDR 对比时移入 `.cmp` 并与 HDR 图共用裁剪，左侧露出底图的 SDR 标签，右侧为 RTX HDR。1280 px 对比的 Home / End 两端已目视核对，390 px SDR 单图与 HDR 对比的标签 / 画面矩形一致、无横向溢出 / 坏图，页面无错误 / 警告。SDR 媒体条件使用忽略目录的独立夹具模拟，HDR 分屏使用浏览器报告的 HDR 能力；这不是新的实屏亮度 / GPU HDR 验证。两个 AVIF、WebP 底图和既有标签的 SHA256 与修改前相同，没有照片色调调整或重新压缩；SDR 访问新增一次约 11 KiB 标签请求，HDR 对比复用同一元素。截图、输入 hash 和布局记录位于 `artifacts/readme-real-20261019/`。不引入应用开发开关、版本变化或本机重装。
+
 ## 宣传文稿与待验收实机图（2026-10-19）
 
 图文稿 `docs/marketing/launch-article.md` 使用维护者已提供的创作动机，以第一人称起草，配图指向现有 `site/assets/hero-1100.webp` 和 `card-albums.webp`（合计 250,230 字节）。两处相对链接实际存在，当前版本 / 包大小与正式附件一致；说明 Windows HDR、RTX 条件和 HEIC / HEVC 扩展，截图不作为实屏 HDR 效果证明。正文不带未验证的速度或峰值承诺，没有代发酷安 / 小黑盒。

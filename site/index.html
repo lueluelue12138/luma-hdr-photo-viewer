@@ -59,17 +59,18 @@
     <!-- The page names no version. site.js fills the first two spans with the latest release when GitHub's API answers (docs/WEBSITE.md). -->
     <p class="fine" data-rise style="--d:300ms"><span class="nb"><span data-release="line" hidden></span><span data-release="sep" aria-hidden="true" hidden> · </span>Windows 11 x64</span><span class="fine__sep" aria-hidden="true"> · </span><span class="nb">RTX HDR 与 VSR 需要兼容的 NVIDIA RTX 显卡</span></p>
 
-    <figure class="stage" data-stage data-badge="assets/hero-hdr-badge.webp">
-      <!-- One gain-map AVIF of a real Windows capture of the whole window; site.js layers it twice on an HDR display and lays the badge overlay
-           (the HDR capture's own "RTX HDR 已生效" label) over the HDR half (docs/WEBSITE.md). -->
+    <figure class="stage" data-stage>
+      <!-- Real window captures: an SDR base with an HDR gain map. SDR-only visitors see the captured RTX badge as
+           a promotional overlay. In HDR comparison it follows the HDR half, revealing the original SDR badge on the left. -->
       <div class="win">
         <picture>
           <source type="image/avif" srcset="assets/hero-1100.avif 1100w, assets/hero-1834.avif 1834w" sizes="(min-width: 1100px) 1040px, calc(100vw - 44px)">
           <img src="assets/hero-1100.webp" width="1834" height="1085" fetchpriority="high" decoding="async"
-               alt="Luma 看图窗口：蓝天白云下的草甸，远处是雪山。顶部是悬浮工具栏，右上角提示“SDR · 原图”，底部是缩略图栏。">
+               alt="Luma 看图界面展示：蓝天白云下的草甸，远处是雪山。顶部是悬浮工具栏，右上角展示“RTX HDR 已生效”标签，底部是缩略图栏。">
         </picture>
+        <img class="hero-badge" src="assets/hero-hdr-badge.webp" width="1834" height="1085" alt="" aria-hidden="true" decoding="async">
       </div>
-      <figcaption>Windows 实机截图（SDR）。在开启 HDR 的屏幕上用 Chrome 或 Edge 打开，可拖动对比 HDR 效果。</figcaption>
+      <figcaption>Windows 实机界面展示。在开启 HDR 的屏幕上用 Chrome 或 Edge 打开，可拖动对比 HDR 效果。</figcaption>
     </figure>
   </section>
 

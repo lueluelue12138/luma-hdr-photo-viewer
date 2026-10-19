@@ -15,7 +15,7 @@ corrects a small difference of scale (affine ECC on log luminance), which does r
 The two frames can differ in one place: the status badge in the window's corner reads "SDR · 原图" in an SDR screenshot taken with the
 original shown, and "RTX HDR 已生效" in the HDR capture. A gain map cannot turn one label into the other, so --badge X0,Y0,X1,Y1 (reference
 pixels, before the crop) names the box of the larger badge: the gain map leaves that box as the SDR picture, and hero-hdr-badge.webp, a
-transparent full-frame overlay that holds the capture's own pixels there, is written for site.js to lay over the HDR half only.
+transparent full-frame overlay that holds the capture's own pixels there, is written for the page to overlay on the SDR-only promotional image, or on the HDR half in comparison mode.
 
 Why one file: a browser shows the base image of a gain-map AVIF on an SDR display (or when it cannot apply gain maps) and
 applies the gain only where the display has HDR headroom. The page uses this single file for both halves of its
