@@ -9,7 +9,19 @@
 - 维护者已亲自确认年龄分级；后台已进入分级结果页，IARC / PEGI 为 **3+**、ESRB 为 **Everyone**。
 - 定价是 **CNY 0、全球所有市场（当前 240 个）**；提交选项仍为 **除非我选择“立即发布”，否则不发布此提交**，审核通过后也不会自动公开。
 - 正式包身份与本地忽略文件 `artifacts/store-identity.json` 一致。已配置四项 GitHub Variables，并从固定标签 **v0.1.31 / 34fce1f** 成功运行 [MSIX 构建 39221698142](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/39221698142)。云端完成完整 RTX 构建和源载荷 / MSIX 校验；已下载到 `artifacts/store-progress-20261019/candidate/Luma_0.1.31.0_x64.msix`，87,509,471 字节（83.46 MiB），本地身份 / SHA256 / 包完整性与 3,444 个内容块哈希核对通过。它仍是未签名候选，不是商店上传或认证。
-- 取得一次性测试签名授权后，真实商店身份的安装、启动、指定包文件关联打开、测试修订升级与卸载已实测；原生 HDR 的 12 个夹具 / 19 条结果及 Live SDR 生命周期通过。原图库四表逐行核对保留，临时安装 / 信任 / 私钥已清理。实屏 RTX HDR / VSR 和 Live 声音综合测试仍未通过本轮完整验收，不能宣称所有项目通过，详见 `docs/VERIFICATION.md`。原始上传候选 hash 不变，未上传程序包或提交认证。
+- 取得一次性测试签名授权后，真实商店身份的安装、启动、指定包文件关联打开、测试修订升级与卸载已实测；原生 HDR 的 12 个夹具 / 19 条结果及 Live SDR 生命周期通过。原图库四表逐行核对保留，临时安装 / 信任 / 私钥已清理。随后维护者明确确认实屏 RTX HDR / VSR、Live HDR 和声音综合体验已补验通过；作为人工验收记录，代理远程测试限制保留，详见 `docs/VERIFICATION.md`。原始上传候选 hash 不变，未上传程序包或提交认证。
+
+## 当前发布文件（0.1.31）
+
+2026-10-19 再次核对实际文件大小和 SHA256，均与正式校验清单一致。
+
+| 用途 | 本机位置 | 实际大小 |
+| --- | --- | --- |
+| EXE 安装版 | `artifacts/release-0.1.31/Luma-0.1.31-windows-x64-rtx-setup.exe` | 58.42 MiB |
+| 便携版 | `artifacts/release-0.1.31/Luma-0.1.31-windows-x64-rtx-portable.zip` | 81.84 MiB |
+| 商店上传包 | `artifacts/store-progress-20261019/candidate/Luma_0.1.31.0_x64.msix` | 83.46 MiB |
+
+微软商店当前 MSIX 提交通道只上传第三份原始候选；EXE / ZIP 是直接分发文件，不上传临时签名副本或测试修订 0.1.31.1。校验清单位于两个目录各自的 `SHA256SUMS.txt`。
 
 ## 维护者可直接打开的页面
 
@@ -85,7 +97,7 @@ python scripts/Prepare-StoreAssets.py
 
 ## 尚不能省略的验收
 
-正式身份侧载基础流程已完成，详见本次验证记录；测试 `.0 → .1` 仅改变本地副本的包修订号，应用二进制仍为 0.1.31，不是新的公开版本。当前机器观察到默认图库写入共享 `%LOCALAPPDATA%\Luma`，不把单机结果推广为所有系统的迁移保证。仍需在能枚举真实 HDR 输出的交互会话复核打包版 RTX HDR / VSR、Live HDR；声音/UI 综合用例本轮未完成。之后由维护者上传原始 `.msix` 并处理后台包校验。
+正式身份侧载基础流程已完成，详见本次验证记录；测试 `.0 → .1` 仅改变本地副本的包修订号，应用二进制仍为 0.1.31，不是新的公开版本。当前机器观察到默认图库写入共享 `%LOCALAPPDATA%\Luma`，不把单机结果推广为所有系统的迁移保证。上述实屏 RTX HDR / VSR、Live HDR 和声音体验已由维护者反馈补验通过；自动化用例的远程环境限制仍保留，后续继续覆盖干净用户和其他 Windows 环境。之后由维护者上传原始 `.msix` 并处理后台包校验。
 
 商店至少需要一张合规桌面截图，建议准备 4–5 张：PNG、建议 1366×768 或更高、单张不超过 50 MB，使用有授权的照片和真实界面，不能用私人截图或产品示意图替代。[官方图片要求](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/screenshots-and-images)。
 
