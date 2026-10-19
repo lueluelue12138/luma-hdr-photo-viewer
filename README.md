@@ -2,7 +2,7 @@
 
 **如果你有一块好 HDR 屏幕，别只用它看电影。也用它，重新看看自己的照片。**
 
-![Luma 产品展示：浅色相册与照片预览、悬浮毛玻璃、独立 RTX HDR 与 VSR 控制](docs/images/luma-product-showcase.webp)
+![Luma 实机界面：浅色相册与雪山照片预览，使用真实截图并叠加 RTX HDR 展示标签](docs/images/luma-product-showcase.webp)
 
 Luma 是免费、开源的 Windows 原生照片查看器，支持**原生 HDR/Live 照片**，也能通过 **NVIDIA RTX Video HDR** 为普通 JPG 带来更丰富的光影，甚至使用HDR预览live照片。
 
