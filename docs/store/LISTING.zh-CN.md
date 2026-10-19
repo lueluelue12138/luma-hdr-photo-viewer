@@ -43,12 +43,13 @@ RTX HDR 是 AI 增强，不代表恢复拍摄时未记录的信息。Luma 是独
 - 价格建议：免费；无广告、无应用内购买、无登录。
 - 关键词候选：HDR、照片查看器、RTX HDR、Ultra HDR、HEIC、JXR、photo viewer（按后台数量与长度限制取舍）。
 - 隐私说明：https://github.com/lueluelue12138/luma-hdr-photo-viewer/blob/main/PRIVACY.md
+- 支持联系：后台已保存维护者确认的可收信邮箱；电话 / 地址留空。Issues 仍可用于公开反馈。
 - 支持页面：https://github.com/lueluelue12138/luma-hdr-photo-viewer/issues
 - 项目网站：https://lueluelue12138.github.io/luma-hdr-photo-viewer/
 - 附加许可说明：Luma 原创代码为 MIT；NVIDIA 组件适用随包独立条款及原始许可。正式提交时将 `packaging/RTX-EULA.rtf` 内容及原始许可链接同步到后台适用的附加许可字段，不能把整包都声明为 MIT。
 
-## 截图计划（尚未上传）
+## 截图与图标
 
 使用真实发布版界面和有公开展示授权的照片，准备相册、看图、显示增强、图片详情、HDR 设置 4–5 张 PNG。建议每张 1366×768 或更高，不超过 50 MB，不使用带私人路径 / 人像的用户截图，也不把 README 产品示意图当作真实截图。普通商店截图不能证明实际 HDR 峰值或还原真实 HDR 亮度。
 
-2026-10-19：已准备维护者原始看图截图的未编辑 PNG 副本 `artifacts/store-assets/Luma-Viewer-SDR.png`（2118×1255，3,269,066 字节），没有使用 README 的标签合成图，没有上传 Partner Center。其余截图与最终上传仍待维护者确认。
+2026-10-19：维护者已自行上传，后台重新打开确认 7 张桌面截图已保存；代理没有代上传。另已准备维护者原始看图截图的未编辑 PNG 副本 `artifacts/store-assets/Luma-Viewer-SDR.png`（2118×1255，3,269,066 字节），没有使用 README 的标签合成图，没有上传 Partner Center。上方竖版 / 方形封面为可选宣传图；下方磁贴图标可使用 Luma Logo，未单独上传时使用包内图标。

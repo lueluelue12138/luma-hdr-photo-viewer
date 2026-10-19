@@ -1,6 +1,24 @@
 # Luma 本机验证记录
 
-## 微软商店草稿复核（2026-10-19）
+## 微软商店身份运行验收（2026-10-19）
+
+维护者确认临时测试签名 / 信任，并提供公开支持邮箱。邮箱已在属性页保存，重开读回一致，电话 / 地址为空。分级结果页已显示 IARC / PEGI 3+、ESRB Everyone；独立重新打开的中文介绍有 7 张桌面截图。上述年龄声明和素材上传由维护者完成；代理未提交认证或发布。
+
+原始候选 `Luma_0.1.31.0_x64.msix` 仍为 87,509,471 字节，SHA256 `71f971a533f4a43502d4a113045cb0158a91492de06e5fbf9fd3b6809096f4e4`。直接安装因缺少签名被 Windows 拒绝（0x800B0100）；随后只签测试副本。匹配 Store Publisher 的短期证书经维护者响应管理员提示后临时加入 TrustedPeople；安全超时自动撤销过一次，补测再次授权提示后使用同一测试证书，结束后已移除信任、证书和私钥。没有导出私钥，也没有更改 Developer Mode 或降低签名检查。
+
+- 实际注册包 `DDDD2501.LumaHDRPhotoViewer_0.1.31.0_x64__n77bhhbbe9ttc` 安装成功。通过 AUMID 激活后，从运行进程查询 PackageFullName，与商店身份一致；实际 WindowsApps 载荷的 viewer 首帧、ready、idle 冒烟通过。更早的提取目录冒烟单独记录为无包身份，不混算安装验收。
+- 文件打开使用 `Windows.System.Launcher.LaunchFileAsync` 指定 PackageFamilyName，成功启动 WindowsApps 内 EXE 并显示 PNG 夹具。没有修改默认关联。通用 `IApplicationActivationManager.ActivateForFile` 在此 FullTrust 应用返回不支持合约；不把测试 API 选用错误当作应用文件关联缺陷。
+- 升级演练仅将副本 manifest 改为 **0.1.31.1**，应用二进制仍是固定 0.1.31，身份 / 签名一致；实际 `.0 → .1` 升级并重启成功。隔离库的 settings / albums 全行摘要相同，声音偏好、置顶 / 排序和既有收藏保留；图库启动重新扫描，照片 / 链接由 1 增至 9，未将正常扫描误报为全库逐字节不变。测试修订包不能上传为新的正式应用版本。
+- 实际包的 `--verify-hdr-formats` 完成 **12 个夹具、19 条结果**：XMP / ISO / Apple 增益图 JPEG、Apple / ISO / PQ / SDR HEIC、损坏可选元数据回退、控件、原图对照、混合翻图及 HEIC 重开通过；报告确认 FP16=1、原生 HDR 不调用 RTX 增强。当前远程输出 HDR active=0，因此没有声称本轮验证过实屏亮度、JXR 打包预览或 Windows 校准峰值。
+- 实际包 Live SDR 性能 / 生命周期用例通过，3 次各收集 12 帧，首帧约 **845 / 221 / 205 ms**，提交 p95 **2.83 / 3.52 / 2.51 ms**；这些是该小米样本与本机环境的数据，不是帧率承诺。准备 / 释放在 UI 线程外，取消、自然结束、重播和关闭检查完成。Live HDR 用例在要求 HDR 生效处超时，同源 EXE 对照同样超时；声音/UI 综合用例播放已出现帧，但在后续 UI 验证阶段未生成完成报告，正常关闭尝试也超时，最后仅终止匹配隔离参数的测试 PID。该用例保持未通过，未更改应用源码掩盖失败。
+
+数据保护过程也保留失败证据：开发工具子进程虽然查询不到包身份，仍继承宿主的文件系统重定向；两次目录隔离在哈希断言处停止，只移动了宿主 overlay，均按精确物理路径恢复。文件关联试验因此曾向真实图库新增一条夹具历史。专用管理员清理步骤先保存一致性备份，并验证四表除这一条测试路径外与静止备份逐行一致，才删除该唯一夹具行；最终原有 **12 相册 / 373 照片 / 139 链接 / 3 设置** 全行一致、完整 integrity_check=ok。此机观察到包写入共享 `%LOCALAPPDATA%\Luma`；不据此承诺所有系统自动迁移或卸载行为。没有移动、删除用户原照片。
+
+测试修订包已实际卸载，EXE 安装仍在原目录，版本 0.1.31.0；重新启动原安装路径并核对进程。四个证书存储均无此次 thumbprint，CurrentUser 私钥随证书删除；原始上传候选 hash 不变。测试包未上传、未提交认证，原始候选和测试签名副本严格分开。证据：`artifacts/store-runtime-20261019/` 下 `installed-package.json`、`packaged-activation.json`、`file-launcher-result.json`、`upgrade-activation.json`、`upgrade-data-after.json`、`packaged-hdr-formats/hdr-format-windows.json`、`packaged-live-sdr/live-performance.json`、`production-final.json`、`uninstall-result.json`、`cleanup-complete.json`；宿主重定向与测试失败记录也保留。
+
+仍需在能枚举真实 HDR 显示器的交互会话验收打包版 RTX HDR / VSR、Live HDR，并补完 Live 声音综合用例。当前不是“所有验证均通过”或“已获商店认证”。
+
+## 微软商店草稿首次复核（2026-10-19，运行验收前）
 
 通过现有 Chrome 登录检查当前产品与 Submission 1：属性完成、程序包未启动，桌面截图 0 张；年龄分级停在 3+ / Everyone 预览且 IARC / 成年声明未确认。免费 CNY 0、全球 240 市场、审核后由维护者“立即发布”的设置已读取。支持信息明确标为 optional，电话 / 地址不是本页必填。补充中文介绍和第 5 项功能中的相册置顶 / 排序、多选筛选，保存并重开核对一致；官网更新为已部署的 Pages 地址，重开字段值一致。原始看图 PNG 复制后 hash 一致，2118×1255、3,269,066 字节，未用 README 合成图或上传素材。
 

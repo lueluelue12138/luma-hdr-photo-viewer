@@ -86,6 +86,6 @@ python tests/verify_installer.py
 
 ## Store 路线
 
-采用 `scripts/Build-Store.ps1` 的完整 RTX、自包含 MSIX 路线；传统 `Package.ps1` 保留为旧开发工具，不用于商店提交。已有手动 Actions 出包流程、身份模板、包核对、隐私说明、商店文案与审核备注，见 [微软商店准备](MICROSOFT-STORE.md)。维护者已注册开发者账户，真实 Partner Center 身份已配置；0.1.31 正式身份候选已通过云端构建 / 包校验，实际 MSIX 安装 / 更新 / 卸载仍待完成。WACK 当前仅作可选本地检查。未上传或提交微软商店。
+采用 `scripts/Build-Store.ps1` 的完整 RTX、自包含 MSIX 路线；传统 `Package.ps1` 保留为旧开发工具，不用于商店提交。已有手动 Actions 出包流程、身份模板、包核对、隐私说明、商店文案与审核备注，见 [微软商店准备](MICROSOFT-STORE.md)。维护者已注册开发者账户，真实 Partner Center 身份已配置；0.1.31 正式身份候选已通过云端构建 / 包校验，已授权临时签名副本的实际 MSIX 安装、启动、文件打开、修订升级和卸载通过；原生 HDR 与 Live SDR 回归通过，实屏 RTX HDR / VSR 和 Live 声音综合验收仍有待办。测试包 / 证书已清理，原始未签名上传候选未变。WACK 当前仅作可选本地检查。未上传或提交微软商店。
 
 参考：[GitHub deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)、[标签触发](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)、[Release 草稿](https://docs.github.com/en/rest/releases/releases#create-a-release)、[Inno Setup 当前用户安装](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm)。NVIDIA 条款以维护者实际下载、随包保留的原始许可为准。

@@ -4,26 +4,26 @@
 
 ## 当前后台进度与下一步
 
-- 属性已完成，项目网址已更新为上线官网；隐私政策与 Issues 支持地址保留。电话 / 地址位于 **Support info (optional)**，不是本页必填项，不需要为了消除草稿状态公开私人住址。
-- 简体中文描述、简短描述、6 项功能、7 个关键词与附加许可已存在；本次补上相册置顶 / 排序和多选筛选，重新打开确认已保存。桌面截图仍为 **0 张**，因此商店介绍仍未完成。
-- 年龄问卷停在 3+ / Everyone 预览；**IARC 条款及本人法定成年声明未勾选，保存按钮禁用**。这一项由维护者阅读并确认。
+- 属性已完成，项目网址已更新为上线官网；隐私政策保留；支持联系字段已按维护者确认改为可实际收信的邮箱，保存后重开核对。电话 / 地址位于 **Support info (optional)**，不是本页必填项，不需要为了消除草稿状态公开私人住址。
+- 简体中文描述、简短描述、6 项功能、7 个关键词与附加许可已存在；本次补上相册置顶 / 排序和多选筛选，重新打开确认已保存。维护者自行上传后，本次重新打开确认已有 **7 张桌面截图**，Store 一览已完成。
+- 维护者已亲自确认年龄分级；后台已进入分级结果页，IARC / PEGI 为 **3+**、ESRB 为 **Everyone**。
 - 定价是 **CNY 0、全球所有市场（当前 240 个）**；提交选项仍为 **除非我选择“立即发布”，否则不发布此提交**，审核通过后也不会自动公开。
 - 正式包身份与本地忽略文件 `artifacts/store-identity.json` 一致。已配置四项 GitHub Variables，并从固定标签 **v0.1.31 / 34fce1f** 成功运行 [MSIX 构建 39221698142](https://github.com/lueluelue12138/luma-hdr-photo-viewer/actions/runs/39221698142)。云端完成完整 RTX 构建和源载荷 / MSIX 校验；已下载到 `artifacts/store-progress-20261019/candidate/Luma_0.1.31.0_x64.msix`，87,509,471 字节（83.46 MiB），本地身份 / SHA256 / 包完整性与 3,444 个内容块哈希核对通过。它仍是未签名候选，不是商店上传或认证。
-- 真实商店身份的侧载安装、文件激活、更新 / 卸载、EXE 共存和数据位置仍未验证，候选未上传；不能拿 EXE 版安装验证或云端出包成功替代上述验收。原始未编辑看图 PNG 已准备到 `artifacts/store-assets/Luma-Viewer-SDR.png`，未上传。
+- 取得一次性测试签名授权后，真实商店身份的安装、启动、指定包文件关联打开、测试修订升级与卸载已实测；原生 HDR 的 12 个夹具 / 19 条结果及 Live SDR 生命周期通过。原图库四表逐行核对保留，临时安装 / 信任 / 私钥已清理。实屏 RTX HDR / VSR 和 Live 声音综合测试仍未通过本轮完整验收，不能宣称所有项目通过，详见 `docs/VERIFICATION.md`。原始上传候选 hash 不变，未上传程序包或提交认证。
 
 ## 维护者可直接打开的页面
 
 | 页面 | 当前需要处理的内容 |
 | --- | --- |
 | [提交概述](https://partner.microsoft.com/zh-cn/dashboard/products/9NLL2F0S28TQ/overview) | 查看总体进度，全部就绪后由维护者提交认证 |
-| [年龄分级](https://partner.microsoft.com/zh-cn/dashboard/products/9NLL2F0S28TQ/submissions/1152921505702145177/ageratings) | 核对分级，亲自确认 IARC 条款及成年声明，再保存 |
-| [中文商店介绍与截图](https://partner.microsoft.com/zh-cn/dashboard/products/9NLL2F0S28TQ/submissions/1152921505702145177/listings?languageid=262&languagecode=zh-hans) | 至少上传一张获准公开的真实 PNG 界面截图；介绍已填 |
+| [年龄分级](https://partner.microsoft.com/zh-cn/dashboard/products/9NLL2F0S28TQ/submissions/1152921505702145177/ageratings) | 已由维护者确认；查看 3+ / Everyone 结果 |
+| [中文商店介绍与截图](https://partner.microsoft.com/zh-cn/dashboard/products/9NLL2F0S28TQ/submissions/1152921505702145177/listings?languageid=262&languagecode=zh-hans) | 已保存 7 张桌面截图；最终检查公开展示授权和内容 |
 | [程序包](https://partner.microsoft.com/zh-cn/dashboard/products/9NLL2F0S28TQ/submissions/1152921505702145177/packages) | 候选实际验收后上传 .msix，不能上传 Actions 下载容器 .zip |
 | [属性与可选联系方式](https://partner.microsoft.com/zh-cn/dashboard/products/9NLL2F0S28TQ/submissions/1152921505702145177/properties) | 检查官网 / 隐私 / 支持地址；电话和地址可选 |
 | [定价和可用性](https://partner.microsoft.com/zh-cn/dashboard/products/9NLL2F0S28TQ/submissions/1152921505702145177/availability) | 核对免费、销售地区和可见性，现有设置未改 |
 | [提交选项](https://partner.microsoft.com/zh-cn/dashboard/products/9NLL2F0S28TQ/submissions/1152921505702145177/options) | 维持审核后手动发布 |
 
-本轮只保存草稿与准备候选，没有接受 IARC 协议、填写个人声明、上传照片 / 程序包、提交认证或公开商店。后台截图和配置 / 构建记录位于忽略目录 `artifacts/store-progress-20261019/`。
+本轮保存联系邮箱并验收本地测试副本；年龄声明与 7 张截图由维护者完成。代理没有接受声明、上传程序包、提交认证或公开商店。后台 / 构建记录在忽略目录 `artifacts/store-progress-20261019/`，本次运行与清理证据在 `artifacts/store-runtime-20261019/`。
 
 ## 推荐路径
 
@@ -44,10 +44,10 @@ MSIX 可由商店负责签名、托管和更新，不需要先购买商业代码
 
 - `scripts/Build-Store.ps1`：从完整 RTX 载荷复制到独立 staging，用正式身份生成清单，MakeAppx 校验、MSIX、SHA256 和来源记录；不改写 GitHub 载荷、不安装证书、不上传。
 - `tests/verify_store_package.py`：逐文件核对 MSIX 与原载荷，检查 13 种格式关联、原始 NVIDIA DLL/PDF/条款、包身份、资源与校验和；不能替代 WACK 或运行时验收。
-- 0.1.27 已从云端消费者载荷实际生成开发身份 MSIX：87,451,022 字节（83.40 MiB），504 文件与 13 项格式关联核对通过。它仍是 `CN=Luma Development`，未签名、未安装，不能作为正式商店身份包上传；四项真实身份现已获取；0.1.31 正式身份候选已在上方工作流生成，实际身份安装 / 运行测试尚未执行。
+- 0.1.27 已从云端消费者载荷实际生成开发身份 MSIX：87,451,022 字节（83.40 MiB），504 文件与 13 项格式关联核对通过。它仍是 `CN=Luma Development`，未签名、未安装，不能作为正式商店身份包上传；四项真实身份现已获取；0.1.31 正式身份候选已在上方工作流生成，本次实际身份安装 / 运行测试结果见上文。
 - `.github/workflows/store.yml`：手动构建 Store 候选，只保存 MSIX / 校验和 / 来源三类 Actions 产物，不自动提交或公开。缺少真实 Store 身份时直接失败。
 - [隐私说明](../PRIVACY.md)、[商店中文文案](store/LISTING.zh-CN.md)、[审核备注与测试清单](store/CERTIFICATION.md)。应用仍以简体中文为主，不把英文介绍等同于完整英文 UI。
-- 现有透明原始 logo 位于 `branding/Luma.png`，包内已有启动 / 磁贴图标。商店 300×300 tile 可由 `scripts/Prepare-StoreAssets.py` 生成；真实界面截图仍需准备。
+- 现有透明原始 logo 位于 `branding/Luma.png`，包内已有启动 / 磁贴图标。商店 300×300 tile 可由 `scripts/Prepare-StoreAssets.py` 生成；维护者已上传 7 张桌面截图。上方竖版 / 方形封面为可选宣传素材；下方 300×300 / 150×150 / 71×71 为商店磁贴图标，可用 Luma Logo，不上传时回退到包内图标。现有 `artifacts/store-assets/Luma-StoreTile-300.png` 可供维护者选用。
 
 ## 本地打包
 
@@ -79,14 +79,14 @@ python scripts/Prepare-StoreAssets.py
 
 操作位置为 GitHub 仓库 **Settings → Secrets and variables → Actions → Variables → New repository variable**。这四项是产品身份，不是密码，不需要填进 Secrets。NVIDIA 私有 SDK 的 Secret 保持原样，不复制出来。
 
-在 **Actions → Prepare Microsoft Store MSIX (no submission) → Run workflow** 手动运行，选择版本标签 `v0.1.31`，下载 `Store-MSIX-<提交>` 产物。若页面只提供分支，可使用 `gh workflow run store.yml --ref v0.1.31` 指定标签。完成实际安装 / 运行测试后再到 Partner Center 新建提交。当前无需 Azure 凭据、商业签名证书或 Store API 密钥。
+在 **Actions → Prepare Microsoft Store MSIX (no submission) → Run workflow** 手动运行，选择版本标签 `v0.1.31`，下载 `Store-MSIX-<提交>` 产物。若页面只提供分支，可使用 `gh workflow run store.yml --ref v0.1.31` 指定标签。补齐剩余验收后上传到 Partner Center 当前草稿。当前无需 Azure 凭据、商业签名证书或 Store API 密钥。
 
 **推送 Release 标签只会构建 EXE / ZIP，不会顺带构建 MSIX。** Store 工作流是独立的手动出包，未配置真实身份时会停止；即使出包成功，也不会自动上传商店、提交认证或公开。以后更新商店版仍需构建更高版本 MSIX，并在同一产品里新建提交；不要为每次更新新建产品或更换包身份。
 
 ## 尚不能省略的验收
 
-开发身份包生成成功，只说明清单和包内容校验通过。必须在实际商店身份下验证 WindowsApps 只读安装目录、独立启动、从资源管理器打开照片、默认应用入口、HDR/VSR、缓存、更新及卸载。尤其 EXE→MSIX 的图库迁移 / 共存与数据虚拟化尚未实测，不承诺自动共用原图库，也不把 EXE 升级测试当成 MSIX 升级证明。
+正式身份侧载基础流程已完成，详见本次验证记录；测试 `.0 → .1` 仅改变本地副本的包修订号，应用二进制仍为 0.1.31，不是新的公开版本。当前机器观察到默认图库写入共享 `%LOCALAPPDATA%\Luma`，不把单机结果推广为所有系统的迁移保证。仍需在能枚举真实 HDR 输出的交互会话复核打包版 RTX HDR / VSR、Live HDR；声音/UI 综合用例本轮未完成。之后由维护者上传原始 `.msix` 并处理后台包校验。
 
 商店至少需要一张合规桌面截图，建议准备 4–5 张：PNG、建议 1366×768 或更高、单张不超过 50 MB，使用有授权的照片和真实界面，不能用私人截图或产品示意图替代。[官方图片要求](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/screenshots-and-images)。
 
-之后填写 [提交资料](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/create-app-submission)、上传实际身份 MSIX、附加运行库许可并说明 `runFullTrust` 的用途。微软当前文档已将 **WACK 标记为停止维护的可选本地检查**，不再把安装或通过 WACK 列作本项目的硬性提交门槛；如使用仍可保存报告，正式认证由 Partner Center 处理。[微软说明](https://learn.microsoft.com/windows/msix/package/packaging-uwp-apps#validate-your-app-package-locally)。实际打包运行、关联、更新和数据保留验证仍需完成。账户协议及最终分级声明由维护者确认。
+之后填写 [提交资料](https://learn.microsoft.com/windows/apps/publish/publish-your-app/msix/create-app-submission)、上传实际身份 MSIX、附加运行库许可并说明 `runFullTrust` 的用途。微软当前文档已将 **WACK 标记为停止维护的可选本地检查**，不再把安装或通过 WACK 列作本项目的硬性提交门槛；如使用仍可保存报告，正式认证由 Partner Center 处理。[微软说明](https://learn.microsoft.com/windows/msix/package/packaging-uwp-apps#validate-your-app-package-locally)。本机基础验收不代表微软已认证；账户协议与最终提交仍由维护者确认。
