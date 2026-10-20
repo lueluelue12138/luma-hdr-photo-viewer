@@ -1,5 +1,13 @@
 # Luma 本机验证记录
 
+## Sharp GUI 推荐入口（2026-10-20）
+
+应用本地开发版本 0.1.32 在设置末尾增加独立推荐卡片，放在“关于 Luma”卡片下方；README 与官网下载区前同步加入入口。三处链接均指向维护者的 Sharp GUI 仓库，说明它是作者的另一个开源项目，需要另行下载。直接复用维护者提供的 96×96 PNG Logo：应用与网站各 6,673 字节，README 复用应用素材；两份 SHA256 与原文件一致，未重绘图标，也未引入 1.46 MB 的 SVG 位图封装。
+
+增量构建与候选 publish 成功。实际候选 `--verify-settings` 在 Light / Dark × 1160 / 600 窗口下通过：卡片独立于 About、原版 Logo 正常解码、目标 URI 正确、键盘可达，所有文案 / 按钮无横向溢出；滚动到卡片后整体可见。宽卡片 820×196.67 DIP、窄卡片 480×218 DIP。证据：`artifacts/settings-20261020-161137/settings.json` 与四张 `settings-companion-*.png`。截图通过 WinUI RenderTargetBitmap 导出，不代表桌面合成器或 HDR 效果验收。
+
+官网实际浏览器 1280 / 390 px 检查无横向溢出，Logo 为 96×96，静态链接可键盘访问，未发现坏图 / 控制台错误；手机按钮焦点清晰可见。证据：`artifacts/companion-20261020/browser-check.json`、`website-desktop.png`、`website-mobile.png`。高对比度资源、强制颜色与减少动态效果样式已提供；未切换系统辅助模式作人工验收。原生代码 / 解码与 HDR 路径未变，复用已核验 0.1.31 正式载荷中的原生组件及 NVIDIA 运行时，来源与 hash 保存在 `artifacts/local-install-0.1.32/native-provenance.json`。本轮不替换已提交认证的 MSIX，不新建正式 Release。
+
 ## 文档与随手记一致性核对（2026-10-20）
 
 审查工作区的两份未提交文档：`MICROSOFT-STORE.md` 内容与 `52e642d` 前的旧稿完全一致，会将“已提交审核”退回“尚未提交”。先将该本地副本保存在忽略目录，再恢复已提交版本，不把旧状态重新推送。`TODO.md` 的独立随手记予以保留，其中 README 未勾选项按 `08bfbd7` 的实际素材和 `1e22890` 的验收授权记录更新为完成，原始私人路径不公开。

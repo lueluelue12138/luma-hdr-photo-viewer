@@ -38,6 +38,8 @@ public sealed partial class MainWindow
                     AppWindow.Resize(new((int)(width*Root.XamlRoot.RasterizationScale),(int)(800*Root.XamlRoot.RasterizationScale)));await Task.Delay(350);await panel.DisplayRefresh;
                     var layout=await panel.VerificationRenderAsync($"settings-{theme.ToString().ToLowerInvariant()}-{width}.png");
                     results.Add(new{scenario="layout",theme=theme.ToString(),windowWidth=width,layout});
+                    var companion=await panel.VerificationCompanionRenderAsync($"settings-companion-{theme.ToString().ToLowerInvariant()}-{width}.png");
+                    results.Add(new{scenario="companion-link",theme=theme.ToString(),windowWidth=width,companion});
                 }
             }
             await panel.VerificationGuideRenderAsync();
@@ -68,7 +70,7 @@ public sealed partial class SettingsPanel
     {
         if(resetTop)SettingsScroll.ChangeView(null,0,null,true);await Task.Delay(200);UpdateLayout();
         void CheckBounds(FrameworkElement e){var p=e.TransformToVisual(SettingsScroll).TransformPoint(new(0,0));if(p.X<0||p.X+e.ActualWidth>SettingsScroll.ActualWidth+1)throw new InvalidOperationException("Setting escapes its horizontal viewport: "+e.Name);}
-        foreach(var e in new FrameworkElement[]{SettingsContent,HdrSettingsButton,CalibrationButton,ThemeBox,PeakText,WhiteText})CheckBounds(e);
+        foreach(var e in new FrameworkElement[]{SettingsContent,HdrSettingsButton,CalibrationButton,ThemeBox,PeakText,WhiteText,SharpProjectCard,SharpProjectTitle,SharpProjectDescription,SharpProjectLink})CheckBounds(e);
         var target=new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();await target.RenderAsync(SettingsScroll);var pixels=await target.GetPixelsAsync();
         using var stream=File.OpenWrite(Path.Combine(App.DataDirectory,file));using var random=stream.AsRandomAccessStream();
         var encoder=await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId,random);
@@ -81,5 +83,18 @@ public sealed partial class SettingsPanel
         await VerificationRenderAsync("settings-guide-dark-600.png",false);
         SettingsScroll.ChangeView(null,SettingsScroll.ScrollableHeight,null,true);await Task.Delay(200);
         await VerificationRenderAsync("settings-about-dark-600.png",false);
+    }
+    internal async Task<object> VerificationCompanionRenderAsync(string file)
+    {
+        if(SharpProjectLink.NavigateUri?.AbsoluteUri!="https://github.com/lueluelue12138/sharp-gui"||!SharpProjectLink.IsEnabled||!SharpProjectLink.IsTabStop)
+            throw new InvalidOperationException("Companion project must be a keyboard-accessible external link to the intended repository");
+        SharpProjectCard.StartBringIntoView(new BringIntoViewOptions{AnimationDesired=false,VerticalAlignmentRatio=0.5});
+        var layout=await VerificationRenderAsync(file,false);
+        if(SharpProjectCard.Parent!=SettingsContent||SharpProjectLogo.Source is not Microsoft.UI.Xaml.Media.Imaging.BitmapImage logo||logo.PixelWidth!=96||logo.PixelHeight!=96)
+            throw new InvalidOperationException("Companion card must be separate from About and display the original project logo");
+        var position=SharpProjectCard.TransformToVisual(SettingsScroll).TransformPoint(new(0,0));
+        if(SharpProjectCard.ActualHeight>SettingsScroll.ViewportHeight||position.Y<0||position.Y+SharpProjectCard.ActualHeight>SettingsScroll.ActualHeight+1)
+            throw new InvalidOperationException("Companion card must fit within the settings viewport when brought into view");
+        return new{uri=SharpProjectLink.NavigateUri.AbsoluteUri,cardWidth=SharpProjectCard.ActualWidth,cardHeight=SharpProjectCard.ActualHeight,keyboardAccessible=true,separateCard=true,logoWidth=logo.PixelWidth,logoHeight=logo.PixelHeight,layout};
     }
 }

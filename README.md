@@ -56,6 +56,12 @@ A native Windows photo viewer with RTX HDR, native HDR images, and Live / Motion
 
 RTX HDR 是 AI 增强，不能恢复拍摄时没有记录的信息，也不保证每个区域都更亮。大图片可能依据资源预算缩小处理；首次未缓存的大相册缩略图、AI 初始化与更多显示器的适配仍在完善。
 
+> <img src="src/Luma.App/Assets/SharpGui.png" width="40" height="40" alt="Sharp GUI Logo"> **让回忆，多一个维度。**
+>
+> 想换个角度，看看自己的照片？试试我开发的另一个开源项目 **Sharp GUI**，将照片生成可以转动视角欣赏的 3D 空间影像。
+>
+> **[探索 Sharp GUI ↗](https://github.com/lueluelue12138/sharp-gui)** · 作者的另一个开源项目
+
 ## 构建与发布
 
 <details>
