@@ -8,6 +8,10 @@
 
 官网实际浏览器 1280 / 390 px 检查无横向溢出，Logo 为 96×96，静态链接可键盘访问，未发现坏图 / 控制台错误；手机按钮焦点清晰可见。证据：`artifacts/companion-20261020/browser-check.json`、`website-desktop.png`、`website-mobile.png`。高对比度资源、强制颜色与减少动态效果样式已提供；未切换系统辅助模式作人工验收。原生代码 / 解码与 HDR 路径未变，复用已核验 0.1.31 正式载荷中的原生组件及 NVIDIA 运行时，来源与 hash 保存在 `artifacts/local-install-0.1.32/native-provenance.json`。本轮不替换已提交认证的 MSIX，不新建正式 Release。
 
+应用源码提交 `6805cb7` 后重新 publish，实际候选设置检查再次通过（`artifacts/settings-20261020-162420/settings.json`），随后提升为固定 `artifacts/Luma`，上一份预览保留在 `artifacts/Luma-previous-0.1.31-20261020`。build-info 保留原生组件原始来源，应用 sourceCommit 对应本次提交；因原有 `docs/MICROSOFT-STORE.md` 本地旧稿仍未提交，整体 sourceDirty=true，但 uncommittedApplicationSource=false，未将其旧状态混入提交。许可校验发现源码工作区 RTF 与旧载荷仅换行字节不同，停止出包并恢复候选中的已核验原始许可副本后再继续，没有跳过 hash 断言。
+
+复用固定 RTX 载荷编译普通 ProductId 的本机安装器，未生成重复便携包。EXE 61,207,088 字节，SHA256 `67dfc6517f65679285096ee1eab14b2568e7264366f9af23e25935c8808ab3fd`。从注册的同一目录完成 0.1.31 → 0.1.32 覆盖升级，退出码 0；503 个消费者文件 hash 全部匹配，数据库使用 SQLite backup API 保存一致性副本，前后完整 integrity_check=ok，12 相册 / 374 照片 / 139 链接 / 3 设置全行相同。实际已安装 EXE 的设置检查再次完成，包含四种主题 / 宽度的推荐卡片；随后正常重开生产图库。证据：`artifacts/local-install-0.1.32/installed-upgrade-verification.json`、`installed-upgrade.log`、`payload-manifest.json`、`profile-before-upgrade.db`、`profile-after-upgrade.db`、`reopened.json`，以及 `artifacts/settings-20261020-163420/settings.json`。生产数据库和报告均不提交。
+
 ## 文档与随手记一致性核对（2026-10-20）
 
 审查工作区的两份未提交文档：`MICROSOFT-STORE.md` 内容与 `52e642d` 前的旧稿完全一致，会将“已提交审核”退回“尚未提交”。先将该本地副本保存在忽略目录，再恢复已提交版本，不把旧状态重新推送。`TODO.md` 的独立随手记予以保留，其中 README 未勾选项按 `08bfbd7` 的实际素材和 `1e22890` 的验收授权记录更新为完成，原始私人路径不公开。
