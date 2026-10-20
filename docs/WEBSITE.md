@@ -68,7 +68,7 @@
 
 ## 作者项目推荐
 
-下载区前的“让回忆，多一个维度。”卡片介绍维护者的另一个开源项目 [Sharp GUI](https://github.com/lueluelue12138/sharp-gui)，使用项目原版 Logo、浅蓝紫渐变边框和普通外部链接；手机自动改为竖排。Logo 来自维护者提供的 `sharp-gui/docs/favicon-96x96.png`，原样复制为 `site/assets/sharp-gui.png` 和应用的 `Assets/SharpGui.png`，每份 6,673 字节；未采用内嵌大位图的 SVG，也未重画标志。悬停只轻微抬起按钮，尊重减少动态效果与强制颜色设置，不加载 Sharp GUI 的远端脚本或统计，也不自动传递照片。README 使用简洁引用块并复用应用 Logo；应用推荐卡片独立放在“关于 Luma”卡片下方、设置末尾，适配明暗主题。推荐入口不写死 Sharp GUI 2.0 的发布状态。
+“让回忆，多一个维度。”卡片放在“下载 Luma”之后，作为页面末尾的作者推荐，介绍维护者的另一个开源项目 [Sharp GUI](https://github.com/lueluelue12138/sharp-gui)。标题与 Logo 比下载主区更克制；说明段落使用完整剩余宽度自然换行，按钮跟在说明下方，避免右侧按钮挤压文字和额外的 46ch 限宽。使用项目原版 Logo、浅蓝紫渐变边框和普通外部链接；手机自动改为竖排。Logo 来自维护者提供的 `sharp-gui/docs/favicon-96x96.png`，原样复制为 `site/assets/sharp-gui.png` 和应用的 `Assets/SharpGui.png`，每份 6,673 字节；未采用内嵌大位图的 SVG，也未重画标志。悬停只轻微抬起按钮，尊重减少动态效果与强制颜色设置，不加载 Sharp GUI 的远端脚本或统计，也不自动传递照片。README 使用简洁引用块并复用应用 Logo；应用推荐卡片独立放在“关于 Luma”卡片下方、设置末尾，适配明暗主题。推荐入口不写死 Sharp GUI 2.0 的发布状态。
 
 ## 下载入口与版本号
 
