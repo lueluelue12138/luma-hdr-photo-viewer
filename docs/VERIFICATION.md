@@ -1,5 +1,15 @@
 # Luma 本机验证记录
 
+## 0.1.32 正式附件与商店更新包（2026-10-21）
+
+维护者要求小改动沿用上版 Release 正文，并优先交付文件、减少重复测试。正式标签 `v0.1.32` 固定到干净源码 `881361c2a3002cd8bdefa4922fc8ae18eb2d0a28`，主 CI `39456297679` 与完整 RTX Release 构建 `39457822287` 成功。下载并核对四个实际附件、GitHub digest、SHA256 与 build-info：sourceDirty=false，RTX HDR / VSR 完整，504 个便携文件逐项建立清单，原始 NVIDIA 组件和许可匹配。Release 已公开、非预发布并设为最新；功能正文与 0.1.31 相同，仅替换版本 / 文件名并加入按既有要求保留的夸克入口。
+
+使用这份正式载荷在同一干净源码工作区运行 `Build-Store.ps1 -SkipBuild -ForStore`，沿用既有 Partner Center 身份；生成未签名 `Luma_0.1.32.0_x64.msix`。`verify_store_package.py --require-store-identity` 通过 505 个包文件与源载荷 / staging 字节比对、ZIP 完整性、13 个文件关联、runFullTrust、Logo 和原始 NVIDIA 文件检查；Name / Publisher 与上一原始 0.1.31.0 MSIX 完全一致，版本增加。本轮没有安装 / 签名 MSIX、修改证书信任或操作 Partner Center；不能把内容校验写成商店认证或本次实际包身份运行验收。
+
+EXE 为 61,191,538 字节（58.36 MiB），ZIP 为 85,840,146 字节（81.86 MiB），MSIX 为 87,529,690 字节（83.47 MiB）。三份文件集中在 `artifacts/release-0.1.32/`，分别核对 Release 的 SHA256SUMS 与商店 MSIX-SHA256SUMS；紧凑证据包括 `release-validation.json`、`consumer-manifest.json`、`store-build-info.json`、`workflow-runs.json`、`published.json`。维护者手动上传夸克 / 商店尚未确认，继续保留待办。
+
+本机正常关闭旧安装窗口后，同目录从开发 0.1.32（源 `6805cb7`）覆盖为实际下载的正式 0.1.32（源 `881361c`），安装退出码 0，503 个消费者文件 hash 相同；SQLite 一致性副本的前后完整 integrity_check=ok，图库 / 收藏 / 历史 / 设置四表全行保留。固定预览同步 504 文件，上一开发预览保留，随后重开生产图库。证据为同目录的 `installed-upgrade-verification.json`、`profile-before-official.db`、`profile-after-official.db`、`preview-promotion.json`。按照维护者本轮明确要求，没有追加 HDR / VSR / Live、长 UI 或性能回归；此前相关实机验收仍为历史证据，不虚构本次新测结果。
+
 ## 图库索引持续观察（2026-10-20）
 
 复核“随手记”后，三项准备与交付均已完成；紧随其后的未完成事项是继续观察此前图库索引损坏是否复发。本轮只对生产数据库使用只读连接和 SQLite backup API 保存一致性副本，在副本运行完整 `PRAGMA integrity_check`，结果为 `ok`。确认 `ix_photos_opened` 定义仍是 `photos(opened)`；374 条照片的 `rowid / opened` 通过强制索引查询与禁止索引的全表扫描，按相同排序逐行比较一致。副本包含 12 相册 / 374 照片 / 139 链接 / 3 设置，已安装版本为 0.1.32、应用源 `6805cb7`。
