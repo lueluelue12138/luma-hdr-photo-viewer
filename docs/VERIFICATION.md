@@ -14,6 +14,10 @@ EXIF ImageDescription 以精确的 `Luma Absolute HDR v1; ReferenceWhiteNits=203
 
 原生 RTX 候选来自本轮 `Build-Native.ps1 -RequireNvidia -TestFixtures`；原有 HDR 峰值及原生手动调节回归通过，不因本修改运行 NVIDIA 增强。主应用增量构建 0 警告 / 0 错误。转换器合成端点、奇数尺寸、EXIF 方向、取消 / 同名安全、普通 SDR / 损坏拒绝、宽色域、拒绝静默裁切以及来源标记完整 / 截断 / 无效边界检查通过；Pillow / NumPy 独立公式、4:4:4 采样与实际源峰值容量检查通过。证据 `artifacts/hdr-converter-fidelity-build.log`、`peak-regression.log`、`tuning-regression.log`。只读原片与旧输出，用户照片不进入提交或软件载荷。
 
+交付载荷从已提交实现 `041f30e9418b438cb09a4dcf05306269fa08360c` 重新构建，build-info 保留工作区仍有无关商店文档修改的真实 dirty 状态。固定转换器 `artifacts/HdrJpeg/Luma.HdrConverter.exe` 0.1.1，1,485,824 字节；ZIP `artifacts/Luma-HDR-Converter-0.1.1-windows-x64.zip` 641,929 字节，SHA256 `d29581b965e94a5f704ce70c6fad6a9386f60d5f4392671c9a6a125a274fcd64`，完整 ZIP 与 8 个消费者文件逐字节核对通过。0.1.0 完整载荷保留在 `artifacts/HdrJpeg-previous`。在用户原有 `Ultra HDR` 文件夹另存 `DSC06718_保真版_0.1.1.jpg`（5,266,607 字节），没有覆盖原片或旧输出。
+
+Luma 固定预览同步 0.1.33，上一 0.1.32 完整预览保留在 `artifacts/Luma-previous`。本机正常关闭两个旧预览窗口后，同目录安装退出码 0，注册版号与 EXE 均为 0.1.33，503 个消费者文件匹配新载荷；NVIDIA 两个运行时、原始 PDF 与条款核对通过。升级前后 SQLite backup API 一致性副本的完整 integrity_check 均为 ok，14 相册 / 539 照片 / 374 链接 / 3 设置全行相同。安装后的实际原生 DLL 对新转换照片再次通过 `--require-close` 实际 FP16 数值检查。证据 `artifacts/local-install-0.1.33/installed-upgrade-verification.json` 与 `artifacts/hdr-converter-fidelity/installed-comparison.json`。未推送发布 tag、建立公开 Release 或更改商店提交。
+
 ## 独立 HDR 转换器 0.1.0 开发便携版（2026-10-29）
 
 维护者要求 Windows HDR JXR → Android / 小米相册可用的 Ultra HDR JPG 简单便携工具，随后明确要求自行测试，代理停止继续 UI 验收。实现位于 `tools/HdrJpeg/`；独立 C++ / Win32 程序，静态链接 libultrahdr 2.0.2、libjpeg-turbo 3.2.0 和 MSVC CRT。未改动 Luma 主程序版本、固定预览和本机安装，未触碰已有 `docs/MICROSOFT-STORE.md` 的未提交修改；未公开 Release。
