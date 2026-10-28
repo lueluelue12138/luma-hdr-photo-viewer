@@ -67,6 +67,13 @@ jobs:
           # Hosted CI verifies WIC/D3D11/FP16 fallback. It has no RTX GPU and
           # must never claim that it has verified NVIDIA AI enhancement.
 
+      - name: Build and verify portable Ultra HDR converter
+        run: |
+          ./scripts/Build-HdrConverter.ps1 -Test
+          python -m pip install 'numpy>=2,<3'
+          python tests/verify_hdr_converter.py
+          if ($LASTEXITCODE -ne 0) { throw 'Independent Ultra HDR reconstruction failed.' }
+
       - name: Build standard EXE installer and portable ZIP
         run: ./scripts/Build-Release.ps1 -Variant standard -TestInstaller
 

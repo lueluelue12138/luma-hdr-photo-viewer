@@ -1,5 +1,19 @@
 # Luma 本机验证记录
 
+## 独立 HDR 转换器 0.1.0 开发便携版（2026-10-29）
+
+维护者要求 Windows HDR JXR → Android / 小米相册可用的 Ultra HDR JPG 简单便携工具，随后明确要求自行测试，代理停止继续 UI 验收。实现位于 `tools/HdrJpeg/`；独立 C++ / Win32 程序，静态链接 libultrahdr 2.0.2、libjpeg-turbo 3.2.0 和 MSVC CRT。未改动 Luma 主程序版本、固定预览和本机安装，未触碰已有 `docs/MICROSOFT-STORE.md` 的未提交修改；未公开 Release。
+
+`scripts/Build-HdrConverter.ps1 -Test` 构建通过；编码器使用独立 `uhdr-converter-build` 并显式开启 XMP + ISO 21496-1，Luma 解码器原有目录不变。`tests/HdrConverterTests.cpp` 通过实际 WIC JXR → 编码 → FP16 解码回读，0 / 4 / 40 / 203 / 406 / 800 / 1600 / 4000 nits 期望值对应约 0 / 3.974 / 39.574 / 203.396 / 400.449 / 794.951 / 1581.18 / 3936.30 nits。这些是解码数值，不是屏幕亮度计读数；不涉及 NVIDIA SDK 或 HDR 显示呈现。
+
+额外覆盖：独立 WIC 普通 RGB JPEG 读取、全分辨率 RGB 增益图、XMP / ISO 存在、不覆盖已有文件、自动编号、预先取消不输出、拒绝损坏及普通整数 SDR JXR、129×65 奇数尺寸、EXIF 2–8 旋转 / 翻转的尺寸及四角像素、负 scRGB 先转 Rec.2020 后处理、10000 nits 以上裁切计数。验证中发现并修正 WIC 组合翻转次序，重新检查后通过。`tests/verify_hdr_converter.py` 使用 Pillow 解两份 JPEG、NumPy 独立实现 Android XMP 增益公式，核对全部灰阶端点和两组颜色；没有调用本程序或 libultrahdr 解码器。证据：`artifacts/hdr-converter-build.log`、`artifacts/hdr-converter-tests/independent-verification.json`、隔离夹具目录指针 `artifacts/hdr-converter-tests/latest.txt`。
+
+6 张现存 Windows 实际 HDR 截图在隔离目录转换并通过 libultrahdr 回读：3840×2160 两张，1838×1264 三张，3840×2088 一张；输出 917,466–5,840,556 字节，转换加回读约 719–2547 ms（单次热文件缓存，含回读，不作为通用耗时承诺），未触发色值裁切。证据：`artifacts/hdr-converter-real-tests.log`。照片和输出只在忽略的 artifacts 中，不随源码或程序发行。
+
+Computer Use 检查了实际深色初始窗口、可访问的原生按钮 / 文本及支持多选的文件选择框。自动化在文件框赋值时失败，未据此声称完成 GUI 批量转换。维护者要求自行测试后，浅色 / 窄布局、拖放、实际点击转换 / 取消及选择输出目录交由维护者验收；没有更改系统主题或辅助设置。手机 / 小米 HyperOS 相册识别与高光显示未实测，继续保留 TODO。
+
+本轮开发载荷：`artifacts/HdrJpeg/Luma.HdrConverter.exe`，版本 0.1.0，1,476,096 字节；`artifacts/Luma-HDR-Converter-0.1.0-windows-x64.zip`，638,054 字节，SHA256 `828C6DC74BB89CF8B6CA73AD57B916691747DE2AA5F226E925C2E43E0760453D`。ZIP 内只有 EXE、build-info、说明和五份许可；没有测试程序、照片、SDK、运行库安装器。dumpbin 仅列 Windows 系统 DLL（ole32、USER32、GDI32、SHELL32、COMCTL32、dwmapi、gdiplus、ADVAPI32、KERNEL32）。构建信息保留真实 `dirty=true` 开发来源，属于本地手测候选，未冒充干净源码正式发行。用户要求停止追加测试，本轮不为精确正式来源重建或重跑长检查。
+
 ## 0.1.32 正式附件与商店更新包（2026-10-21）
 
 维护者要求小改动沿用上版 Release 正文，并优先交付文件、减少重复测试。正式标签 `v0.1.32` 固定到干净源码 `881361c2a3002cd8bdefa4922fc8ae18eb2d0a28`，主 CI `39456297679` 与完整 RTX Release 构建 `39457822287` 成功。下载并核对四个实际附件、GitHub digest、SHA256 与 build-info：sourceDirty=false，RTX HDR / VSR 完整，504 个便携文件逐项建立清单，原始 NVIDIA 组件和许可匹配。Release 已公开、非预发布并设为最新；功能正文与 0.1.31 相同，仅替换版本 / 文件名并加入按既有要求保留的夸克入口。

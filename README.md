@@ -14,6 +14,8 @@ A native Windows photo viewer with RTX HDR, native HDR images, and Live / Motion
 
 ## 为什么做 Luma
 
+另有独立的 [Luma HDR 转换器](tools/HdrJpeg/README.md)：将 Windows 线性 HDR JXR 截图转换为带 XMP / ISO 增益图的 Ultra HDR JPG，供支持该格式的手机相册查看。当前为本地开发便携版，具体小米 / HyperOS 兼容性等待真机验证。
+
 我有一块很喜欢的 HDR 显示器。看电影时，夕阳、霓虹和明暗之间的层次，经常让我忍不住暂停，把某一帧当成照片欣赏。
 
 可轮到自己拍的照片，体验就没那么顺手了。Windows 的 HDR 生态还不够完整，我一直没找到一个美观、好用、轻便，又能好好利用 HDR 屏幕的照片查看器。

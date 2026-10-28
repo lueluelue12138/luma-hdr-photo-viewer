@@ -1,4 +1,4 @@
-param([string]$VisualStudioPath)
+param([string]$VisualStudioPath,[switch]$AndroidEncoder)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $cache=Join-Path $root '.tools\hdr-codecs'
@@ -28,7 +28,7 @@ $uhdr=Source 'libultrahdr' 'https://codeload.github.com/google/libultrahdr/zip/e
 $jpeg=Source 'libjpeg-turbo-3.2.0' 'https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.0/libjpeg-turbo-3.2.0.tar.gz' '6f30092cef9fb839779646608f4ee14ae3cbac989c47fa05e841b0841f09878e' 'libjpeg-turbo-3.2.0'
 $nasm=Source 'nasm' 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip' '3ee4782247bcb874378d02f7eab4e294a84d3d15f3f6ee2de2f47a46aa7226e6' 'nasm-2.16.03'
 $jpegBuild=Join-Path $cache 'jpeg-build-3.2.0'
-$uhdrBuild=Join-Path $cache 'uhdr-build'
+$uhdrBuild=Join-Path $cache $(if($AndroidEncoder){'uhdr-converter-build'}else{'uhdr-build'})
 & $cmake -S $jpeg -B $jpegBuild -G $generator -A x64 -DENABLE_SHARED=OFF -DWITH_CRT_DLL=OFF -DWITH_SIMD=ON "-DCMAKE_ASM_NASM_COMPILER=$nasm\nasm.exe" -DWITH_TOOLS=OFF -DWITH_TESTS=OFF -DWITH_TURBOJPEG=OFF | Out-Host
 if($LASTEXITCODE -ne 0){throw 'JPEG codec configuration failed.'}
 & $cmake --build $jpegBuild --config Release --target jpeg-static --parallel 6 | Out-Host
@@ -37,7 +37,8 @@ $jpegInclude=Join-Path $cache 'jpeg-include'
 New-Item -ItemType Directory $jpegInclude -Force | Out-Null
 Copy-Item "$jpeg\src\jpeglib.h","$jpeg\src\jmorecfg.h","$jpeg\src\jerror.h","$jpegBuild\jconfig.h" $jpegInclude -Force
 $jpegLib=Join-Path $jpegBuild 'Release\jpeg-static.lib'
-& $cmake -S $uhdr -B $uhdrBuild -G $generator -A x64 -DBUILD_SHARED_LIBS=OFF -DUHDR_BUILD_DEPS=OFF -DUHDR_BUILD_EXAMPLES=OFF -DUHDR_BUILD_TESTS=OFF -DUHDR_ENABLE_HEIF=OFF -DUHDR_ENABLE_GLES=OFF -DUHDR_ENABLE_INSTALL=OFF "-DJPEG_LIBRARY=$($jpegLib.Replace('\','/'))" "-DJPEG_INCLUDE_DIR=$($jpegInclude.Replace('\','/'))" | Out-Host
+$xmp=if($AndroidEncoder){'ON'}else{'OFF'}
+& $cmake -S $uhdr -B $uhdrBuild -G $generator -A x64 -DBUILD_SHARED_LIBS=OFF -DUHDR_BUILD_DEPS=OFF -DUHDR_BUILD_EXAMPLES=OFF -DUHDR_BUILD_TESTS=OFF -DUHDR_ENABLE_HEIF=OFF -DUHDR_ENABLE_GLES=OFF -DUHDR_ENABLE_INSTALL=OFF "-DUHDR_WRITE_XMP=$xmp" -DUHDR_WRITE_ISO=ON "-DJPEG_LIBRARY=$($jpegLib.Replace('\','/'))" "-DJPEG_INCLUDE_DIR=$($jpegInclude.Replace('\','/'))" | Out-Host
 if($LASTEXITCODE -ne 0){throw 'HDR codec configuration failed.'}
 & $cmake --build $uhdrBuild --config Release --target uhdr-static --parallel 6 | Out-Host
 if($LASTEXITCODE -ne 0){throw 'HDR codec compilation failed.'}
