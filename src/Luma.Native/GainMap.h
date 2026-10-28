@@ -15,6 +15,7 @@
 #pragma comment(lib,"xmllite.lib")
 #pragma comment(lib,"shlwapi.lib")
 #include "XmpGainMap.h"
+#include "../Shared/AbsoluteHdr.h"
 
 struct AppleGainMetadata {unsigned version{};float headroom{};};
 AppleGainMetadata appleGainMetadata(const std::vector<uint8_t>& xml){
@@ -34,7 +35,7 @@ AppleGainMetadata appleGainMetadata(const std::vector<uint8_t>& xml){
 // the C API's resize effect would first allocate/reconstruct full-size HDR.
 struct GainMapInput {
     std::unique_ptr<uhdr_codec_private_t,decltype(&uhdr_release_decoder)> decoder{uhdr_create_decoder(),uhdr_release_decoder};
-    bool apple=false;float appleHeadroom=1;
+    bool apple=false,absoluteLuminance=false;float appleHeadroom=1;
     std::vector<uint8_t> baseBytes,gainBytes;uhdr_gainmap_metadata_t metadata{};UINT gainWidth=0,gainHeight=0;bool metadataOverride=false;
 };
 std::vector<uint8_t> gainJpegXml(uhdr_mem_block_t* data,const char* nameSpace,bool* iso=nullptr){
@@ -96,6 +97,8 @@ std::unique_ptr<GainMapInput> probeGainMap(const wchar_t* path){
         gain->baseBytes=std::move(baseInfo.imgData);gain->gainBytes=std::move(gainInfo.imgData);gain->gainWidth=gainInfo.width;gain->gainHeight=gainInfo.height;return gain;
     }
     int w=uhdr_dec_get_image_width(gain->decoder.get()),h=uhdr_dec_get_image_height(gain->decoder.get());
+    if(auto exif=uhdr_dec_get_exif(gain->decoder.get());exif&&exif->data&&exif->data_sz<=65533)
+        gain->absoluteLuminance=luma::absolute_hdr::contains({static_cast<const uint8_t*>(exif->data),exif->data_sz});
     if(w<=0||h<=0||uint64_t(w)*h>128ull*1024*1024)throw Failure{E_OUTOFMEMORY,L"HDR JPEG 源尺寸超出解码预算"};
     auto appleXml=appleJpegXml(uhdr_dec_get_gainmap_image(gain->decoder.get()));
     if(!appleXml.empty()){auto a=appleGainMetadata(appleXml);gain->apple=true;gain->appleHeadroom=a.headroom>0?a.headroom:uhdr_dec_get_gainmap_metadata(gain->decoder.get())->hdr_capacity_max;if(!std::isfinite(gain->appleHeadroom)||gain->appleHeadroom<1||gain->appleHeadroom>256)throw Failure{WINCODEC_ERR_BADIMAGE};}
@@ -170,7 +173,7 @@ GainReconstruction reconstructGainMap(IWICImagingFactory* wic,GainMapInput& inpu
     auto toSrgb=ultrahdr::getGamutConversionFn(UHDR_CG_BT_709,hdr.cg);
     auto baseToSrgb=ultrahdr::getGamutConversionFn(UHDR_CG_BT_709,base.gamut==UHDR_CG_UNSPECIFIED?UHDR_CG_BT_709:base.gamut);
     GainReconstruction result;result.hdr.resize(size_t(width)*height*16);result.sdr=std::move(baseRgba);
-    result.display.minimum=metadata->hdr_capacity_min;result.display.maximum=metadata->hdr_capacity_max;result.display.model=input.apple?2:1;result.display.gamut=int(hdr.cg);
+    result.display.minimum=metadata->hdr_capacity_min;result.display.maximum=metadata->hdr_capacity_max;result.display.model=input.apple?2:(input.absoluteLuminance?3:1);result.display.gamut=int(hdr.cg);
     memcpy(result.display.offsetSdr,metadata->offset_sdr,12);memcpy(result.display.offsetHdr,metadata->offset_hdr,12);
     if(hdr.cg!=UHDR_CG_BT_709)result.base=result.sdr;
     auto floats=reinterpret_cast<float*>(result.hdr.data());

@@ -27,14 +27,22 @@ Decoded decode(const fs::path& p){
     codec(uhdr_dec_set_out_img_format(dec.get(),UHDR_IMG_FMT_64bppRGBAHalfFloat));codec(uhdr_dec_set_out_color_transfer(dec.get(),UHDR_CT_LINEAR));codec(uhdr_dec_probe(dec.get()));
     require(uhdr_dec_get_gainmap_width(dec.get())==uhdr_dec_get_image_width(dec.get()),"gain map is not full size");
     auto meta=uhdr_dec_get_gainmap_metadata(dec.get());require(meta&&meta->hdr_capacity_max>1,"HDR capacity missing");
+    auto authoring=uhdr_dec_get_exif(dec.get());require(authoring&&luma::absolute_hdr::contains({static_cast<const uint8_t*>(authoring->data),authoring->data_sz}),"absolute luminance authoring description missing");
     codec(uhdr_decode(dec.get()));
     auto* image=uhdr_get_decoded_image(dec.get());Decoded out{image->w,image->h,int(image->cg)};out.pixels.resize(size_t(out.w)*out.h*3);
     for(UINT y=0;y<out.h;y++)for(UINT x=0;x<out.w;x++)for(int c=0;c<3;c++)out.pixels[(size_t(y)*out.w+x)*3+c]=ultrahdr::halfToFloat(static_cast<uint16_t*>(image->planes[0])[(size_t(y)*image->stride[0]+x)*4+c]);
     return out;
 }
 int wmain(int argc,wchar_t** argv){
+    if(argc==4&&std::wstring(argv[1])==L"--convert"){
+        try{auto r=convert(argv[2],argv[3]);std::cout<<"Converted "<<r.width<<"x"<<r.height<<", "<<r.bytes<<" bytes; peak="<<r.peakNits<<" nits; clipped="<<r.clippedPixels<<"\n";return 0;}catch(...){return 1;}
+    }
     if(argc<2)return 2;ComScope com;fs::path root=fs::path(argv[1])/std::to_wstring(GetTickCount64());fs::create_directories(root);
     try{
+        auto exif=luma::absolute_hdr::exif();require(luma::absolute_hdr::contains(exif),"absolute HDR metadata round trip");
+        require(luma::absolute_hdr::contains(std::span<const uint8_t>(exif).subspan(6)),"TIFF metadata round trip");
+        for(size_t n=0;n<exif.size();n++)require(!luma::absolute_hdr::contains(std::span<const uint8_t>(exif).first(n)),"truncated authoring tag accepted");
+        exif.back()=1;require(!luma::absolute_hdr::contains(exif),"invalid authoring tag accepted");
         const float levels[]={0,.05f,.5f,2.5375f,5.075f,10,20,50};
         auto source=root/L"灰阶 HDR 原片.jxr";fixture(source,512,64,GUID_WICPixelFormat128bppRGBAFloat,[&](UINT x,UINT){float v=levels[x/64];return std::array<float,4>{v,v,v,1};});
         auto output=root/L"灰阶_UltraHDR.jpg";auto result=convert(source,output);require(result.width==512&&result.height==64,"dimensions changed");
@@ -66,11 +74,12 @@ int wmain(int argc,wchar_t** argv){
             for(int corner=0;corner<4;corner++){UINT x=corner%2?d.w-6:5,y=corner/2?d.h-6:5;float value=d.pixels[(size_t(y)*d.w+x)*3]*203;require(std::abs(value-order[o-1][corner]*80)<30,"EXIF orientation corner mismatch");}
         }
         auto wide=root/L"wide-gamut.jxr";fixture(wide,64,64,GUID_WICPixelFormat128bppRGBAFloat,[](UINT,UINT){return std::array<float,4>{-.5f,4,.5f,1};});auto wideResult=convert(wide,root/L"wide-gamut.jpg");require(wideResult.clippedPixels==0,"negative scRGB was clipped before gamut conversion");decode(root/L"wide-gamut.jpg");
-        auto clip=root/L"clipped.jxr";fixture(clip,64,64,GUID_WICPixelFormat128bppRGBAFloat,[](UINT,UINT){return std::array<float,4>{200,200,200,1};});require(convert(clip,root/L"clipped.jpg").clippedPixels==4096,"out of range pixels not reported");
+        auto clip=root/L"clipped.jxr";fixture(clip,64,64,GUID_WICPixelFormat128bppRGBAFloat,[](UINT,UINT){return std::array<float,4>{200,200,200,1};});
+        refused=false;try{convert(clip,root/L"clipped.jpg");}catch(const Error&){refused=true;}require(refused&&!fs::exists(root/L"clipped.jpg"),"out of range image silently clipped");
         if(argc>=3){unsigned count=0;for(const auto& entry:fs::directory_iterator(argv[2]))if(entry.path().extension()==L".jxr"&&entry.path().filename().wstring().starts_with(L"3")){
             auto begin=GetTickCount64();auto converted=root/entry.path().filename();converted.replace_extension(L".jpg");auto r=convert(entry.path(),converted);decode(converted);
             std::cout<<"Real screenshot "<<++count<<": "<<r.width<<"x"<<r.height<<", "<<r.bytes<<" bytes, "<<GetTickCount64()-begin<<" ms, clipped="<<r.clippedPixels<<"\n";}require(count==6,"expected six real JXR screenshots");}
-        std::cout<<"PASS: linear luminance, dual metadata, full RGB gain map, SDR JPEG, no overwrite, collision names, cancellation, corrupt/SDR rejection, odd dimensions, 7 EXIF orientations, wide gamut and clipping.\n";
+        std::cout<<"PASS: linear luminance, dual metadata, full RGB gain map, SDR JPEG, no overwrite, collision names, cancellation, corrupt/SDR rejection, odd dimensions, 7 EXIF orientations, wide gamut and refusal to clip.\n";
         std::wofstream location(fs::path(argv[1])/L"latest.txt");location<<root.wstring();return 0;
     }catch(const Error& e){int n=WideCharToMultiByte(CP_UTF8,0,e.message.c_str(),-1,nullptr,0,nullptr,nullptr);std::string text(n,'\0');WideCharToMultiByte(CP_UTF8,0,e.message.c_str(),-1,text.data(),n,nullptr,nullptr);std::cerr<<"FAIL: "<<text.c_str()<<"\n";}
     catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<"\n";}return 1;

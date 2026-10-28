@@ -220,7 +220,7 @@ float4 PS(Vertex v):SV_TARGET {
  float4 c=photo.Sample(linearSampler,v.uv);float3 rgb=c.rgb;
  if(gammaInput>0.5)rgb=lerp(rgb/12.92,pow((rgb+0.055)/1.055,2.4),step(0.04045,rgb));
  if(nativeHDR<0.5)rgb*=white;
- if(gainModel>0.5) {
+ if(gainModel>0.5&&gainModel<2.5) {
   if(gainWeight>=0.99999)rgb*=gainWhite*(80.0/203.0);
   else {
    // Full HDR is cached in scRGB. Recover the authored ratio in its own
@@ -234,7 +234,7 @@ float4 PS(Vertex v):SV_TARGET {
  }
  // Absolute PQ/scRGB keeps its authored luminance in automatic mode. Manual
  // display adjustments affect only presentation, never the cached source.
- if(nativeHDR>0.5&&gainModel<0.5) {
+ if(nativeHDR>0.5&&(gainModel<0.5||gainModel>2.5)) {
   rgb*=nativeExposure;
   if(nativePeak>0) {
    float luminance=max(dot(rgb,float3(.2126,.7152,.0722)),0);
@@ -538,7 +538,7 @@ struct Renderer {
             float baseWhite=nativeMiddleGray?nativeMiddleGray/.21586f/80:status.sdrWhite;
             float gainWhite=displayPeak>0?std::min(baseWhite,displayPeak/80):baseWhite;
             float weight=1;if(gainDisplay.model&&displayPeak>0&&gainDisplay.maximum>gainDisplay.minimum)weight=std::clamp((std::log2(std::max(displayPeak/(gainWhite*80),1.0f))-std::log2(gainDisplay.minimum))/(std::log2(gainDisplay.maximum)-std::log2(gainDisplay.minimum)),0.0f,1.0f);
-            bool absolute= status.nativeHdr==1&&image==originalView&&!holdOriginal;
+            bool absolute= (status.nativeHdr==1||gainDisplay.model==3)&&image==originalView&&!holdOriginal;
             float exposure=absolute&&nativeMiddleGray?nativeMiddleGray/(203*.21586f):1;
             float peak=absolute&&nativePeakOverride?nativePeakOverride/80:0;
             float values[]={w*fit*zoom/width,h*fit*zoom/height,2*panX/width,-2*panY/height,status.sdrWhite,float((status.nativeHdr||status.hdrEffective)&&image!=sdrOriginalView),float(rotation),float((status.vsrEffective&&!status.hdrEffective)||(videoSource&&image==originalView)),weight,float(image==originalView?gainDisplay.model:0),float(gainDisplay.gamut),gainWhite,gainDisplay.offsetSdr[0],gainDisplay.offsetSdr[1],gainDisplay.offsetSdr[2],0,gainDisplay.offsetHdr[0],gainDisplay.offsetHdr[1],gainDisplay.offsetHdr[2],0,exposure,peak,0,0};context->UpdateSubresource(constants.Get(),0,nullptr,values,0,0);

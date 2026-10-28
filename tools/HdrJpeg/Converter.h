@@ -8,7 +8,10 @@
 #pragma warning(push)
 #pragma warning(disable:4201 4244)
 #include <ultrahdr/gainmapmath.h>
+#include <ultrahdr/jpegr.h>
+#include <ultrahdr/icc.h>
 #pragma warning(pop)
+#include "../../src/Shared/AbsoluteHdr.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -112,14 +115,44 @@ inline Result convert(const fs::path& input,const fs::path& output,const std::at
         }
     }
     cancelled(stop);
+    if(result.clippedPixels)throw Error{L"原图含有超出 Rec.2020 或 10000 nits 的色值，当前无法保真转换，未生成文件"};
     std::unique_ptr<uhdr_codec_private_t,decltype(&uhdr_release_encoder)> encoder(uhdr_create_encoder(),uhdr_release_encoder);
     if(!encoder)throw Error{L"内存不足，请关闭其他大图后重试"};
     uhdr_raw_image_t image{};image.fmt=UHDR_IMG_FMT_64bppRGBAHalfFloat;image.cg=UHDR_CG_BT_2100;image.ct=UHDR_CT_LINEAR;
     image.range=UHDR_CR_FULL_RANGE;image.w=w;image.h=h;image.planes[0]=hdr.data();image.stride[0]=w;
     codec(uhdr_enc_set_raw_image(encoder.get(),&image,UHDR_HDR_IMG));
-    codec(uhdr_enc_set_quality(encoder.get(),95,UHDR_BASE_IMG));codec(uhdr_enc_set_quality(encoder.get(),95,UHDR_GAIN_MAP_IMG));
+    codec(uhdr_enc_set_quality(encoder.get(),100,UHDR_BASE_IMG));codec(uhdr_enc_set_quality(encoder.get(),100,UHDR_GAIN_MAP_IMG));
     codec(uhdr_enc_set_using_multi_channel_gainmap(encoder.get(),1));codec(uhdr_enc_set_gainmap_scale_factor(encoder.get(),1));
     codec(uhdr_enc_set_preset(encoder.get(),UHDR_USAGE_BEST_QUALITY));codec(uhdr_enc_set_output_format(encoder.get(),UHDR_CODEC_JPG));
+    // LINEAR's library default is 10000 nits even for a 1600-nit screenshot.
+    // Capacity is the *display adaptation* target, not the theoretical format limit.
+    codec(uhdr_enc_set_target_display_peak_brightness(encoder.get(),std::clamp(result.peakNits,203.0f,10000.0f)));
+    // HDR-only encoding silently overrides BEST_QUALITY and computes gains before
+    // JPEG compression. Instead supply a quality-100 4:4:4 primary, then let the
+    // library derive the map from that actual compressed primary (encode API-3).
+    std::vector<uint8_t> sdrPixels(size_t(w)*h*4),planes(size_t(w)*h*3);
+    uhdr_raw_image_t sdr{};sdr.fmt=UHDR_IMG_FMT_32bppRGBA8888;sdr.w=w;sdr.h=h;sdr.stride[0]=w;sdr.planes[0]=sdrPixels.data();
+    ultrahdr::UltraHdr processor;codec(processor.toneMap(&image,&sdr));
+    size_t area=size_t(w)*h;
+    for(size_t p=0;p<area;p++){
+        float r=sdrPixels[p*4],g=sdrPixels[p*4+1],b=sdrPixels[p*4+2];
+        auto byte=[](float v){return uint8_t(std::clamp(std::lround(v),0l,255l));};
+        planes[p]=byte(.299f*r+.587f*g+.114f*b);
+        planes[area+p]=byte(-.168736f*r-.331264f*g+.5f*b+128);
+        planes[area*2+p]=byte(.5f*r-.418688f*g-.081312f*b+128);
+    }
+    cancelled(stop);
+    uhdr_raw_image_t yuv{};yuv.fmt=UHDR_IMG_FMT_24bppYCbCr444;yuv.w=w;yuv.h=h;yuv.cg=sdr.cg;yuv.ct=UHDR_CT_SRGB;yuv.range=UHDR_CR_FULL_RANGE;
+    for(int c=0;c<3;c++){yuv.planes[c]=planes.data()+area*c;yuv.stride[c]=w;}
+    auto icc=ultrahdr::IccHelper::writeIccProfile(UHDR_CT_SRGB,sdr.cg);
+    ultrahdr::JpegEncoderHelper baseEncoder;codec(baseEncoder.compressImage(&yuv,100,icc->getData(),icc->getLength()));
+    auto base=baseEncoder.getCompressedImage();auto metadata=luma::absolute_hdr::exif();
+    std::vector<uint8_t> primary;primary.reserve(base.data_sz+metadata.size()+4);
+    auto bytes=static_cast<const uint8_t*>(base.data);primary.insert(primary.end(),bytes,bytes+2);
+    size_t segment=metadata.size()+2;primary.insert(primary.end(),{255,225,uint8_t(segment>>8),uint8_t(segment)});
+    primary.insert(primary.end(),metadata.begin(),metadata.end());primary.insert(primary.end(),bytes+2,bytes+base.data_sz);
+    base.data=primary.data();base.data_sz=base.capacity=primary.size();base.cg=sdr.cg;base.ct=UHDR_CT_SRGB;base.range=UHDR_CR_FULL_RANGE;
+    codec(uhdr_enc_set_compressed_image(encoder.get(),&base,UHDR_SDR_IMG));
     codec(uhdr_encode(encoder.get()));cancelled(stop);
     auto* encoded=uhdr_get_encoded_stream(encoder.get());
     if(!encoded||!encoded->data||!encoded->data_sz||encoded->data_sz>INT_MAX||!is_uhdr_image(encoded->data,int(encoded->data_sz)))throw Error{L"输出增益图检查失败，未保存图片"};

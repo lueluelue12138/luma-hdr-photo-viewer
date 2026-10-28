@@ -31,6 +31,7 @@ def reconstruct(path):
     base = Image.open(io.BytesIO(data))
     gain = Image.open(io.BytesIO(data[-length:]))
     assert base.size == gain.size and gain.mode == 'RGB', 'Need full-resolution RGB gain map'
+    assert all(layer[1:3] == (1, 1) for layer in base.layer), 'Primary JPEG loses color resolution'
     assert base.info.get('icc_profile'), 'Primary JPEG must describe its color space'
     assert b'urn:iso:std:iso:ts:21496:-1' in data, 'ISO gain-map metadata missing'
     meta = packets[1].find('.//rdf:Description', NS)
@@ -58,6 +59,9 @@ def reconstruct(path):
 
 
 gray = reconstruct(folder / '灰阶_UltraHDR.jpg')
+gray_packets = re.findall(rb'<x:xmpmeta.*?</x:xmpmeta>', (folder / '灰阶_UltraHDR.jpg').read_bytes(), re.S)
+capacity = ET.fromstring(gray_packets[1]).find('.//rdf:Description', NS).get(f'{{{NS["hdrgm"]}}}HDRCapacityMax')
+assert abs(2**float(capacity) - 4000/203) < .01, 'Mastering peak must follow the source, not the 10000-nit default'
 expected = np.array([0, 4, 40, 203, 406, 800, 1600, 4000])
 actual = gray[32, np.arange(8)*64+32, :].mean(axis=1)
 assert np.all(np.abs(actual-expected) < np.maximum(1, expected*.08)), (expected, actual)

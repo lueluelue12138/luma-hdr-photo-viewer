@@ -1,5 +1,19 @@
 # Luma 本机验证记录
 
+## 转换保真与绝对亮度修正（2026-10-29，转换器 0.1.1 / Luma 0.1.33）
+
+维护者提供同一张 JXR 与旧转换 JPG，确认原 JXR 在 Luma 与 Windows 照片观感一致、旧 JPG 在 Luma 差异明显；在小米 14 Ultra / HyperOS 3 的新相册中也几乎未见 HDR 效果。维护者随后明确要求以原片数据为准，不针对手机品牌适配，不扩展原片峰值。
+
+`tests/compare_hdr_conversion.py` 分别核对解码的绝对 scRGB、实际 GPU FP16 自动显示与统一参考白下的完整增益重建。该屏幕本轮报告峰值 1600 nits、SDR 白色 480 nits。旧文件完整重建的亮度比例中位数约 0.9925，但默认 gain capacity 为 49.261（10000 / 203）；自动显示的比例中位数变为 1.5035，RGB 通道平均绝对误差约 48.09 nits，高光亮度 99 分位从原图约 930.45 变成 667.27 nits。主因是 JXR 绝对亮度与增益图屏幕相对亮度两条显示路径不同；少量平色端点和完整重建检查无法覆盖此问题。证据 `artifacts/hdr-converter-fidelity/before.json`。
+
+转换器不读取屏幕亮度，仍按 scRGB 80 nits 与库的 203 nits 参考换算。目标容量改为原片实际 Rec.2020 RGB 通道峰值（本图约 1007.99 nits，即 capacity 约 4.96547），不再默认 10000 nits。新路径先形成质量 100 / 4:4:4 的 Display P3 SDR JPEG，再由原 HDR 和实际压缩底图生成质量 100 / 全尺寸 RGB 增益图，避免 HDR-only API 强制 realtime 与压缩前底图比值的误差；XMP + ISO 格式继续保留。超出 Rec.2020 或 10000 nits 的输入拒绝输出，不能静默裁切后宣称保真。JPEG / 8 位增益量化仍有误差。
+
+EXIF ImageDescription 以精确的 `Luma Absolute HDR v1; ReferenceWhiteNits=203; Source=scRGB80` 声明来源，Luma 只对这个有界、完整的标记以模型 3 保留绝对亮度。标准完整增益重建与 SDR 对照不变，未标记的手机 / 相机照片继续使用原自适应模式。它是可选来源扩展，普通 Android 等读取器仍遵循标准增益图自行适配，不能承诺其他软件或手机必然与 JXR 观感相同。规范依据：[Android Ultra HDR 显示适配](https://developer.android.com/media/platform/hdr-image-format)。
+
+修正后同图、相同自动显示环境，真实 FP16 读回：亮度比例 5 / 50 / 95 分位约 0.98998 / 1.00502 / 1.02084；RGB 通道平均绝对误差约 1.669 nits、相对误差中位数 / 95 分位约 1.014% / 2.584%。`--require-close` 的亮度 5–95 分位在 ±3%、RGB 相对 95 分位低于 4%、平均通道误差低于 2 nits 检查通过。这是 960 像素宽实际预览的量化结果；全分辨率抽样 RGB 相对 95 分位约 6.69%，不声称逐像素无损或手机实际观感验收。证据 `artifacts/hdr-converter-fidelity/after.json`、`comparison.log`。
+
+原生 RTX 候选来自本轮 `Build-Native.ps1 -RequireNvidia -TestFixtures`；原有 HDR 峰值及原生手动调节回归通过，不因本修改运行 NVIDIA 增强。主应用增量构建 0 警告 / 0 错误。转换器合成端点、奇数尺寸、EXIF 方向、取消 / 同名安全、普通 SDR / 损坏拒绝、宽色域、拒绝静默裁切以及来源标记完整 / 截断 / 无效边界检查通过；Pillow / NumPy 独立公式、4:4:4 采样与实际源峰值容量检查通过。证据 `artifacts/hdr-converter-fidelity-build.log`、`peak-regression.log`、`tuning-regression.log`。只读原片与旧输出，用户照片不进入提交或软件载荷。
+
 ## 独立 HDR 转换器 0.1.0 开发便携版（2026-10-29）
 
 维护者要求 Windows HDR JXR → Android / 小米相册可用的 Ultra HDR JPG 简单便携工具，随后明确要求自行测试，代理停止继续 UI 验收。实现位于 `tools/HdrJpeg/`；独立 C++ / Win32 程序，静态链接 libultrahdr 2.0.2、libjpeg-turbo 3.2.0 和 MSVC CRT。未改动 Luma 主程序版本、固定预览和本机安装，未触碰已有 `docs/MICROSOFT-STORE.md` 的未提交修改；未公开 Release。
