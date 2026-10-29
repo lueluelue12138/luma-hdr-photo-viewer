@@ -10,6 +10,8 @@
 
 新增 `scripts/Package-HdrConverter.ps1`，按八文件白名单生成独立便携 ZIP，核对来源版本与 EXE SHA256，附带说明和五份许可。初次打包 CRC、ZIP 内八文件与源字节一致、嵌入来源与 EXE hash 一致检查通过。主程序安装包复核为 0.1.33、61,223,998 字节，SHA256 `4963dc6b7d197e26917e44a6a52d474037beef53df47939ce4738fbf31f6f87c`，与本机升级验证载荷一致。维护者最新决定只手动上传网盘，本轮不编辑 GitHub Release、推送 tag 或发布新版本；普通源代码迭代按既有授权提交。
 
+已从提交 `19822b3b762addbfb83b8cd7913e9ad0c1715393` 重建并整理 `artifacts/quark-upload-0.1.33/`：上述主程序安装器、`Luma-HDR-Converter-0.1.2-windows-x64.zip`（642,667 字节，SHA256 `48c2bfc90c64c60a4d8299b4792275bfb1ccd09710c49452b8c07744afc682df`）及联合 `SHA256SUMS.txt`。ZIP CRC 与全部八文件和已验证构建 / 固定目录逐字节一致，版本与 EXE hash 匹配；没有生产数据库、用户照片、调试或编译输出。证据 `artifacts/hdr-converter-ui-delivery.json`。进程已退出后同步固定 / 候选转换器 0.1.2，上一可用 0.1.1 保留在 `artifacts/HdrJpeg-previous`。Luma 0.1.33 未重复重建或安装，仍使用上一轮已验证的相同安装包。网盘内容待维护者上传后确认。
+
 ## 用户实屏 HDR 截图复核（2026-10-29 01:26 截图）
 
 维护者再次反馈同屏原片和转换 JPG 差异巨大、转换结果很平，并提供两张 Windows 游戏栏 JXR 截图。直接用 Windows WIC 读取为原始 RGBA float / scRGB（1 = 80 nits），没有先经 SDR 截图或逐图自动曝光后再比较。截图 A 为 2858×1526，Windows 照片打开源 JXR；截图 B 为 1838×1264，Luma 0.1.33 打开 `_UltraHDR (1).jpg`。照片为嵌套截图，比较时排除了外层查看器及内层浮动工具条 / 胶片带。
