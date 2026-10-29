@@ -1,4 +1,4 @@
-# Luma HDR 转换器 0.1.1
+# Luma HDR 转换器 0.1.2
 
 把 Windows 的线性 HDR 截图（`.jxr` / `.wdp` / `.hdp`）转换成带增益图的 **Ultra HDR JPG**。Windows 10 2004 或更新的 x64 系统；无需安装、无需 .NET / Python / RTX 显卡，无需开启电脑 HDR。全部处理在本机完成，不联网。
 
@@ -8,6 +8,8 @@
 4. 点击“打开文件夹”，将生成的 `_UltraHDR.jpg` **作为原文件**传到手机。
 
 原图不变；同名输出自动加编号。失败会显示原因，点击“开始转换”仅重试未完成的图片。取消会等待当前编码返回，取消前未保存的图片不会写出；已经完成的图片保留。最多一次添加 1000 张。
+
+版本号显示在窗口标题和界面顶部，可据此确认正在使用的版本。右上角“项目主页”打开 [Luma GitHub 项目](https://github.com/lueluelue12138/luma-hdr-photo-viewer)。0.1.2 修正卡片内按钮周围的矩形底色，转换算法与已经验收的 0.1.1 相同。
 
 ## 手机观看
 
@@ -26,10 +28,12 @@
 - 原图超出 Rec.2020 或 10000 nits 时拒绝输出，避免静默裁切信息。透明区域在线性光下合成到黑色。
 - 应用 EXIF 方向，不复制来源 EXIF、定位、缩略图及来源 ICC；新建 EXIF ImageDescription 声明原片绝对亮度来源，内容由 `src/Shared/AbsoluteHdr.h` 定义。Windows 截图按线性 scRGB 解释，不支持任意自定义色彩空间的 JXR。
 - Luma **0.1.33 或更新**识别该可选来源说明，将完整 HDR 重建按与 JXR 相同的绝对亮度路径显示，避免再次跟随 Windows SDR 白色进行曝光变化。其他软件仍可读取标准 XMP / ISO 增益图，但会自行适配屏幕，不能保证不同查看器、显示器或手机之间观感完全相同。此扩展并非 Android 必需元数据，未修改标准增益公式。
-- 软件未签名，尚未制作安装器或公开发行。
+- 软件未签名，使用独立便携 ZIP 分发，不内置到 Luma 安装包。当前由维护者手动上传网盘，本轮未向 GitHub Release 添加附件。
 
 ## 构建
 
 在仓库根运行 `./scripts/Build-HdrConverter.ps1 -Test`，需要 Visual Studio C++ x64 工具和 Windows SDK。与 Luma 看图器的原生库分开构建，编码器显式开启 XMP + ISO，不更改主程序版本或安装。
+
+运行 `./scripts/Package-HdrConverter.ps1` 从候选目录打出独立便携 ZIP 和 SHA256；打包器核对实际 EXE 的版本 / hash，只收录消费者程序、说明和许可，排除测试图与编译输出。可用 `-SourceDirectory` / `-OutputDirectory` 指定已经验证的构建和 artifacts 内的交付目录。
 
 规范：[Android Ultra HDR](https://developer.android.com/media/platform/hdr-image-format)、[libultrahdr](https://github.com/google/libultrahdr)、[Windows JPEG XR](https://learn.microsoft.com/en-us/windows/win32/wic/jpeg-xr-codec)。再分发时保留 `licenses` 文件夹及本说明。

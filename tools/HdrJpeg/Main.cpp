@@ -1,4 +1,5 @@
 #include "Converter.h"
+#include "Version.h"
 #include <commctrl.h>
 #include <shobjidl.h>
 #include <shellapi.h>
@@ -10,7 +11,7 @@
 using namespace hdrjpeg;
 namespace {
 constexpr UINT Progress=WM_APP+1,Finished=WM_APP+2;
-enum { Brand=100,Title,Subtitle,DropTitle,DropHint,Choose,QueueTitle,Clear,List,DestinationLabel,Destination,Change,Start,Cancel,Open,Status,Hint };
+enum { Brand=100,Title,Subtitle,DropTitle,DropHint,Choose,QueueTitle,Clear,List,DestinationLabel,Destination,Change,Start,Cancel,Open,Status,Hint,Project };
 struct Item { fs::path source,output; std::wstring status=L"等待转换"; bool done=false; };
 struct Update { size_t index;std::wstring status;fs::path output;bool done=false; };
 HWND window{},controls[130]{};HFONT normal{},fontSmall{},heading{},bold{};
@@ -36,12 +37,12 @@ HFONT font(int size,int weight=FW_NORMAL){return CreateFontW(-px(size),0,0,0,wei
 void fonts(){
     for(auto f:{normal,fontSmall,heading,bold})if(f)DeleteObject(f);
     normal=font(14);fontSmall=font(12);heading=font(30,FW_SEMIBOLD);bold=font(16,FW_SEMIBOLD);
-    for(int id=Brand;id<=Hint;id++)if(controls[id])SendMessageW(controls[id],WM_SETFONT,WPARAM(id==Title?heading:(id==DropTitle||id==QueueTitle?bold:(id==Brand||id==Hint?fontSmall:normal))),TRUE);
+    for(int id=Brand;id<=Project;id++)if(controls[id])SendMessageW(controls[id],WM_SETFONT,WPARAM(id==Title?heading:(id==DropTitle||id==QueueTitle?bold:(id==Brand||id==Hint||id==Project?fontSmall:normal))),TRUE);
 }
 void place(int id,int x,int y,int w,int h){MoveWindow(controls[id],px(x),px(y),px(w),px(h),TRUE);}
 void layout(){
     RECT rc;GetClientRect(window,&rc);int w=MulDiv(rc.right,96,dpi),h=MulDiv(rc.bottom,96,dpi);
-    place(Brand,34,25,w-68,22);place(Title,32,55,w-64,48);place(Subtitle,34,112,w-68,26);
+    place(Brand,34,25,w-230,22);place(Project,w-164,18,132,34);place(Title,32,55,w-64,48);place(Subtitle,34,112,w-68,26);
     place(DropTitle,112,184,w-326,30);place(DropHint,112,222,w-326,44);place(Choose,w-190,201,126,42);
     place(QueueTitle,34,326,200,28);place(Clear,w-132,320,100,32);
     place(List,34,366,w-68,h-556);
@@ -131,7 +132,8 @@ void paint(){
 LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
     switch(msg){
     case WM_CREATE:{window=hwnd;dpi=GetDpiForWindow(hwnd);colors();
-        addControl(Brand,L"STATIC",L"L U M A   /   HDR CONVERTER     ·     便携 · 离线",SS_LEFT);
+        addControl(Brand,L"STATIC",L"L U M A   /   HDR CONVERTER   ·   v" HDRJPEG_WIDEN(HDRJPEG_VERSION) L"   ·   便携 · 离线",SS_LEFT);
+        addControl(Project,L"BUTTON",L"项目主页 ↗ (&H)",WS_TABSTOP|BS_OWNERDRAW);
         addControl(Title,L"STATIC",L"把 HDR，带到手机。",SS_LEFT);addControl(Subtitle,L"STATIC",L"Windows HDR 截图 → Ultra HDR JPG，保留高光，也方便分享。",SS_LEFT);
         addControl(DropTitle,L"STATIC",L"将 HDR 图片拖到这里",SS_LEFT);addControl(DropHint,L"STATIC",L"支持 JXR · WDP · HDP\n可一次添加多张图片",SS_LEFT);
         for(auto id:{Choose,Clear,Change,Start,Cancel,Open})addControl(id,L"BUTTON",id==Choose?L"添加图片 (&A)":id==Clear?L"清空列表 (&L)":id==Change?L"更改 (&D)":id==Start?L"开始转换 (&S)":id==Cancel?L"取消 (&C)":L"打开文件夹 (&O)",WS_TABSTOP|BS_OWNERDRAW);
@@ -162,14 +164,17 @@ LRESULT CALLBACK proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
         bool enabled=!(di->itemState&ODS_DISABLED),primary=di->CtlID==Start,pressed=di->itemState&ODS_SELECTED;
         COLORREF fill=primary&&enabled?accent:card,border=primary&&enabled?accent:line;
         if(pressed)fill=dark?RGB(47,68,103):RGB(219,230,249);
-        FillRect(di->hDC,&di->rcItem,background);{Gdiplus::Graphics g(di->hDC);g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        // The add button sits on the card. Its antialiased corners must expose
+        // the card material, rather than a rectangle of the window background.
+        FillRect(di->hDC,&di->rcItem,di->CtlID==Choose?surface:background);if(di->CtlID!=Project){Gdiplus::Graphics g(di->hDC);g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
             rounded(g,1,1,float(di->rcItem.right-2),float(di->rcItem.bottom-2),float(px(8)),fill,border);}
-        SetBkMode(di->hDC,TRANSPARENT);SetTextColor(di->hDC,!enabled?muted:(primary&&!pressed?(dark?RGB(16,26,44):RGB(255,255,255)):ink));SelectObject(di->hDC,normal);
+        SetBkMode(di->hDC,TRANSPARENT);SetTextColor(di->hDC,di->CtlID==Project?accent:(!enabled?muted:(primary&&!pressed?(dark?RGB(16,26,44):RGB(255,255,255)):ink)));SelectObject(di->hDC,di->CtlID==Project?fontSmall:normal);
         wchar_t label[100];GetWindowTextW(di->hwndItem,label,100);RECT r=di->rcItem;DrawTextW(di->hDC,label,-1,&r,DT_CENTER|DT_VCENTER|DT_SINGLELINE|((di->itemState&ODS_NOACCEL)?DT_HIDEPREFIX:0));
         if(di->itemState&ODS_FOCUS){InflateRect(&r,-px(5),-px(5));DrawFocusRect(di->hDC,&r);}return TRUE;}
     case WM_DROPFILES:{HDROP drop=reinterpret_cast<HDROP>(wp);UINT count=DragQueryFileW(drop,0xffffffff,nullptr,0);std::vector<fs::path> paths;
         for(UINT i=0;i<count;i++){UINT n=DragQueryFileW(drop,i,nullptr,0);std::wstring path(n+1,L'\0');DragQueryFileW(drop,i,path.data(),n+1);path.resize(n);paths.emplace_back(path);}DragFinish(drop);addFiles(paths);return 0;}
     case WM_COMMAND:switch(LOWORD(wp)){
+        case Project:ShellExecuteW(hwnd,L"open",L"https://github.com/lueluelue12138/luma-hdr-photo-viewer",nullptr,nullptr,SW_SHOWNORMAL);break;
         case Choose:if(!busy)choose(false);break;case Change:if(!busy)choose(true);break;case Clear:if(!busy){items.clear();textAt(Status,L"原图会保留，同名文件自动编号。");refresh();}break;
         case Start:start();break;case Cancel:stop=true;EnableWindow(controls[Cancel],FALSE);textAt(Status,L"正在停止，当前编码结束后取消保存…");break;
         case Open:for(auto it=items.rbegin();it!=items.rend();++it)if(it->done){ShellExecuteW(hwnd,L"open",it->output.parent_path().c_str(),nullptr,nullptr,SW_SHOWNORMAL);break;}break;
@@ -188,7 +193,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     INITCOMMONCONTROLSEX cc{sizeof(cc),ICC_LISTVIEW_CLASSES};InitCommonControlsEx(&cc);
     WNDCLASSW cls{};cls.lpfnWndProc=proc;cls.hInstance=instance;cls.lpszClassName=L"LumaHdrJpeg";cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hIcon=LoadIconW(instance,MAKEINTRESOURCEW(1));RegisterClassW(&cls);
     UINT screenDpi=GetDpiForSystem();RECT size{0,0,MulDiv(900,screenDpi,96),MulDiv(700,screenDpi,96)};AdjustWindowRectExForDpi(&size,WS_OVERLAPPEDWINDOW,FALSE,0,screenDpi);
-    HWND app=CreateWindowExW(WS_EX_ACCEPTFILES,cls.lpszClassName,L"Luma HDR 转换器",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,size.right-size.left,size.bottom-size.top,nullptr,nullptr,instance,nullptr);
+    HWND app=CreateWindowExW(WS_EX_ACCEPTFILES,cls.lpszClassName,L"Luma HDR 转换器 " HDRJPEG_WIDEN(HDRJPEG_VERSION),WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,size.right-size.left,size.bottom-size.top,nullptr,nullptr,instance,nullptr);
     if(!app)return 1;int argc=0;auto argv=CommandLineToArgvW(GetCommandLineW(),&argc);std::vector<fs::path> paths;for(int i=1;i<argc;i++)paths.emplace_back(argv[i]);LocalFree(argv);addFiles(paths);
     ShowWindow(app,show);UpdateWindow(app);MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){if(!IsDialogMessageW(app,&msg)){TranslateMessage(&msg);DispatchMessageW(&msg);}}
     for(auto f:{normal,fontSmall,heading,bold})if(f)DeleteObject(f);DeleteObject(background);DeleteObject(surface);Gdiplus::GdiplusShutdown(token);OleUninitialize();return 0;

@@ -15,6 +15,11 @@ $env:PATH="$sdk\bin\$sdkVersion\x64;$vc\bin\Hostx64\x64;$env:PATH"
 $codecs=& "$PSScriptRoot\Build-HdrCodecs.ps1" -VisualStudioPath $vsPath -AndroidEncoder
 $env:INCLUDE+=";$($codecs.Source);$($codecs.Source)\lib\include;$($codecs.JpegInclude)"
 $source=Join-Path $root 'tools\HdrJpeg'
+$versionMatch=[regex]::Match([IO.File]::ReadAllText((Join-Path $source 'Version.h')),'(?m)^#define HDRJPEG_VERSION "(?<version>\d+\.\d+\.\d+)"\s*$')
+if(!$versionMatch.Success){throw 'Converter version is missing.'}
+$version=$versionMatch.Groups['version'].Value
+$converterManifest=[xml](Get-Content -LiteralPath (Join-Path $source 'app.manifest') -Raw)
+if($converterManifest.assembly.assemblyIdentity.version -ne "$version.0"){throw 'Converter source and manifest versions differ.'}
 & "$sdk\bin\$sdkVersion\x64\rc.exe" /nologo "/fo$out\App.res" "$source\App.rc"
 if($LASTEXITCODE -ne 0){throw 'Converter resources failed.'}
 $libs=@($codecs.Library,$codecs.JpegLibrary,'windowscodecs.lib','ole32.lib','oleaut32.lib','propsys.lib','user32.lib','gdi32.lib','shell32.lib','comctl32.lib','dwmapi.lib','gdiplus.lib','advapi32.lib','uuid.lib')
@@ -27,7 +32,8 @@ Copy-Item "$($codecs.Source)\adobe-hdr-gain-map-license\NOTICE" "$licenses\Adobe
 Copy-Item "$($codecs.JpegSource)\LICENSE.md" "$licenses\libjpeg-turbo-LICENSE.txt" -Force
 Copy-Item "$($codecs.JpegSource)\README.ijg" "$licenses\libjpeg-turbo-README.ijg.txt" -Force
 Copy-Item "$source\README.md" "$out\使用说明.md" -Force
-$info=[ordered]@{product='Luma HDR Converter';version='0.1.1';commit=(& git -C $root rev-parse HEAD);dirty=[bool](& git -C $root status --porcelain --untracked-files=normal);libultrahdr='e5f5a022fe96fc4dc2ee35c19f733a50df807abe';libjpegTurbo='3.2.0';xmp=$true;iso21496=$true;runtime='static MSVC /MT';encoderLibrarySha256=(Get-FileHash $codecs.Library).Hash;executableSha256=(Get-FileHash "$out\Luma.HdrConverter.exe").Hash}
+if((Get-Item -LiteralPath "$out\Luma.HdrConverter.exe").VersionInfo.ProductVersion -ne $version){throw 'Built converter version differs from source.'}
+$info=[ordered]@{product='Luma HDR Converter';version=$version;commit=(& git -C $root rev-parse HEAD);dirty=[bool](& git -C $root status --porcelain --untracked-files=normal);libultrahdr='e5f5a022fe96fc4dc2ee35c19f733a50df807abe';libjpegTurbo='3.2.0';xmp=$true;iso21496=$true;runtime='static MSVC /MT';encoderLibrarySha256=(Get-FileHash $codecs.Library).Hash;executableSha256=(Get-FileHash "$out\Luma.HdrConverter.exe").Hash}
 $info | ConvertTo-Json | Set-Content "$out\build-info.json" -Encoding utf8
 if($Test){
     & "$vc\bin\Hostx64\x64\cl.exe" /nologo /std:c++20 /utf-8 /EHsc /W4 /MT /O2 /DUNICODE /D_UNICODE "$root\tests\HdrConverterTests.cpp" "/Fo$out\HdrConverterTests.obj" /link "/OUT:$out\HdrConverterTests.exe" @libs
